@@ -53,6 +53,8 @@ export async function callNative<T = unknown>(
 
 const WORKSPACE_OPEN_PATH = "rigdesktop/services.WorkspaceService.OpenPath";
 const WORKSPACE_REVEAL_IN_FOLDER = "rigdesktop/services.WorkspaceService.RevealInFolder";
+const WORKSPACE_PICK_DIRECTORY = "rigdesktop/services.WorkspaceService.PickDirectory";
+const WORKSPACE_PICK_FILES = "rigdesktop/services.WorkspaceService.PickFiles";
 
 
 export async function nativeOpenPath(path: string): Promise<void> {
@@ -62,6 +64,34 @@ export async function nativeOpenPath(path: string): Promise<void> {
 
 export async function nativeRevealInFolder(path: string): Promise<void> {
   await callNative(WORKSPACE_REVEAL_IN_FOLDER, [path]);
+}
+
+export async function pickDirectory(title = "Choose a project folder"): Promise<string> {
+  if (await isNative()) {
+    try {
+      return (await callNative<string>(WORKSPACE_PICK_DIRECTORY, [title])) ?? "";
+    } catch {
+      return "";
+    }
+  }
+  if (typeof window === "undefined") return "";
+  return window.prompt("Project folder path") ?? "";
+}
+
+export async function pickFiles(title = "Add files"): Promise<string[]> {
+  if (await isNative()) {
+    try {
+      return (await callNative<string[]>(WORKSPACE_PICK_FILES, [title])) ?? [];
+    } catch {
+      return [];
+    }
+  }
+  if (typeof window === "undefined") return [];
+  const answer = window.prompt("File paths (separated by ;)") ?? "";
+  return answer
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
 

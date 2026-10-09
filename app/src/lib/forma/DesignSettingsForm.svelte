@@ -1,0 +1,358 @@
+<script lang="ts">
+  import type { ProjectSettings } from "./types";
+  import { DENSITY_LABELS, STYLE_LABELS } from "./types";
+  import { formatDimensions } from "./sizes";
+  import PageIcon from "./PageIcon.svelte";
+
+  let { settings, onchange }: { settings: ProjectSettings; onchange: (next: ProjectSettings) => void } = $props();
+
+  const SLIDE_PRESETS: Record<string, { width: number; height: number }> = {
+    "16:9": { width: 1920, height: 1080 },
+    "4:3": { width: 1440, height: 1080 },
+  };
+  const DIGITAL_PRESETS: Record<string, { width: number; height: number }> = {
+    "1080x1350": { width: 1080, height: 1350 },
+    square: { width: 1080, height: 1080 },
+  };
+  const PRINT_PRESETS: Record<string, { width: number; height: number; unit: "mm" | "in" }> = {
+    a4: { width: 210, height: 297, unit: "mm" },
+    a3: { width: 297, height: 420, unit: "mm" },
+    letter: { width: 8.5, height: 11, unit: "in" },
+    tabloid: { width: 11, height: 17, unit: "in" },
+  };
+  const PRINT_OPTIONS: Array<{
+    value: "a4" | "a3" | "letter" | "tabloid";
+    label: string;
+    width: number;
+    height: number;
+  }> = [
+    { value: "a4", label: "A4", width: 210, height: 297 },
+    { value: "a3", label: "A3", width: 297, height: 420 },
+    { value: "letter", label: "Letter", width: 8.5, height: 11 },
+    { value: "tabloid", label: "Tabloid", width: 11, height: 17 },
+  ];
+
+  function emit(patch: Partial<ProjectSettings>): void {
+    onchange({ ...settings, ...patch });
+  }
+
+  function selectSlidePreset(preset: "16:9" | "4:3" | "custom"): void {
+    if (preset === "custom") {
+      emit({ slideSize: { ...settings.slideSize, preset } });
+      return;
+    }
+    const size = SLIDE_PRESETS[preset]!;
+    emit({ slideSize: { preset, ...size } });
+  }
+
+  function selectDigitalPreset(preset: "1080x1350" | "square" | "custom"): void {
+    if (preset === "custom") {
+      emit({ posterSize: { ...settings.posterSize, preset } });
+      return;
+    }
+    const size = DIGITAL_PRESETS[preset]!;
+    emit({ posterSize: { preset, ...size, unit: "px" } });
+  }
+
+  function selectPrintPreset(preset: "a4" | "a3" | "letter" | "tabloid" | "custom"): void {
+    if (preset === "custom") {
+      emit({ posterSize: { ...settings.posterSize, preset } });
+      return;
+    }
+    const size = PRINT_PRESETS[preset]!;
+    emit({ posterSize: { preset, width: size.width, height: size.height, unit: size.unit } });
+  }
+
+  function numberFrom(event: Event): number | null {
+    const value = Number((event.currentTarget as HTMLInputElement).value);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+</script>
+
+<div class="design-settings">
+  <div class="field">
+    <span class="field-label">Style</span>
+    <div class="segmented" role="group" aria-label="Style">
+      {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
+        <button
+          type="button"
+          class:active={settings.style === value}
+          aria-pressed={settings.style === value}
+          onclick={() => emit({ style: value as ProjectSettings["style"] })}
+        >{label}</button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Density</span>
+    <div class="segmented" role="group" aria-label="Density">
+      {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
+        <button
+          type="button"
+          class:active={settings.density === value}
+          aria-pressed={settings.density === value}
+          onclick={() => emit({ density: value as ProjectSettings["density"] })}
+        >{label}</button>
+      {/each}
+    </div>
+  </div>
+
+  {#if settings.output === "slides"}
+    <div class="field">
+      <span class="field-label">Slide count</span>
+      <input
+        class="input input-narrow"
+        type="number"
+        min="1"
+        step="1"
+        value={settings.slideCount}
+        onchange={(event) => {
+          const value = numberFrom(event);
+          if (value !== null) emit({ slideCount: Math.round(value) });
+        }}
+      />
+    </div>
+
+    <div class="field">
+      <span class="field-label">Slide size</span>
+      <div class="size-options">
+        <button
+          type="button"
+          class="size-option"
+          class:active={settings.slideSize.preset === "16:9"}
+          onclick={() => selectSlidePreset("16:9")}
+        >
+          <PageIcon width={1920} height={1080} size={16} />
+          <span>16:9</span>
+          <em>1920 × 1080</em>
+        </button>
+        <button
+          type="button"
+          class="size-option"
+          class:active={settings.slideSize.preset === "4:3"}
+          onclick={() => selectSlidePreset("4:3")}
+        >
+          <PageIcon width={1440} height={1080} size={16} />
+          <span>4:3</span>
+          <em>1440 × 1080</em>
+        </button>
+        <button
+          type="button"
+          class="size-option"
+          class:active={settings.slideSize.preset === "custom"}
+          onclick={() => selectSlidePreset("custom")}
+        >
+          <PageIcon width={settings.slideSize.width} height={settings.slideSize.height} size={16} />
+          <span>Custom</span>
+          <em>pixels</em>
+        </button>
+      </div>
+      {#if settings.slideSize.preset === "custom"}
+        <div class="field-row">
+          <label class="inline-field">
+            <span>Width</span>
+            <input
+              class="input"
+              type="number"
+              min="1"
+              value={settings.slideSize.width}
+              onchange={(event) => {
+                const value = numberFrom(event);
+                if (value !== null) emit({ slideSize: { ...settings.slideSize, width: Math.round(value) } });
+              }}
+            />
+          </label>
+          <label class="inline-field">
+            <span>Height</span>
+            <input
+              class="input"
+              type="number"
+              min="1"
+              value={settings.slideSize.height}
+              onchange={(event) => {
+                const value = numberFrom(event);
+                if (value !== null) emit({ slideSize: { ...settings.slideSize, height: Math.round(value) } });
+              }}
+            />
+          </label>
+        </div>
+      {/if}
+    </div>
+  {:else}
+    <div class="field">
+      <span class="field-label">Poster type</span>
+      <div class="segmented" role="group" aria-label="Poster type">
+        <button
+          type="button"
+          class:active={settings.posterKind === "digital"}
+          aria-pressed={settings.posterKind === "digital"}
+          onclick={() => emit({ posterKind: "digital" })}
+        >Digital</button>
+        <button
+          type="button"
+          class:active={settings.posterKind === "print"}
+          aria-pressed={settings.posterKind === "print"}
+          onclick={() => emit({ posterKind: "print" })}
+        >Print</button>
+      </div>
+    </div>
+
+    {#if settings.posterKind === "digital"}
+      <div class="field">
+        <span class="field-label">Poster size</span>
+        <div class="size-options">
+          <button
+            type="button"
+            class="size-option"
+            class:active={settings.posterSize.preset === "1080x1350"}
+            onclick={() => selectDigitalPreset("1080x1350")}
+          >
+            <PageIcon width={1080} height={1350} size={16} />
+            <span>Portrait</span>
+            <em>1080 × 1350</em>
+          </button>
+          <button
+            type="button"
+            class="size-option"
+            class:active={settings.posterSize.preset === "square"}
+            onclick={() => selectDigitalPreset("square")}
+          >
+            <PageIcon width={1080} height={1080} size={16} />
+            <span>Square</span>
+            <em>1080 × 1080</em>
+          </button>
+          <button
+            type="button"
+            class="size-option"
+            class:active={settings.posterSize.preset === "custom"}
+            onclick={() => selectDigitalPreset("custom")}
+          >
+            <PageIcon width={settings.posterSize.width} height={settings.posterSize.height} size={16} />
+            <span>Custom</span>
+            <em>pixels</em>
+          </button>
+        </div>
+      </div>
+    {:else}
+      <div class="field">
+        <span class="field-label">Print size</span>
+        <div class="size-options">
+          {#each PRINT_OPTIONS as option (option.value)}
+            <button
+              type="button"
+              class="size-option"
+              class:active={settings.posterSize.preset === option.value}
+              onclick={() => selectPrintPreset(option.value)}
+            >
+              <PageIcon width={option.width} height={option.height} size={16} />
+              <span>{option.label}</span>
+            </button>
+          {/each}
+          <button
+            type="button"
+            class="size-option"
+            class:active={settings.posterSize.preset === "custom"}
+            onclick={() => selectPrintPreset("custom")}
+          >
+            <PageIcon width={settings.posterSize.width} height={settings.posterSize.height} size={16} />
+            <span>Custom</span>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label">Orientation</span>
+        <div class="segmented" role="group" aria-label="Orientation">
+          <button
+            type="button"
+            class:active={settings.orientation === "portrait"}
+            aria-pressed={settings.orientation === "portrait"}
+            onclick={() => emit({ orientation: "portrait" })}
+          >Portrait</button>
+          <button
+            type="button"
+            class:active={settings.orientation === "landscape"}
+            aria-pressed={settings.orientation === "landscape"}
+            onclick={() => emit({ orientation: "landscape" })}
+          >Landscape</button>
+        </div>
+      </div>
+    {/if}
+
+    {#if settings.posterSize.preset === "custom"}
+      <div class="field-row">
+        <label class="inline-field">
+          <span>Width</span>
+          <input
+            class="input"
+            type="number"
+            min="1"
+            step="0.1"
+            value={settings.posterSize.width}
+            onchange={(event) => {
+              const value = numberFrom(event);
+              if (value !== null) emit({ posterSize: { ...settings.posterSize, width: value } });
+            }}
+          />
+        </label>
+        <label class="inline-field">
+          <span>Height</span>
+          <input
+            class="input"
+            type="number"
+            min="1"
+            step="0.1"
+            value={settings.posterSize.height}
+            onchange={(event) => {
+              const value = numberFrom(event);
+              if (value !== null) emit({ posterSize: { ...settings.posterSize, height: value } });
+            }}
+          />
+        </label>
+        <label class="inline-field">
+          <span>Unit</span>
+          <select
+            class="select input-narrow"
+            value={settings.posterSize.unit}
+            onchange={(event) =>
+              emit({
+                posterSize: {
+                  ...settings.posterSize,
+                  unit: (event.currentTarget as HTMLSelectElement).value as "px" | "mm" | "in",
+                },
+              })}
+          >
+            <option value="px">px</option>
+            <option value="mm">mm</option>
+            <option value="in">in</option>
+          </select>
+        </label>
+      </div>
+    {/if}
+
+    <div class="dimension-preview">
+      <PageIcon width={settings.posterSize.width} height={settings.posterSize.height} size={14} />
+      <span>{formatDimensions(settings)}</span>
+    </div>
+  {/if}
+
+  <div class="field">
+    <span class="field-label">Sources</span>
+    <label class="toggle-row">
+      <input
+        type="checkbox"
+        checked={settings.research}
+        onchange={(event) => emit({ research: (event.currentTarget as HTMLInputElement).checked })}
+      />
+      <span>Research the web for supporting facts</span>
+    </label>
+    <label class="toggle-row">
+      <input
+        type="checkbox"
+        checked={settings.imageSearch}
+        onchange={(event) => emit({ imageSearch: (event.currentTarget as HTMLInputElement).checked })}
+      />
+      <span>Find photos with image search</span>
+    </label>
+  </div>
+</div>

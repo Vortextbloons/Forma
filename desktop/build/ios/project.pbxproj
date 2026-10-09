@@ -1,0 +1,230 @@
+
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+
+		C0DEBEEF0000000000000001  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000002 ; };
+		C0DEBEEF00000000000000F1  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000101 ; };
+		C0DEBEEF00000000000000F2  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000102 ; };
+		C0DEBEEF00000000000000F3  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000103 ; };
+		C0DEBEEF00000000000000F4  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000104 ; };
+		C0DEBEEF00000000000000F5  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000105 ; };
+		C0DEBEEF00000000000000F6  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000106 ; };
+		C0DEBEEF00000000000000F7  = {isa = PBXBuildFile; fileRef = C0DEBEEF0000000000000107 ; };
+
+
+
+		C0DEBEEF0000000000000002  = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		C0DEBEEF0000000000000003  = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C0DEBEEF0000000000000004  = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "My Product.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DEBEEF0000000000000101  = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		C0DEBEEF0000000000000102  = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		C0DEBEEF0000000000000103  = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		C0DEBEEF0000000000000104  = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		C0DEBEEF0000000000000105  = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		C0DEBEEF0000000000000106  = {isa = PBXFileReference; lastKnownFileType = sourcecode.text-based-dylib-definition; name = libresolv.tbd; path = usr/lib/libresolv.tbd; sourceTree = SDKROOT; };
+		C0DEBEEF0000000000000107  = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "My Product.a"; path = "../../../bin/My Product.a"; sourceTree = SOURCE_ROOT; };
+
+
+
+		C0DEBEEF0000000000000010 = {
+			isa = PBXGroup;
+			children = (
+				C0DEBEEF0000000000000020 ,
+				C0DEBEEF0000000000000045 ,
+				C0DEBEEF0000000000000030 ,
+			);
+			sourceTree = "<group>";
+		};
+		C0DEBEEF0000000000000020  = {
+			isa = PBXGroup;
+			children = (
+				C0DEBEEF0000000000000004 ,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C0DEBEEF0000000000000030  = {
+			isa = PBXGroup;
+			children = (
+				C0DEBEEF0000000000000002 ,
+				C0DEBEEF0000000000000003 ,
+			);
+			path = main;
+			sourceTree = SOURCE_ROOT;
+		};
+		C0DEBEEF0000000000000045  = {
+			isa = PBXGroup;
+			children = (
+				C0DEBEEF0000000000000101 ,
+				C0DEBEEF0000000000000102 ,
+				C0DEBEEF0000000000000103 ,
+				C0DEBEEF0000000000000104 ,
+				C0DEBEEF0000000000000105 ,
+				C0DEBEEF0000000000000106 ,
+				C0DEBEEF0000000000000107 ,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+
+
+
+		C0DEBEEF0000000000000040  = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0DEBEEF0000000000000070 ;
+			buildPhases = (
+				C0DEBEEF0000000000000055 ,
+				C0DEBEEF0000000000000050 ,
+				C0DEBEEF0000000000000056 ,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "My Product";
+			productName = "My Product";
+			productReference = C0DEBEEF0000000000000004 ;
+			productType = "com.apple.product-type.application";
+		};
+
+
+
+		C0DEBEEF0000000000000060  = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1500;
+				ORGANIZATIONNAME = "My Company";
+				TargetAttributes = {
+					C0DEBEEF0000000000000040 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = C0DEBEEF0000000000000080 ;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = C0DEBEEF0000000000000010;
+			productRefGroup = C0DEBEEF0000000000000020 ;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C0DEBEEF0000000000000040 ,
+			);
+		};
+
+
+
+		C0DEBEEF0000000000000056  = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0DEBEEF00000000000000F7 ,
+				C0DEBEEF00000000000000F1 ,
+				C0DEBEEF00000000000000F2 ,
+				C0DEBEEF00000000000000F3 ,
+				C0DEBEEF00000000000000F4 ,
+				C0DEBEEF00000000000000F5 ,
+				C0DEBEEF00000000000000F6 ,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+
+
+		C0DEBEEF0000000000000055  = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Prebuild: Wails Go Archive";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nAPP_ROOT=\"${PROJECT_DIR}/../../..\"\nPLATFORM=${PLATFORM_NAME:-iphonesimulator}\nSDK_PATH=${SDKROOT:-$(xcrun --sdk ${PLATFORM} --show-sdk-path)}\nif [ ${PLATFORM} = iphonesimulator ]; then GO_TARGET=arm64-apple-ios15.0-simulator; MIN_FLAG=-mios-simulator-version-min=15.0; else GO_TARGET=arm64-apple-ios15.0; MIN_FLAG=-miphoneos-version-min=15.0; fi\nexport GOOS=ios\nexport GOARCH=arm64\nexport CGO_ENABLED=1\nexport CGO_CFLAGS=\"-isysroot ${SDK_PATH} -target ${GO_TARGET} ${MIN_FLAG}\"\nexport CGO_LDFLAGS=\"-isysroot ${SDK_PATH} -target ${GO_TARGET}\"\ncd \"${APP_ROOT}\"\n# Ensure overlay exists\nif [ ! -f build/ios/xcode/overlay.json ]; then\n  wails3 ios overlay:gen -out build/ios/xcode/overlay.json -config build/config.yml || true\nfi\n# Always rebuild the Go c-archive; Go's build cache keeps this fast\n# and avoids stale binaries when .go sources change.\necho \"Building Go c-archive...\"\ngo build -buildmode=c-archive -overlay build/ios/xcode/overlay.json -o \"bin/My Product.a\"\n";
+		};
+
+
+
+		C0DEBEEF0000000000000050  = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0DEBEEF0000000000000001 ,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+
+
+		C0DEBEEF0000000000000090  = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = main/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.example.rigref";
+				PRODUCT_NAME = "My Product";
+				CODE_SIGNING_ALLOWED = NO;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		C0DEBEEF00000000000000A0  = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = main/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.example.rigref";
+				PRODUCT_NAME = "My Product";
+				CODE_SIGNING_ALLOWED = NO;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+
+
+
+		C0DEBEEF0000000000000070  = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0DEBEEF0000000000000090 ,
+				C0DEBEEF00000000000000A0 ,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C0DEBEEF0000000000000080  = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0DEBEEF0000000000000090 ,
+				C0DEBEEF00000000000000A0 ,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+
+	};
+	rootObject = C0DEBEEF0000000000000060 ;
+}

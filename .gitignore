@@ -7,5 +7,5 @@ dist/
 
 # wails3 build artifacts
 desktop/bin/
-desktop
+desktop/.task/
 AGENTS.md

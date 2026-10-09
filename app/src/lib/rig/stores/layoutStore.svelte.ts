@@ -28,7 +28,7 @@ const DEFAULTS: LayoutPrefs = {
   bottomPanelHeight: 220,
   showRightPanel: true,
   showBottomPanel: false,
-  theme: "system",
+  theme: "dark",
   accent: "#8f8f8f",
   radius: 10,
 };

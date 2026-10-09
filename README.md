@@ -1,41 +1,47 @@
-# forma
+# Forma
 
-A specialized AI agent built with [Rig](https://github.com/anomalyco/rig) — a
-thin starter foundation on top of the Pi SDK.
+A Windows desktop studio for presentations and posters, built on
+[Rig](https://github.com/anomalyco/rig) and Wails v3.
 
-## Quick start
+Describe the result → add context → optionally approve an outline → generate →
+refine through chat → export.
+
+## Architecture
+
+- `app/` — Svelte 5 + TypeScript UI (the Forma workspace).
+- `desktop/` — Wails v3 Go host: window, native dialogs, and the worker bridge.
+- `src/worker/` — project-owned Node worker built on Rig's public runtime APIs.
+  It speaks the Rig v1 JSONL protocol to the Go host and owns project
+  persistence (`project.json`, `pages/`, `assets/`, project-local sessions).
+- `src/projects/` — project format, atomic writes, context imports, recents.
+- `src/agent.ts` — the Forma agent definition used by the worker.
+
+A Forma project is a portable folder:
+
+```text
+My Project/
+  project.json   format version, settings, outline, pages, context, conversation
+  pages/         generated HTML/CSS per page (later stages)
+  assets/        imported images and documents
+  .rig/          project-local agent sessions and state
+```
+
+## Development
 
 ```sh
 npm install
-npm run chat        # interactive REPL
-npm run dev         # run + watch (event log)
-npm run inspect     # project report
-npm run doctor      # environment health checks
+npm run dev:desktop   # wails3 dev via rig; requires wails3 on PATH
+npm run typecheck     # root TypeScript checks
+npm test              # focused Vitest tests (persistence + worker IPC)
+cd app && npm run check && npm run build
+cd desktop && go build .
 ```
 
-One-shot:
+For UI-only work, `cd app && npm run dev` renders the app against an in-browser
+mock bridge.
 
-```sh
-npm run run -- "summarize the README"
-```
+## Status
 
-## Project layout
-
-- `src/agent.ts` — the agent definition (instructions, model, tools)
-- `src/tools/` — custom tools (`defineTool`)
-- `src/prompts/` — split instruction files (see `src/prompts/README.md`)
-- `rig.config.ts` — runtime configuration
-- `tests/` — vitest tests (see `tests/agent.test.ts`)
-- `docs/` — project docs (sessions, tools, worktrees)
-
-## Docs
-
-- `rig docs` lists all shipped rig topics (agent, tools, runtime, events,
-  sessions, workspaces, worktrees, subagents, mcp, web, desktop, testing,
-  configuration, cli, versioning)
-- `AGENTS.md` — guidance for coding agents working in this repo
-
-## Requirements
-
-Node >= 26. The pi SDK's `faux` provider enables offline testing — see
-`AGENTS.md` for `RIG_FAUX_SCRIPT`.
+Stage 1 (project persistence, project-owned worker, provider setup, minimal
+workspace) is in place. Planning, generation, context extraction, validation,
+and export arrive in later stages.

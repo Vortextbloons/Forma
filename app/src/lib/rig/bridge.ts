@@ -19,7 +19,7 @@
 import { Events, getTransport } from "@wailsio/runtime";
 import { asRecord, asString } from "./format";
 import type {
-  CommandName,
+  FormaCommand,
   RigEvent,
   RigErrorCode,
   SerializedIpcError,
@@ -48,11 +48,13 @@ export interface SendOptions {
 
 export interface RigBridge {
   readonly isMock: boolean;
-  send(name: CommandName, params?: Record<string, unknown>, opts?: SendOptions): Promise<unknown>;
+  send(name: FormaCommand, params?: Record<string, unknown>, opts?: SendOptions): Promise<unknown>;
   onEvent(cb: (event: RigEvent) => void): () => void;
   onReady(cb: (info: WorkerReady) => void): () => void;
   onWorkerExit(cb: (info: { code: number; restartable: boolean; restarts: number }) => void): () => void;
   onWorkerError(cb: (info: { message: string; fatal?: boolean }) => void): () => void;
+  waitForReady(timeoutMs?: number): Promise<WorkerReady>;
+  openProject(dir: string): Promise<void>;
   restartWorker(): Promise<void>;
   stopWorker(): Promise<void>;
   close(): void;
@@ -120,6 +122,8 @@ abstract class BaseBridge implements RigBridge {
 
   protected abstract emitLifecycle(name: "rig:worker-restart" | "rig:worker-stop"): void;
 
+  protected abstract emitOpenProject(dir: string): void;
+
 
   start(): void {
     this.unsubs = this.onWire();
@@ -129,7 +133,7 @@ abstract class BaseBridge implements RigBridge {
 
 
 
-  send(name: CommandName, params?: Record<string, unknown>, opts?: SendOptions): Promise<unknown> {
+  send(name: FormaCommand, params?: Record<string, unknown>, opts?: SendOptions): Promise<unknown> {
     if (this.closed) {
       return Promise.reject(new BridgeError("PROTOCOL_ERROR", "bridge is closed"));
     }
@@ -177,6 +181,24 @@ abstract class BaseBridge implements RigBridge {
   onWorkerError(cb: (info: { message: string; fatal?: boolean }) => void): () => void {
     this.errorCbs.add(cb);
     return () => this.errorCbs.delete(cb);
+  }
+
+  waitForReady(timeoutMs = 30_000): Promise<WorkerReady> {
+    return new Promise<WorkerReady>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsubscribe();
+        reject(new BridgeError("TIMEOUT_ERROR", `worker did not become ready within ${timeoutMs}ms`));
+      }, timeoutMs);
+      const unsubscribe = this.onReady((info) => {
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(info);
+      });
+    });
+  }
+
+  async openProject(dir: string): Promise<void> {
+    this.emitOpenProject(dir);
   }
 
   async restartWorker(): Promise<void> {
@@ -320,6 +342,10 @@ class WailsBridge extends BaseBridge {
   protected emitLifecycle(name: "rig:worker-restart" | "rig:worker-stop"): void {
     void Events.Emit(name).catch(() => undefined);
   }
+
+  protected emitOpenProject(dir: string): void {
+    void Events.Emit("rig:open-project", { dir }).catch(() => undefined);
+  }
 }
 
 
@@ -339,6 +365,9 @@ class MockBridge extends BaseBridge {
   private sessionSeq = 1;
   private sessions: MockSession[] = [];
   private demoPlayed = false;
+  private projectDir = "/mock/project";
+  private project: Record<string, unknown> | null = null;
+  private recent: Array<{ path: string; name: string; output: string; updatedAt: string; openedAt: string }> = [];
 
   constructor() {
     super(true);
@@ -372,6 +401,11 @@ class MockBridge extends BaseBridge {
     }
   }
 
+  protected emitOpenProject(dir: string): void {
+    this.projectDir = dir;
+    this.later(120, () => this.emitReady());
+  }
+
   close(): void {
     super.close();
     for (const t of this.timers) clearTimeout(t);
@@ -392,8 +426,8 @@ class MockBridge extends BaseBridge {
       rigVersion: "0.2.0-mock",
       nodeVersion: "26.0.0",
       projectId: "mock-project",
-      projectDir: "/mock/project",
-      agentName: "Rig (mock)",
+      projectDir: this.projectDir,
+      agentName: "Forma (mock)",
       capabilities: {
         git: true,
         worktrees: true,
@@ -439,6 +473,51 @@ class MockBridge extends BaseBridge {
       updatedAt: session.updatedAt,
       pendingInteractions: [],
     };
+  }
+
+  private mockSettings(output: unknown): Record<string, unknown> {
+    return {
+      output: output === "poster" ? "poster" : "slides",
+      style: "minimal",
+      density: "balanced",
+      slideCount: 8,
+      slideSize: { preset: "16:9", width: 1920, height: 1080 },
+      posterKind: "digital",
+      posterSize: { preset: "1080x1350", width: 1080, height: 1350, unit: "px" },
+      orientation: "portrait",
+      research: false,
+      imageSearch: false,
+    };
+  }
+
+  private mockProject(dir: string, overrides: Record<string, unknown>): Record<string, unknown> {
+    const now = new Date().toISOString();
+    return {
+      formatVersion: 1,
+      id: `prj_mock_${dir.length}`,
+      name: asString(overrides.name ?? "Untitled project"),
+      prompt: asString(overrides.prompt ?? ""),
+      mode: asString(overrides.mode ?? "plan"),
+      createdAt: now,
+      updatedAt: now,
+      settings: { ...this.mockSettings(asRecord(overrides.settings).output), ...asRecord(overrides.settings) },
+      outline: null,
+      pages: [],
+      context: [],
+      sources: [],
+      conversation: { sessionIds: [] },
+    };
+  }
+
+  private remember(dir: string, project: Record<string, unknown>): void {
+    const entry = {
+      path: dir,
+      name: asString(project.name ?? "Untitled project"),
+      output: asRecord(project.settings).output === "poster" ? "poster" : "slides",
+      updatedAt: asString(project.updatedAt ?? new Date().toISOString()),
+      openedAt: new Date().toISOString(),
+    };
+    this.recent = [entry, ...this.recent.filter((item) => item.path !== dir)].slice(0, 20);
   }
 
   private async handleCommand(id: string, name: string, params: Record<string, unknown>): Promise<void> {
@@ -577,6 +656,100 @@ class MockBridge extends BaseBridge {
         }
         break;
       }
+      case "project.create": {
+        const dir = asString(params.dir ?? "");
+        const project = this.mockProject(dir, params);
+        this.project = project;
+        this.projectDir = dir;
+        this.remember(dir, project);
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "project.open": {
+        const dir = asString(params.dir ?? this.projectDir);
+        if (!this.project || this.projectDir !== dir) {
+          this.project = this.mockProject(dir, {
+            name: "Mock project",
+            prompt: "A mock project for browser development",
+            mode: "plan",
+            settings: {},
+          });
+        }
+        this.projectDir = dir;
+        this.remember(dir, this.project);
+        this.settleResult(id, true, { project: { dir, project: this.project } });
+        break;
+      }
+      case "project.updateSettings": {
+        const project = this.project ?? this.mockProject(this.projectDir, {});
+        project.settings = {
+          ...asRecord(project.settings),
+          ...asRecord(params.settings),
+        };
+        project.updatedAt = new Date().toISOString();
+        this.project = project;
+        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        break;
+      }
+      case "project.setConversation": {
+        const project = this.project ?? this.mockProject(this.projectDir, {});
+        project.conversation = {
+          sessionIds: Array.isArray(params.sessionIds) ? params.sessionIds : [],
+        };
+        this.project = project;
+        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        break;
+      }
+      case "context.import": {
+        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const item = {
+          id: `ctx_mock_${++this.seq}`,
+          name: asString(params.name ?? "Mock asset"),
+          role: asString(params.role ?? "optional"),
+          asset: "assets/mock-asset",
+          mime: "application/octet-stream",
+          size: 0,
+          createdAt: new Date().toISOString(),
+        };
+        (project.context as unknown[]).push(item);
+        project.updatedAt = new Date().toISOString();
+        this.project = project;
+        this.settleResult(id, true, { project: { dir: this.projectDir, project }, item });
+        break;
+      }
+      case "context.remove": {
+        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const context = Array.isArray(project.context) ? project.context : [];
+        project.context = context.filter(
+          (entry) => asRecord(entry).id !== asString(params.id ?? ""),
+        );
+        project.updatedAt = new Date().toISOString();
+        this.project = project;
+        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        break;
+      }
+      case "context.update": {
+        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const context = Array.isArray(project.context) ? project.context : [];
+        for (const entry of context) {
+          const record = asRecord(entry);
+          if (record.id === asString(params.id ?? "")) {
+            if (typeof params.role === "string") record.role = params.role;
+            if (typeof params.name === "string") record.name = params.name;
+          }
+        }
+        project.updatedAt = new Date().toISOString();
+        this.project = project;
+        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        break;
+      }
+      case "project.recent":
+        this.settleResult(id, true, { projects: this.recent });
+        break;
+      case "project.forget":
+        this.recent = this.recent.filter((item) => item.path !== asString(params.dir ?? ""));
+        this.settleResult(id, true);
+        break;
       default:
         this.settleResult(id, false, undefined, {
           code: "PROTOCOL_ERROR",
@@ -984,11 +1157,19 @@ export function getBridge(): RigBridge {
 
 
 export function sendCommand(
-  name: CommandName,
+  name: FormaCommand,
   params?: Record<string, unknown>,
   opts?: SendOptions,
 ): Promise<unknown> {
   return getBridge().send(name, params, opts);
+}
+
+export function openProjectDir(dir: string): Promise<void> {
+  return getBridge().openProject(dir);
+}
+
+export function waitForReady(timeoutMs?: number): Promise<WorkerReady> {
+  return getBridge().waitForReady(timeoutMs);
 }
 
 export function restartWorker(): Promise<void> {

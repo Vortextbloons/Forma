@@ -1,4 +1,5 @@
 export const ICON_PATHS = {
+  "arrow-left": ["M19 12H5", "M12 19l-7-7 7-7"],
   "chevron-down": ["M6 9l6 6 6-6"],
   "chevron-right": ["M9 18l6-6-6-6"],
   plus: ["M12 5v14", "M5 12h14"],

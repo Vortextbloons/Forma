@@ -33,6 +33,22 @@ import type {
 
 export { COMMAND_NAMES } from "rig/ipc";
 
+export const FORMA_COMMAND_NAMES = [
+  "project.create",
+  "project.open",
+  "project.updateSettings",
+  "project.setConversation",
+  "context.import",
+  "context.remove",
+  "context.update",
+  "project.recent",
+  "project.forget",
+] as const;
+
+export type FormaCommandName = (typeof FORMA_COMMAND_NAMES)[number];
+
+export type FormaCommand = CommandName | FormaCommandName;
+
 export type {
   WorkerHello,
   WorkerReady,

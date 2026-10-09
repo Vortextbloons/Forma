@@ -1,5 +1,7 @@
 import { mount } from "svelte";
 import "./app.css";
+import "./forma.css";
+import "./lib/rig/stores/layoutStore.svelte";
 import App from "./App.svelte";
 import { registerDefaultRenderers } from "./app/registerRenderers";
 import { getBridge } from "./lib/rig/bridge";
