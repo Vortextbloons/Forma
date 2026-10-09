@@ -1,0 +1,581 @@
+{
+  "version": 1,
+  "rigVersion": "0.2.0",
+  "createdAt": "2026-10-09T22:55:08.119Z",
+  "updatedAt": "2026-10-09T22:55:20.688Z",
+  "tokens": {
+    "projectName": "forma",
+    "workspaceMode": "auto",
+    "rigVersion": "0.2.0",
+    "workspacesField": "",
+    "desktopBlock": "  // desktop: disabled — run `rig add desktop` to enable"
+  },
+  "templates": {
+    "project": {
+      "rigVersion": "0.2.0",
+      "files": {
+        ".env.example": {
+          "hash": "9a8537a022eb6bfbe60cc9792f9f01ddb08905a524a044e571598b2ade36e3fc",
+          "mode": "managed"
+        },
+        ".gitignore": {
+          "hash": "cd23d44e054feeb93f4d9f65dd37042762acf07fc741435f2b3b9544dec5f6e9",
+          "mode": "managed"
+        },
+        "AGENTS.md": {
+          "hash": "b479d0552f7b31e4ddb90cfeec74e8bcec8d5e32ab952b65db9e3b92359679b0",
+          "mode": "seed"
+        },
+        "docs/sessions.md": {
+          "hash": "7e3686e32159a8bbb261fb25fa736e39b56c1d21e3d0b20f360b08057d5eb9cd",
+          "mode": "managed"
+        },
+        "docs/tools.md": {
+          "hash": "4889a2d186fa205517a75a92394ec7d1c5c6c0892c93c6757a6ac9a7e3dda2b0",
+          "mode": "managed"
+        },
+        "docs/worktrees.md": {
+          "hash": "09bb62c1cdee6020ffa397ff593123325642f546fbef3fbfdc914338cb32302a",
+          "mode": "managed"
+        },
+        "llms.txt": {
+          "hash": "b72cff89031b46ca2a23965de61fb5f08ba58fd567bdef2e0123cb85ef09f2ab",
+          "mode": "seed"
+        },
+        "package.json": {
+          "hash": "873f7074bb04caa3f134588280251191ef025303c1358fee13ffc3d662b9360e",
+          "mode": "seed"
+        },
+        "README.md": {
+          "hash": "7ad9477a709486bd3b08912d77e57d7488f7829ab41ebeeb86d217367cce8be1",
+          "mode": "seed"
+        },
+        "rig.config.ts": {
+          "hash": "2c0da88ac2b26ed0d17c0c1052044963a3dd3ba5f5e6ffc9485dfca90645e28d",
+          "mode": "seed"
+        },
+        "src/agent.ts": {
+          "hash": "32efce7b242eea6de1c2ed356f56ab374ffc5b8b995ef6c444fbe62b6ed45b6b",
+          "mode": "managed"
+        },
+        "src/prompts/README.md": {
+          "hash": "44f0025e01288ed02d806159d750eb3164b6b876726dfc40f34b1e55864262a0",
+          "mode": "seed"
+        },
+        "src/tools/example.ts": {
+          "hash": "239ff9598da74bddf496052c3ae22723f21707a4ee8ab161f83c04f7785082c3",
+          "mode": "managed"
+        },
+        "src/tools/index.ts": {
+          "hash": "a73588da56ae4408598a596c401fe87ed897a35f5b39b8e6896a5be721cc4c7d",
+          "mode": "seed"
+        },
+        "tests/agent.test.ts": {
+          "hash": "dd286eee7c469ef3e96d2b989846aedbe01e08ccf4248122c497a7f507724dbf",
+          "mode": "managed"
+        },
+        "tsconfig.json": {
+          "hash": "abe29e408ff8881de26c49a36406212dd55ec6d8bbc52ac9f059d0b490d7457c",
+          "mode": "managed"
+        },
+        "vitest.config.ts": {
+          "hash": "9c3ee47d78e3cd9e8fd1308403bef2ab91419e5cbee20bfcba5299a5a8e8dc87",
+          "mode": "managed"
+        }
+      }
+    },
+    "desktop": {
+      "rigVersion": "0.2.0",
+      "files": {
+        "app/index.html": {
+          "hash": "ad74fe302f5789900bcc82485f2bf5c262e9da9e1acef19e51e37e2642ccbcac",
+          "mode": "seed"
+        },
+        "app/package-lock.json": {
+          "hash": "8e03e830ef6c0c8ee07baedbd2ae396839c0a959ba1de85859996fbf5b2058bf",
+          "mode": "seed"
+        },
+        "app/package.json": {
+          "hash": "c3edf1ceab0aab0c2ac4be641bb1de14bd4b7d391739bd6028677ac1b8e34ed5",
+          "mode": "seed"
+        },
+        "app/README.md": {
+          "hash": "ec70912cfa844020f4e9e654035178eba2966aeb58514edf6992de09c0347354",
+          "mode": "seed"
+        },
+        "app/src/app/registerRenderers.ts": {
+          "hash": "f06e76a3b2c634f422663e4c0f4f5962e0afb9b6732ded887da1d02ca8bf13b3",
+          "mode": "seed"
+        },
+        "app/src/app.css": {
+          "hash": "944d11915b8d8911892be4de877c1c4b0f978a572fe323dc8c6149ba1d3ff89f",
+          "mode": "seed"
+        },
+        "app/src/App.svelte": {
+          "hash": "d039ed8684a94b3f1e1aad07dc336c00ab641900c93a119cbeeda70e550f7ee3",
+          "mode": "seed"
+        },
+        "app/src/lib/components/Icon.svelte": {
+          "hash": "151483c81646eb05d56f0928a23f544e9ff4addb3b7bcb156b306ae733e2be83",
+          "mode": "seed"
+        },
+        "app/src/lib/components/icons.ts": {
+          "hash": "81bb8321d5f87f96192cd8695979bd56bce5acee3da2d129c8f88f9fb5703285",
+          "mode": "seed"
+        },
+        "app/src/lib/components/ResizableDivider.svelte": {
+          "hash": "15395d020818105f5d0c7d2b6369f59dfe20de28ececcc8f2858363eb433151d",
+          "mode": "seed"
+        },
+        "app/src/lib/components/RigShell.svelte": {
+          "hash": "d27eabb2746e8f3de79ebf59fb37ca6a489aefb24207021581c8a64cbb96930c",
+          "mode": "seed"
+        },
+        "app/src/lib/layout/Workspace.svelte": {
+          "hash": "bb7a81ec905a82764672fe7cfd30185945589b8bc238487b7619e600ae34cd0b",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/bridge.ts": {
+          "hash": "3f29ecf4d54351e26eb05a1fa45f3dc5baab7ec638e88370dd62932f78909651",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/env.ts": {
+          "hash": "274c2a697a0c65784a2a8d75fce28bd2c7733e057167d0797f5ec64204eeeab2",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/files.ts": {
+          "hash": "8203aae6e6921bc6a2baa3a9dde1cafb20ff0fff0401155d3b55da107968a664",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/format.ts": {
+          "hash": "778bc537aaf6f8e2332478e2176108f7e8e5aef8a0cde8c4094a7330ccdb8705",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/native.ts": {
+          "hash": "67f60afe100982c084d27dbd8226be76dff1c2815fe1b53d17c52e14da651307",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/artifactStore.svelte.ts": {
+          "hash": "a99e05576e4c0ef2d15b8a7a6420a9573b6ad011d11cc9ff4fa19a8b2364bae6",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/layoutStore.svelte.ts": {
+          "hash": "3acb1c17216571aa7d048ce12785f00c7669ee3331aa854a9593f8ae1bbde814",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/messageStore.svelte.ts": {
+          "hash": "1ca8169a3df57029b6b33c7ee07d6b8b02c3ac73843e4f32b7050506f054e2f5",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/modelStore.svelte.ts": {
+          "hash": "809af128500a14b96b5cfa91155941a68f3d33b183d6726ad753a4c0313a62ca",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/notificationStore.svelte.ts": {
+          "hash": "926ce941cb78c37cedec1815648f7bc5e2a3d5344b9b47da66496cf32a8a3a85",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/permissionStore.svelte.ts": {
+          "hash": "b9a796397a978ac96f16f82fb8a5873818287e8404912139e51cc2f55b8f6eda",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/providerStore.svelte.ts": {
+          "hash": "5a6c7c171426ff075cba0a0026bba47e79a0296ad921f3ac0b3053f84fe534da",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/sessionStore.svelte.ts": {
+          "hash": "c45a0c4ca5628b36347fe5b4fcc6f0b75af75c90054be945f2a58d12384b349c",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/subagentStore.svelte.ts": {
+          "hash": "a6cd096cf1f1912c1ed4277d0ff55802af752b3621a5173371976eed48a8ab78",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/todoStore.svelte.ts": {
+          "hash": "9713e06aabfbf3906f003e8bf7daa012392da59385d3b8eea3b568032ffdc48b",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/toolStore.svelte.ts": {
+          "hash": "c19ef1dce50e95dfa2f5b012cffc9b49c84356aef824ee3325f5983664bcec7d",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/usageStore.svelte.ts": {
+          "hash": "c2090b8f635c4fe76f9dc5579057cbced6b1ad0ac32667939dfecf7c5e409734",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/stores/workerStore.svelte.ts": {
+          "hash": "d21c6cd9af68651ba7f63e5e4318bad0c329f6108213d21906dd2b7338797a5c",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/types.ts": {
+          "hash": "29e89d8dba71c3b3a99f944cfbaeef15a025331ef04b5c6ec8d50300a022411f",
+          "mode": "seed"
+        },
+        "app/src/lib/rig/vite-env-rig.d.ts": {
+          "hash": "293bcee1801048bd5456439f7f9424ee8c81ad5d66da9ef95fb9853c240289cb",
+          "mode": "seed"
+        },
+        "app/src/main.ts": {
+          "hash": "37a0eeaf59390fdc0a1a449a383af5dc41aafb321bfbb9576e1fe99d29ce1397",
+          "mode": "seed"
+        },
+        "app/tsconfig.json": {
+          "hash": "ed34db4dc09bb8a54c54372c4159f95745ab88f5358fdfa1babd490bab2734ee",
+          "mode": "seed"
+        },
+        "app/vite.config.ts": {
+          "hash": "45502f087082ff349f3ed34d82d6992c900603ffa489bad712a9bf4cbc8a641e",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/build.gradle": {
+          "hash": "1134ba9f934442d6b80becd9c7073c196858ddfe37bc119812e0d6042288edec",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/proguard-rules.pro": {
+          "hash": "038f44709a4caacd53972253f12d334be05f015ff8f105c028ceb91bd72335bd",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/AndroidManifest.xml": {
+          "hash": "4a90afaf98cabd3007f380d681fb44f80600f8d6f743a1fd6763af01ebfe6efe",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/java/com/wails/app/MainActivity.java": {
+          "hash": "8767ed4b4c9240651494ea3e62684b21f9e42b86c8be97c2a6ad88997a9d6b2d",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/java/com/wails/app/WailsBridge.java": {
+          "hash": "fcec51481fbfc9a791dcbb8751ebb82e34276d35dff5b2ca6026575f4bf5fd44",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/java/com/wails/app/WailsForegroundService.java": {
+          "hash": "adcc9076f7f139105f2a87542a7a4df645b5d72f8c560d82a105fb8ede28d7fa",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/java/com/wails/app/WailsJSBridge.java": {
+          "hash": "1399718d9cc0f330be6af8c61749a9731f01291c2904ee47686e6a67f07d42c3",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/java/com/wails/app/WailsPathHandler.java": {
+          "hash": "e2c33ab9051b707e49f933e328411e16c0ba7a71bc5be3aeae3826f8614d2d06",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/layout/activity_main.xml": {
+          "hash": "f80d6328d2065df6377901f54db83e7bc07f0c9d59cc4e68377598c0519d0a64",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-hdpi/ic_launcher.png": {
+          "hash": "ada25c1f67429135153a7ecc84c8e2381f615645d7442d08744a0464d13eca3e",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png": {
+          "hash": "ada25c1f67429135153a7ecc84c8e2381f615645d7442d08744a0464d13eca3e",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-mdpi/ic_launcher.png": {
+          "hash": "978e228fc11030aa8b350a166dfc39e2e541c0691743d1b66aacbc02b2f8c6a6",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png": {
+          "hash": "978e228fc11030aa8b350a166dfc39e2e541c0691743d1b66aacbc02b2f8c6a6",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": {
+          "hash": "5e5b110d28b8f438d33f4e3aeb194b2ff4d68afb56d419591f7bfd54a6e90291",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png": {
+          "hash": "5e5b110d28b8f438d33f4e3aeb194b2ff4d68afb56d419591f7bfd54a6e90291",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png": {
+          "hash": "3276f8cc8c1ad6f78f10eb38bed8a6263d201a464e78d1640799dd10183aaf30",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png": {
+          "hash": "3276f8cc8c1ad6f78f10eb38bed8a6263d201a464e78d1640799dd10183aaf30",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": {
+          "hash": "1fcf58094b85c589a67a5e7972e26f08ce721971bdfd43b7c51e84ec412c923f",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png": {
+          "hash": "1fcf58094b85c589a67a5e7972e26f08ce721971bdfd43b7c51e84ec412c923f",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/values/colors.xml": {
+          "hash": "53931c544e90fdf399321fd04b3a16e02cae4bc3485d76604395d24133a7648e",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/values/strings.xml": {
+          "hash": "5ab87dee51fa438819c8637ef6cda5019af526f3f10cc67b2135c6371970f2b7",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/values/themes.xml": {
+          "hash": "971dc3d686fdfa6ab4e84eb69fda7d50a620ec36ef4205b9c8949ca2acade696",
+          "mode": "seed"
+        },
+        "desktop/build/android/app/src/main/res/xml/file_paths.xml": {
+          "hash": "1d9fb2522f479a8e0d67f9b6d63c50e9bcde4b26ee12e4fba532b746bcedfac7",
+          "mode": "seed"
+        },
+        "desktop/build/android/build.gradle": {
+          "hash": "8ed91e694a4121063d87447798ba3790d021bfff80164a6e24f0cb7ee9873320",
+          "mode": "seed"
+        },
+        "desktop/build/android/gradle/wrapper/gradle-wrapper.jar": {
+          "hash": "423cb469ccc0ecc31f0e4e1c309976198ccb734cdcbb7029d4bda0f18f57e8d9",
+          "mode": "seed"
+        },
+        "desktop/build/android/gradle/wrapper/gradle-wrapper.properties": {
+          "hash": "9efd7948359a68d9c80aa8d5df1717af1415c440b59d493040d3cfbd13885383",
+          "mode": "seed"
+        },
+        "desktop/build/android/gradle.properties": {
+          "hash": "71eec0c47f043eb688f372a9f67591495144d8094eb5b6a4bf7a2afd91bd22da",
+          "mode": "seed"
+        },
+        "desktop/build/android/gradlew": {
+          "hash": "0b6761c94405df78dd31bf9de3d52308c5f39f239a6967ebc0cb3d54c97b8c45",
+          "mode": "seed"
+        },
+        "desktop/build/android/gradlew.bat": {
+          "hash": "9c05a80b03ee1a2833d2789924db1da2f99062b2796a4e92b285724427611e09",
+          "mode": "seed"
+        },
+        "desktop/build/android/main_android.go": {
+          "hash": "8009f2995afd0a6f31de388747cfeac171cdd91b257e3fcec7347eacf62b0711",
+          "mode": "seed"
+        },
+        "desktop/build/android/scripts/deps/install_deps.go": {
+          "hash": "b43404869b4b00d12d08b67dda04e29a347d33a197d49ac4be774836ad81762d",
+          "mode": "seed"
+        },
+        "desktop/build/android/settings.gradle": {
+          "hash": "b7cd5da4a387ffe7d669ad8fa9ff5f1a23cc74df70767ffe229f48d22aea466b",
+          "mode": "seed"
+        },
+        "desktop/build/android/Taskfile.yml": {
+          "hash": "f1e46bc2c0949fcf31022ddbb3573c8a60cf9c39bfa4d544fc23d32504c2bb9a",
+          "mode": "seed"
+        },
+        "desktop/build/appicon.icon/Assets/wails_icon_vector.svg": {
+          "hash": "e3d4f1e6c4a223d54dfc1d56cd34de2703330a0eff103583f165da5cf129f3d4",
+          "mode": "seed"
+        },
+        "desktop/build/appicon.icon/icon.json": {
+          "hash": "4b7639ec61ee66163ef00b1015750e67b0223c3118104dd05682753ec19eac03",
+          "mode": "seed"
+        },
+        "desktop/build/appicon.png": {
+          "hash": "985eb536bb829188b6fc3cb65d8130b4743ff773fa5ed170c0955c317cb98739",
+          "mode": "seed"
+        },
+        "desktop/build/config.yml": {
+          "hash": "a1e346af8fb97444f7bb20db5b7510fd8e7cf39834bd80870d4c8f9630c57a82",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/Assets.car": {
+          "hash": "48e5c620766a4fe70274c57fa43c74f39b9c2e20f3c3976adc415e768e01e635",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/dmg-background.png": {
+          "hash": "5f07c1d4eafd111b76316b7d25ab50906848cf468d6862b1b101c20a89a920df",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/dmg-file-icon.icns": {
+          "hash": "cc1162fd1d662437e5aa50b99fc5b2aea164cf5b9f8390f492e2508e7bd2bf60",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/dmg-file-icon.png": {
+          "hash": "4e04ec7f61f6ffabd86a581b43a6c0768c28a81c84c7704d054d010e3af0731a",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/icons.icns": {
+          "hash": "e9c7bf020d646fefadbeda4699659463427d0bebb71a94381a7acbd357d65258",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/Info.dev.plist": {
+          "hash": "acc4c68719df0ddd55343bc2a0bf0c0546ef012f32a89f1234253b2f7299f426",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/Info.plist": {
+          "hash": "7bc0f57ba8c806bc37738bd7ded68dec2d72d60543cb16c5527da7875c92c379",
+          "mode": "seed"
+        },
+        "desktop/build/darwin/Taskfile.yml": {
+          "hash": "f3a1fc46fdac880331881d88e77feb5f0124c878e194ed5688e24c217d30340f",
+          "mode": "seed"
+        },
+        "desktop/build/docker/Dockerfile.cross": {
+          "hash": "acf9fc6783bf6688e72e662f55ddf461e9d9921a103701a6b63d0ddb1f23430d",
+          "mode": "seed"
+        },
+        "desktop/build/docker/Dockerfile.server": {
+          "hash": "5bacc8aa423437b5f280a4120e03f0f5bfcdb8fbb17d02075107d7d241f7e000",
+          "mode": "seed"
+        },
+        "desktop/build/ios/app_options_default.go": {
+          "hash": "f94c44d8b3ce0c0dc4874480d9cc8dd94e7a4bafee1f78fdc0974a3755a87545",
+          "mode": "seed"
+        },
+        "desktop/build/ios/app_options_ios.go": {
+          "hash": "ce12de872777faf305f9fa8d22b53b879be76969d31282ef58d16da8e98d2058",
+          "mode": "seed"
+        },
+        "desktop/build/ios/Assets.xcassets": {
+          "hash": "720145a17810bcd3db2e6f94ffbb0b4194da86388e6c8bbc877d9b5a3123b1cf",
+          "mode": "seed"
+        },
+        "desktop/build/ios/entitlements.plist": {
+          "hash": "0fdc83d3d75fbf979fe47b9419faac26b14a60a5f720834c8fbf80634f9671d8",
+          "mode": "seed"
+        },
+        "desktop/build/ios/icon.png": {
+          "hash": "0f1ef4cfbf372e3a41121f93d52ecc74bd4b53b4f668ef3bc9d1d1f41a116646",
+          "mode": "seed"
+        },
+        "desktop/build/ios/Info.dev.plist": {
+          "hash": "31573d22a2e2aa63b5c8eb26d9b175cb0d7dffc250609f513f41a7c72910f9b6",
+          "mode": "seed"
+        },
+        "desktop/build/ios/Info.plist": {
+          "hash": "8adeaedb7bd9dff466bab63b9de89be1cca8e4a8fc11865bc265a0c25d66029a",
+          "mode": "seed"
+        },
+        "desktop/build/ios/LaunchScreen.storyboard": {
+          "hash": "3e68075f46aec5b21e36e68d79a5e75240c072c256f8aa2499b54c79e6640ea8",
+          "mode": "seed"
+        },
+        "desktop/build/ios/main.m": {
+          "hash": "8edb5a241a439b7cc908e966c5109fbc1b30d8443ae7c2e3b4b1c842d28d8ecc",
+          "mode": "seed"
+        },
+        "desktop/build/ios/main_ios.go": {
+          "hash": "5340fe49ccbef8925e8b470d5e780472392c63864002016de8a7d2838a033ec3",
+          "mode": "seed"
+        },
+        "desktop/build/ios/project.pbxproj": {
+          "hash": "2330567403f58263f079e564ed5bc6d59a6a235201f0b9539e512c2e1f69beb8",
+          "mode": "seed"
+        },
+        "desktop/build/ios/scripts/deps/install_deps.go": {
+          "hash": "c8619ee58f0f5158b15d6dfcc8210e62a0a804b12f05d1bf02c225426696439e",
+          "mode": "seed"
+        },
+        "desktop/build/ios/Taskfile.yml": {
+          "hash": "c8fc4e3aeddd13749aa25a095284cfc29dcfc8910001ba600668ad8b3cc018b7",
+          "mode": "seed"
+        },
+        "desktop/build/linux/appimage/build.sh": {
+          "hash": "0c6c6ddedeb5fc8f6f0bcbd3e22c82e08d343dcd25bbb75e24394a39be5731ec",
+          "mode": "seed"
+        },
+        "desktop/build/linux/desktop": {
+          "hash": "b480d0401b7a01fbf101ee2b3ba9770e95f1195dc8148ff12a97ca68a664693d",
+          "mode": "seed"
+        },
+        "desktop/build/linux/nfpm/nfpm.yaml": {
+          "hash": "b62acccda2c5f3e4e357d7d2048879a8bdba6f6e72f9a0bff6bdd341f095c327",
+          "mode": "seed"
+        },
+        "desktop/build/linux/nfpm/scripts/postinstall.sh": {
+          "hash": "eaa0fb080f1a44ed000aea9caa6b4a9bf86a6e0cfbce1f643190485bfdb369e0",
+          "mode": "seed"
+        },
+        "desktop/build/linux/nfpm/scripts/postremove.sh": {
+          "hash": "b875f928546aee7855cb1db9afc8ab3f1a8a34d43de5bbd62f7076d7ba9f3917",
+          "mode": "seed"
+        },
+        "desktop/build/linux/nfpm/scripts/preinstall.sh": {
+          "hash": "b875f928546aee7855cb1db9afc8ab3f1a8a34d43de5bbd62f7076d7ba9f3917",
+          "mode": "seed"
+        },
+        "desktop/build/linux/nfpm/scripts/preremove.sh": {
+          "hash": "b875f928546aee7855cb1db9afc8ab3f1a8a34d43de5bbd62f7076d7ba9f3917",
+          "mode": "seed"
+        },
+        "desktop/build/linux/Taskfile.yml": {
+          "hash": "487abc6dca389651a5f3f79f7978a05eab1caefef52f2606b7a56ccdd32e6728",
+          "mode": "seed"
+        },
+        "desktop/build/Taskfile.yml": {
+          "hash": "6bad53901ddb9a6fe8948ab2df34be4be36eb864161745f2c8cf79de26e66943",
+          "mode": "seed"
+        },
+        "desktop/build/windows/icon.ico": {
+          "hash": "ce3eb2bc9f464e659b12746da912ffa8e0383ae2cbcce1c057b20d8dc8043dd2",
+          "mode": "seed"
+        },
+        "desktop/build/windows/info.json": {
+          "hash": "91aa5f41e04a1b7a5739ed5f5e9e24d9f75d75dfc47a2261f428d6301377a2c6",
+          "mode": "seed"
+        },
+        "desktop/build/windows/msix/app_manifest.xml": {
+          "hash": "b3788958d889432b95727dd6743c63cba7da9cb6d1e77b915d9a9d644b132bf6",
+          "mode": "seed"
+        },
+        "desktop/build/windows/msix/template.xml": {
+          "hash": "882f85a3c97535a353cbf861f787dda8c5f40bcc4fa6d3f5ad10ec0beb9a3c00",
+          "mode": "seed"
+        },
+        "desktop/build/windows/nsis/project.nsi": {
+          "hash": "62ec41baeda59980b0158cde5930a22a1e4750c9f7bdadce050cf3a23abb687d",
+          "mode": "seed"
+        },
+        "desktop/build/windows/nsis/wails_tools.nsh": {
+          "hash": "b6b4149c257074d28edb21cceb6619718adc27a2d33b11bbb702279190c44382",
+          "mode": "seed"
+        },
+        "desktop/build/windows/Taskfile.yml": {
+          "hash": "2e4833dbbfc75014a9066c93223c5ab90c2405f59db9a3c1996dd780dead4079",
+          "mode": "seed"
+        },
+        "desktop/build/windows/wails.exe.manifest": {
+          "hash": "96c0f4b86fd90fb01da1b092d72a7654dd88dbcf5099ee66927dd76e31de34e7",
+          "mode": "seed"
+        },
+        "desktop/go.mod": {
+          "hash": "08d49d19b2e08e6f39ac2a1492f50c9d33b12d332ec75c0b6d9963427a62efa9",
+          "mode": "seed"
+        },
+        "desktop/go.sum": {
+          "hash": "adb96b56fb6d119e5fde8def406566ce724bce5dd9b3590dde3901e248c1b8a0",
+          "mode": "seed"
+        },
+        "desktop/main.go": {
+          "hash": "c7e08f8c6f1383bdaaaa17f42288da920ab30803ba8e7abf7f636a3a64372cf5",
+          "mode": "seed"
+        },
+        "desktop/scripts/build.ps1": {
+          "hash": "557b8d42eb96015f5e6adda7f140157616e3e3e6a4f967d044ba5a73f1d11ef8",
+          "mode": "seed"
+        },
+        "desktop/scripts/dev.ps1": {
+          "hash": "ed9088712d03b9690963597f31598c088c18656444feb3a6695df6be59d2f541",
+          "mode": "seed"
+        },
+        "desktop/services/fileservice.go": {
+          "hash": "b10ae6628dcfe4a154813260d570eb33ee6ad28d89234d83565378d29c56eb9c",
+          "mode": "seed"
+        },
+        "desktop/services/fileservice_test.go": {
+          "hash": "f7dedcd051f1621f2647696fb93a75345d28f325a5f2894311786c4a38b1bfc8",
+          "mode": "seed"
+        },
+        "desktop/services/workerservice.go": {
+          "hash": "a6904a9a04375fd87a707f0ed4543cdb1da747f98c32231a82f9fa94dddb7a73",
+          "mode": "seed"
+        },
+        "desktop/services/workspace.go": {
+          "hash": "9ecba414944eb8c92d3d69651a0db1e378e5be5d40232a6cb8fd68517ce0c296",
+          "mode": "seed"
+        },
+        "desktop/Taskfile.yml": {
+          "hash": "09cc4b7b5ab0615d38c4386e2f0cf0a06d9232026c9cffe5ce2d2262e21cc292",
+          "mode": "seed"
+        }
+      }
+    }
+  }
+}

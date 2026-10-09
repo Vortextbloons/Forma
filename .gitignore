@@ -1,0 +1,11 @@
+node_modules/
+.rig/
+dist/
+.env
+.env.local
+*.log
+
+# wails3 build artifacts
+desktop/bin/
+desktop
+AGENTS.md

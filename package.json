@@ -1,0 +1,33 @@
+{
+  "name": "forma",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "app"
+  ],
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "scripts": {
+    "dev": "rig dev",
+    "chat": "rig chat",
+    "run": "rig run",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "inspect": "rig inspect",
+    "doctor": "rig doctor",
+    "upgrade": "rig upgrade",
+    "dev:desktop": "rig dev",
+    "build:desktop": "cd desktop && wails3 build"
+  },
+  "dependencies": {
+    "rig": "file:../../Misc/Rig/packages/rig",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0"
+  }
+}

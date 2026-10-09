@@ -1,0 +1,6 @@
+AGENTS.md	forma — agent guidance for this repository
+README.md	forma — quick start
+docs/sessions.md	Sessions
+docs/tools.md	Tools
+docs/worktrees.md	Worktrees
+src/prompts/README.md	Prompt files pattern

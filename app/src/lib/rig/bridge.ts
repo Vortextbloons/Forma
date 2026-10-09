@@ -1,0 +1,1005 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import { Events, getTransport } from "@wailsio/runtime";
+import { asRecord, asString } from "./format";
+import type {
+  CommandName,
+  RigEvent,
+  RigErrorCode,
+  SerializedIpcError,
+  WorkerReady,
+} from "./types";
+import { isRigEvent, isRigErrorCode } from "./types";
+import { sessionStore } from "./stores/sessionStore.svelte";
+import { messageStore } from "./stores/messageStore.svelte";
+import { toolStore } from "./stores/toolStore.svelte";
+import { todoStore } from "./stores/todoStore.svelte";
+import { subagentStore } from "./stores/subagentStore.svelte";
+import { artifactStore } from "./stores/artifactStore.svelte";
+import { modelStore } from "./stores/modelStore.svelte";
+import { usageStore } from "./stores/usageStore.svelte";
+import { providerStore } from "./stores/providerStore.svelte";
+import { permissionStore } from "./stores/permissionStore.svelte";
+import { notificationStore } from "./stores/notificationStore.svelte";
+import { workerStore, markRestarting } from "./stores/workerStore.svelte";
+
+export const COMMAND_TIMEOUT_MS = 60_000;
+
+export interface SendOptions {
+
+  timeoutMs?: number;
+}
+
+export interface RigBridge {
+  readonly isMock: boolean;
+  send(name: CommandName, params?: Record<string, unknown>, opts?: SendOptions): Promise<unknown>;
+  onEvent(cb: (event: RigEvent) => void): () => void;
+  onReady(cb: (info: WorkerReady) => void): () => void;
+  onWorkerExit(cb: (info: { code: number; restartable: boolean; restarts: number }) => void): () => void;
+  onWorkerError(cb: (info: { message: string; fatal?: boolean }) => void): () => void;
+  restartWorker(): Promise<void>;
+  stopWorker(): Promise<void>;
+  close(): void;
+}
+
+export class BridgeError extends Error {
+  readonly code: string;
+  readonly details?: unknown;
+
+  constructor(code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = "BridgeError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
+
+
+
+
+
+
+function allEventStores(): Array<{ handleEvent(event: RigEvent): void }> {
+  return [
+    sessionStore,
+    messageStore,
+    toolStore,
+    todoStore,
+    subagentStore,
+    artifactStore,
+    modelStore,
+    usageStore,
+    providerStore,
+    permissionStore,
+    notificationStore,
+  ];
+}
+
+interface PendingEntry {
+  resolve: (value: unknown) => void;
+  reject: (reason: Error) => void;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  name: string;
+}
+
+
+
+abstract class BaseBridge implements RigBridge {
+  readonly isMock: boolean;
+  private readonly eventCbs = new Set<(event: RigEvent) => void>();
+  private readonly readyCbs = new Set<(info: WorkerReady) => void>();
+  private readonly exitCbs = new Set<(info: { code: number; restartable: boolean; restarts: number }) => void>();
+  private readonly errorCbs = new Set<(info: { message: string; fatal?: boolean }) => void>();
+  private readonly pending = new Map<string, PendingEntry>();
+  private cmdSeq = 0;
+  private closed = false;
+  private unsubs: Array<() => void> = [];
+
+  protected constructor(isMock: boolean) {
+    this.isMock = isMock;
+  }
+
+  protected abstract emitCommandFrame(frame: { id: string; name: string; params: Record<string, unknown> }): void;
+
+  protected abstract emitLifecycle(name: "rig:worker-restart" | "rig:worker-stop"): void;
+
+
+  start(): void {
+    this.unsubs = this.onWire();
+  }
+
+  protected abstract onWire(): Array<() => void>;
+
+
+
+  send(name: CommandName, params?: Record<string, unknown>, opts?: SendOptions): Promise<unknown> {
+    if (this.closed) {
+      return Promise.reject(new BridgeError("PROTOCOL_ERROR", "bridge is closed"));
+    }
+    const id = `c${++this.cmdSeq}`;
+    return new Promise<unknown>((resolve, reject) => {
+      const timeoutMs = opts?.timeoutMs ?? COMMAND_TIMEOUT_MS;
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              this.pending.delete(id);
+              reject(
+                new BridgeError(
+                  "PROTOCOL_ERROR",
+                  `command "${name}" (${id}) timed out after ${timeoutMs}ms`,
+                ),
+              );
+            }, timeoutMs)
+          : undefined;
+      this.pending.set(id, { resolve, reject, timer, name });
+      try {
+        this.emitCommandFrame({ id, name, params: params ?? {} });
+      } catch (err) {
+        this.pending.delete(id);
+        if (timer) clearTimeout(timer);
+        reject(new BridgeError("PROTOCOL_ERROR", `failed to emit command "${name}": ${String(err)}`));
+      }
+    });
+  }
+
+  onEvent(cb: (event: RigEvent) => void): () => void {
+    this.eventCbs.add(cb);
+    return () => this.eventCbs.delete(cb);
+  }
+
+  onReady(cb: (info: WorkerReady) => void): () => void {
+    this.readyCbs.add(cb);
+    return () => this.readyCbs.delete(cb);
+  }
+
+  onWorkerExit(cb: (info: { code: number; restartable: boolean; restarts: number }) => void): () => void {
+    this.exitCbs.add(cb);
+    return () => this.exitCbs.delete(cb);
+  }
+
+  onWorkerError(cb: (info: { message: string; fatal?: boolean }) => void): () => void {
+    this.errorCbs.add(cb);
+    return () => this.errorCbs.delete(cb);
+  }
+
+  async restartWorker(): Promise<void> {
+    this.emitLifecycle("rig:worker-restart");
+    markRestarting();
+  }
+
+  async stopWorker(): Promise<void> {
+    this.emitLifecycle("rig:worker-stop");
+  }
+
+  close(): void {
+    this.closed = true;
+    for (const unsub of this.unsubs) {
+      try {
+        unsub();
+      } catch {
+
+      }
+    }
+    this.unsubs = [];
+    for (const entry of this.pending.values()) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.reject(new BridgeError("PROTOCOL_ERROR", `bridge closed; command "${entry.name}" abandoned`));
+    }
+    this.pending.clear();
+    this.eventCbs.clear();
+    this.readyCbs.clear();
+    this.exitCbs.clear();
+    this.errorCbs.clear();
+  }
+
+
+
+
+  protected handleRawEvent(payload: unknown): void {
+    const event = unwrapEvent(payload);
+    if (!event) return;
+    for (const store of allEventStores()) {
+      try {
+        store.handleEvent(event);
+      } catch (err) {
+        console.error(`[rig] store failed on ${event.type}:`, err);
+      }
+    }
+    for (const cb of this.eventCbs) {
+      try {
+        cb(event);
+      } catch (err) {
+        console.error("[rig] event subscriber failed:", err);
+      }
+    }
+  }
+
+
+  protected handleRawReady(payload: unknown): void {
+    const ready = extractReady(payload);
+    workerStore.handleReady(payload);
+    for (const cb of this.readyCbs) cb(ready);
+
+    void sessionStore.refresh();
+    void modelStore.refresh();
+    void providerStore.refresh();
+  }
+
+
+  protected handleRawResult(payload: unknown): void {
+    const p = asRecord(payload);
+    const id = typeof p.id === "string" ? p.id : undefined;
+    if (!id) return;
+    const entry = this.pending.get(id);
+    if (!entry) return;
+    this.pending.delete(id);
+    if (entry.timer) clearTimeout(entry.timer);
+    if (p.ok === true) {
+      entry.resolve(p.data);
+    } else {
+      const error = asSerializedError(p.error);
+      entry.reject(
+        new BridgeError(error?.code ?? "RUNTIME_ERROR", error?.message ?? "Command failed", error?.details),
+      );
+    }
+  }
+
+
+  protected handleRawWorkerExit(payload: unknown): void {
+    const p = asRecord(payload);
+    const info = {
+      code: typeof p.code === "number" ? p.code : -1,
+      restartable: p.restartable === true,
+      restarts: typeof p.restarts === "number" ? p.restarts : 0,
+    };
+    workerStore.handleWorkerExit(info);
+    for (const cb of this.exitCbs) cb(info);
+  }
+
+
+  protected handleRawWorkerError(payload: unknown): void {
+    const p = asRecord(payload);
+    const info = {
+      message: typeof p.message === "string" ? p.message : "Unknown worker error",
+      fatal: p.fatal === true ? true : undefined,
+    };
+    workerStore.handleWorkerError(info);
+    for (const cb of this.errorCbs) cb(info);
+  }
+
+
+  protected handleRawLog(payload: unknown): void {
+    workerStore.handleWorkerLog(payload);
+  }
+
+
+  protected settleResult(id: string, ok: boolean, data?: unknown, error?: SerializedIpcError): void {
+    this.handleRawResult(ok ? { v: 1, type: "result", id, ok: true, data } : { v: 1, type: "result", id, ok: false, error });
+  }
+}
+
+
+
+class WailsBridge extends BaseBridge {
+  constructor() {
+    super(false);
+  }
+
+  protected onWire(): Array<() => void> {
+    return [
+      Events.On("rig:event", (ev) => this.handleRawEvent(ev.data)),
+      Events.On("rig:ready", (ev) => this.handleRawReady(ev.data)),
+      Events.On("rig:result", (ev) => this.handleRawResult(ev.data)),
+      Events.On("rig:worker-exit", (ev) => this.handleRawWorkerExit(ev.data)),
+      Events.On("rig:worker-error", (ev) => this.handleRawWorkerError(ev.data)),
+      Events.On("rig:log", (ev) => this.handleRawLog(ev.data)),
+    ];
+  }
+
+  protected emitCommandFrame(frame: { id: string; name: string; params: Record<string, unknown> }): void {
+    void Events.Emit("rig:command", { v: 1, type: "command", ...frame }).catch(() => undefined);
+  }
+
+  protected emitLifecycle(name: "rig:worker-restart" | "rig:worker-stop"): void {
+    void Events.Emit(name).catch(() => undefined);
+  }
+}
+
+
+
+interface MockSession {
+  id: string;
+  name: string;
+  status: "idle" | "running";
+  createdAt: string;
+  updatedAt: string;
+  model?: string;
+}
+
+class MockBridge extends BaseBridge {
+  private timers: Array<ReturnType<typeof setTimeout>> = [];
+  private seq = 0;
+  private sessionSeq = 1;
+  private sessions: MockSession[] = [];
+  private demoPlayed = false;
+
+  constructor() {
+    super(true);
+    this.sessions.push({
+      id: "mock-1",
+      name: "Demo session",
+      status: "idle",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  protected onWire(): Array<() => void> {
+
+    this.later(250, () => this.emitReady());
+    this.later(450, () => {
+      const session = this.sessions[0]!;
+      this.emit("session.created", { name: session.name, isWorktree: false }, { sessionId: session.id });
+      this.emit("session.updated", { status: session.status, name: session.name }, { sessionId: session.id });
+    });
+    return [];
+  }
+
+  protected emitCommandFrame(frame: { id: string; name: string; params: Record<string, unknown> }): void {
+    void this.handleCommand(frame.id, frame.name, frame.params ?? {});
+  }
+
+  protected emitLifecycle(name: "rig:worker-restart" | "rig:worker-stop"): void {
+    if (name === "rig:worker-restart") {
+      this.later(400, () => this.emitReady());
+    }
+  }
+
+  close(): void {
+    super.close();
+    for (const t of this.timers) clearTimeout(t);
+    this.timers = [];
+  }
+
+
+
+  private later(ms: number, fn: () => void): void {
+    this.timers.push(setTimeout(fn, ms));
+  }
+
+  private emitReady(): void {
+    this.handleRawReady({
+      v: 1,
+      type: "ready",
+      pid: 4242,
+      rigVersion: "0.2.0-mock",
+      nodeVersion: "26.0.0",
+      projectId: "mock-project",
+      projectDir: "/mock/project",
+      agentName: "Rig (mock)",
+      capabilities: {
+        git: true,
+        worktrees: true,
+        desktop: false,
+        web: true,
+        mcp: ["filesystem"],
+        subagents: ["code-reviewer", "researcher"],
+        models: 2,
+        providers: ["mock"],
+      },
+    });
+  }
+
+  private emit(
+    type: RigEvent["type"],
+    data: unknown,
+    extra: { sessionId?: string; runId?: string; toolCallId?: string; subagentRunId?: string } = {},
+  ): void {
+    const envelope = {
+      version: 1,
+      seq: ++this.seq,
+      timestamp: new Date().toISOString(),
+      projectId: "mock-project",
+      sessionId: extra.sessionId ?? "mock-1",
+      runId: extra.runId,
+      toolCallId: extra.toolCallId,
+      subagentRunId: extra.subagentRunId,
+    };
+    this.handleRawEvent({ ...envelope, type, data } as RigEvent);
+  }
+
+  private sessionInfo(session: MockSession) {
+    return {
+      id: session.id,
+      name: session.name,
+      status: session.status,
+      model: session.model ?? "mock/gemini-2.5-flash",
+      thinkingLevel: "medium",
+      workspaceMode: "auto",
+      workspaceDir: "/mock/project",
+      isWorktree: false,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      pendingInteractions: [],
+    };
+  }
+
+  private async handleCommand(id: string, name: string, params: Record<string, unknown>): Promise<void> {
+    const sessionId = typeof params.sessionId === "string" ? params.sessionId : "mock-1";
+    switch (name) {
+      case "listSessions":
+        this.settleResult(id, true, { sessions: this.sessions.map((s) => this.sessionInfo(s)) });
+        break;
+      case "getSession": {
+        const session = this.sessions.find((s) => s.id === sessionId);
+        if (session) this.settleResult(id, true, { session: this.sessionInfo(session) });
+        else this.settleResult(id, false, undefined, { code: "PROTOCOL_ERROR", message: `Unknown session "${sessionId}"` });
+        break;
+      }
+      case "newSession": {
+        const session: MockSession = {
+          id: `mock-${++this.sessionSeq}`,
+          name: typeof params.name === "string" && params.name ? params.name : `Session ${this.sessionSeq}`,
+          status: "idle",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        this.sessions.unshift(session);
+        this.settleResult(id, true, { session: this.sessionInfo(session) });
+        this.emit("session.created", { name: session.name, isWorktree: false }, { sessionId: session.id });
+        break;
+      }
+      case "resumeSession": {
+        const session = this.sessions.find((s) => s.id === sessionId);
+        if (session) this.settleResult(id, true, { session: this.sessionInfo(session) });
+        else this.settleResult(id, false, undefined, { code: "PROTOCOL_ERROR", message: `Unknown session "${sessionId}"` });
+        break;
+      }
+      case "closeSession": {
+        const i = this.sessions.findIndex((s) => s.id === sessionId);
+        if (i >= 0) this.sessions.splice(i, 1);
+        this.settleResult(id, true);
+        break;
+      }
+      case "listModels":
+        this.settleResult(id, true, {
+          models: [
+            { provider: "mock", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", reasoning: false, contextWindow: 128000 },
+            { provider: "mock", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", reasoning: true, contextWindow: 128000 },
+          ],
+        });
+        break;
+      case "listAvailableModels":
+        this.settleResult(id, true, {
+          models: [
+            { provider: "mock", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", reasoning: false, contextWindow: 128000 },
+            { provider: "mock", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", reasoning: true, contextWindow: 128000 },
+          ],
+        });
+        break;
+      case "selectModel":
+        this.settleResult(id, true, {
+          model: { provider: "mock", id: asString(params.ref ?? "gemini-2.5-flash"), name: "Mock model" },
+        });
+        break;
+      case "setThinkingLevel":
+        this.settleResult(id, true);
+        break;
+      case "listProviders":
+        this.settleResult(id, true, {
+          providers: [
+            { id: "mock", name: "Mock provider", configured: true, authStatus: "ready" },
+            { id: "openrouter", name: "OpenRouter", configured: false, authStatus: "unconfigured" },
+          ],
+        });
+        break;
+      case "providerStatus": {
+        const provider = (typeof params.providerId === "string" && params.providerId === "openrouter")
+          ? { id: "openrouter", name: "OpenRouter", configured: false, authStatus: "unconfigured" }
+          : { id: "mock", name: "Mock provider", configured: true, authStatus: "ready" };
+        this.settleResult(id, true, { provider });
+        break;
+      }
+      case "providerLogin":
+      case "providerLogout":
+        this.settleResult(id, true);
+        break;
+      case "resolveInteraction": {
+        const interactionId = asString(params.interactionId ?? "");
+        const kind = asString(params.kind ?? "");
+        const result = params.result;
+        if (kind === "approval") {
+          const decision = asRecord(result).decision === "deny" ? "deny" : "allow";
+          const scope = asRecord(result).scope === "session" ? "session" : "once";
+          this.emit("approval.resolved", { requestId: interactionId, decision, scope }, { sessionId });
+        } else {
+          this.emit("interaction.resolved", { interactionId, kind, result }, { sessionId });
+        }
+        this.settleResult(id, true);
+        break;
+      }
+      case "worktree": {
+        const action = asString(params.action ?? "diff");
+        if (action === "diff") {
+          this.settleResult(id, true, { diff: "" });
+        } else {
+          this.settleResult(id, true, { ok: true, action });
+        }
+        break;
+      }
+      case "inspect":
+        this.settleResult(id, true, {
+          inspect: {
+            projectId: "mock-project",
+            projectDir: "/mock/project",
+            rigVersion: "0.2.0-mock",
+            config: {},
+            agent: { name: "Rig (mock)", tools: ["shell", "read", "edit", "web_search"] },
+            capabilities: { mcp: ["filesystem"] },
+            models: { available: 2, total: 2, selected: "mock/gemini-2.5-flash" },
+            providers: [{ id: "mock", configured: true, authStatus: "ready" }],
+            sessions: this.sessions.map((s) => this.sessionInfo(s)),
+            worktrees: [],
+            envChecks: [{ name: "git", ok: true }],
+          },
+        });
+        break;
+      case "abort":
+        this.settleResult(id, true);
+        break;
+      case "shutdown":
+        this.settleResult(id, true);
+        break;
+      case "prompt": {
+        const prompt = asString(params.prompt ?? "");
+        if (!this.demoPlayed && sessionId === "mock-1") {
+          this.demoPlayed = true;
+          this.playDemo(id, sessionId, prompt);
+        } else {
+          this.playCannedReply(id, sessionId, prompt);
+        }
+        break;
+      }
+      default:
+        this.settleResult(id, false, undefined, {
+          code: "PROTOCOL_ERROR",
+          message: `Unknown command "${name}" (mock)`,
+        });
+    }
+  }
+
+
+
+  private playCannedReply(id: string, sessionId: string, prompt: string): void {
+    const runId = `run-${Date.now()}`;
+    const messageId = `msg-${runId}`;
+    this.sessions.forEach((s) => {
+      if (s.id === sessionId) {
+        s.status = "running";
+        s.updatedAt = new Date().toISOString();
+      }
+    });
+    this.emit("session.updated", { status: "running" }, { sessionId });
+    this.emit("run.started", { prompt }, { sessionId, runId });
+    this.emit("message.started", { message: { id: messageId, role: "assistant", content: "", model: "mock/gemini-2.5-flash" } }, { sessionId, runId });
+    const reply = `Mock reply to: ${truncateForMock(prompt)}`;
+    const chunks = splitIntoChunks(reply, 14);
+    chunks.forEach((chunk, i) => {
+      this.later(300 + i * 180, () =>
+        this.emit("message.delta", { messageId, delta: chunk }, { sessionId, runId }),
+      );
+    });
+    const end = 300 + chunks.length * 180 + 200;
+    this.later(end, () => {
+      this.emit("message.completed", { message: { id: messageId, role: "assistant", content: reply, model: "mock/gemini-2.5-flash" } }, { sessionId, runId });
+      this.emit("run.completed", { result: { ok: true } }, { sessionId, runId });
+      this.sessions.forEach((s) => {
+        if (s.id === sessionId) s.status = "idle";
+      });
+      this.emit("session.updated", { status: "idle" }, { sessionId });
+      this.settleResult(id, true, { ok: true });
+    });
+  }
+
+  private playDemo(id: string, sessionId: string, prompt: string): void {
+    const runId = "run-1";
+    const messageId = "msg-run-1";
+    const base = { sessionId, runId };
+    const emit = (type: RigEvent["type"], data: unknown, extra: { toolCallId?: string; subagentRunId?: string } = {}) =>
+      this.emit(type, data, { ...base, ...extra });
+    const s = (ms: number, fn: () => void): void => this.later(ms, fn);
+
+    this.sessions.forEach((x) => {
+      if (x.id === sessionId) {
+        x.status = "running";
+        x.updatedAt = new Date().toISOString();
+      }
+    });
+
+    s(0, () => {
+      emit("session.updated", { status: "running" });
+      emit("run.started", { prompt });
+    });
+    s(150, () => emit("thinking.started", { thinkingId: "th-1", messageId }));
+    ["I need to", " inspect the", " project", " structure", " first."].forEach((chunk, i) =>
+      s(300 + i * 130, () => emit("thinking.delta", { thinkingId: "th-1", delta: chunk })),
+    );
+    s(900, () =>
+      emit("message.started", { message: { id: messageId, role: "assistant", content: "", model: "mock/gemini-2.5-flash" } }),
+    );
+    ["Let me", " take a", " look at", " the project", " structure."].forEach((chunk, i) =>
+      s(1050 + i * 130, () => emit("message.delta", { messageId, delta: chunk })),
+    );
+
+    s(1800, () => emit("tool.started", { toolName: "shell", input: { command: "ls -la", cwd: "/mock/project" } }, { toolCallId: "t-1" }));
+    s(2000, () => emit("tool.progress", { toolName: "shell", message: "running: ls -la" }));
+    s(2400, () =>
+      emit(
+        "tool.completed",
+        {
+          toolName: "shell",
+          output: {
+            exitCode: 0,
+            stdout: "total 32\ndrwxr-xr-x  7 rig rig  224 Aug 13 10:00 .\ndrwxr-xr-x  9 rig rig  288 Aug 13 09:58 ..\ndrwxr-xr-x  2 rig rig   64 Aug 13 10:00 .rig\n-rw-r--r--  1 rig rig  612 Aug 13 10:00 rig.config.ts\ndrwxr-xr-x  6 rig rig  192 Aug 13 10:00 src",
+            stderr: "",
+            durationMs: 32,
+            killed: false,
+          },
+        },
+        { toolCallId: "t-1" },
+      ),
+    );
+    s(2700, () => emit("message.delta", { messageId, delta: " Found the source tree." }));
+
+    s(3000, () => emit("tool.started", { toolName: "read", input: { path: "src/main.ts" } }, { toolCallId: "t-2" }));
+    s(3400, () =>
+      emit(
+        "tool.completed",
+        {
+          toolName: "read",
+          output: {
+            path: "src/main.ts",
+            content: `import { mount } from "svelte";\nimport App from "./App.svelte";\nimport { getBridge } from "./lib/rig/bridge";\n\nmount(App, { target: document.getElementById("app")! });`,
+          },
+        },
+        { toolCallId: "t-2" },
+      ),
+    );
+    s(3600, () => emit("message.delta", { messageId, delta: " The entry point is small." }));
+
+    s(3900, () =>
+      emit(
+        "tool.started",
+        {
+          toolName: "edit",
+          input: {
+            path: "src/main.ts",
+            oldString: 'import { getBridge } from "./lib/rig/bridge";',
+            newString: 'import { getBridge, registerDefaultRenderers } from "./lib/rig/bridge";',
+          },
+        },
+        { toolCallId: "t-3" },
+      ),
+    );
+    s(4300, () => emit("tool.progress", { toolName: "edit", message: "applying patch" }));
+    s(4700, () =>
+      emit(
+        "tool.completed",
+        { toolName: "edit", output: { path: "src/main.ts", changed: true, lines: 12 } },
+        { toolCallId: "t-3" },
+      ),
+    );
+    s(4900, () =>
+      emit(
+        "artifact.emitted",
+        {
+          artifact: {
+            type: "file",
+            id: "a-1",
+            sessionId,
+            title: "main.ts",
+            path: "src/main.ts",
+            mime: "text/typescript",
+            createdAt: new Date().toISOString(),
+          },
+        },
+      ),
+    );
+    s(5100, () =>
+      emit("todo.updated", {
+        todos: [
+          { id: "td-1", title: "Inspect project structure", status: "completed", order: 1 },
+          { id: "td-2", title: "Apply refactor", status: "in_progress", order: 2 },
+          { id: "td-3", title: "Run tests", status: "pending", order: 3 },
+        ],
+      }),
+    );
+
+    s(5400, () =>
+      emit(
+        "subagent.started",
+        { name: "code-reviewer", task: "Review the refactor for edge cases", model: "mock/gemini-2.5-pro", thinkingLevel: "high" },
+        { subagentRunId: "sub-1" },
+      ),
+    );
+    s(5700, () =>
+      emit("subagent.updated", { name: "code-reviewer", status: "running", recentTools: ["read", "grep"] }, { subagentRunId: "sub-1" }),
+    );
+    s(6100, () =>
+      emit("subagent.updated", { name: "code-reviewer", status: "running", recentTools: ["grep", "read", "shell"] }, { subagentRunId: "sub-1" }),
+    );
+    s(6900, () =>
+      emit(
+        "subagent.completed",
+        { name: "code-reviewer", result: { issues: 0, summary: "No blocking issues found" } },
+        { subagentRunId: "sub-1" },
+      ),
+    );
+
+    s(7200, () =>
+      emit("interaction.requested", {
+        interaction: {
+          kind: "question",
+          id: "q-1",
+          sessionId,
+          createdAt: new Date().toISOString(),
+          question: "The refactor touches main.ts. Run the full test suite now?",
+          options: [
+            { label: "Yes, run tests", value: "yes" },
+            { label: "Not now", value: "no" },
+          ],
+          multiple: false,
+          allowCustom: false,
+        },
+      }),
+    );
+    s(8000, () => emit("interaction.resolved", { interactionId: "q-1", kind: "question", result: "yes" }));
+    s(8300, () =>
+      emit("approval.requested", {
+        requestId: "apr-1",
+        toolName: "bash",
+        input: { command: "npm test", timeoutMs: 60000 },
+        reason: "Running the project test suite",
+      }),
+    );
+    s(9000, () => emit("approval.resolved", { requestId: "apr-1", decision: "allow", scope: "once" }));
+    s(9200, () =>
+      emit("tool.started", { toolName: "bash", input: { command: "npm test", timeoutMs: 60000 } }, { toolCallId: "t-4" }),
+    );
+    s(9900, () =>
+      emit(
+        "tool.completed",
+        {
+          toolName: "bash",
+          output: {
+            exitCode: 0,
+            stdout: "PASS  src/lib/rig/stores/sessionStore.svelte.ts\nTests: 1 passed, 1 total",
+            stderr: "",
+            durationMs: 610,
+            killed: false,
+          },
+        },
+        { toolCallId: "t-4" },
+      ),
+    );
+    s(10200, () => emit("message.delta", { messageId, delta: " All tests pass." }));
+
+    s(10500, () =>
+      emit("tool.started", { toolName: "web_search", input: { query: "Svelte 5 runes best practices", provider: "mock" } }, { toolCallId: "t-5" }),
+    );
+    s(11100, () =>
+      emit(
+        "tool.completed",
+        {
+          toolName: "web_search",
+          output: {
+            results: [
+              {
+                title: "Svelte 5 runes — what are they?",
+                url: "https://svelte.dev/docs/svelte/what-are-runes",
+                snippet: "Runes are compiler primitives that give Svelte fine-grained reactivity with $state, $derived and $effect.",
+                source: "svelte.dev",
+                publishedAt: "2025-03-01",
+              },
+              {
+                title: "Universal reactivity in .svelte.ts modules",
+                url: "https://example.com/universal-reactivity",
+                snippet: "Module-level $state objects can be shared across components without the legacy store API.",
+                source: "example.com",
+              },
+            ],
+          },
+        },
+        { toolCallId: "t-5" },
+      ),
+    );
+    s(11400, () =>
+      emit("artifact.emitted", {
+        artifact: {
+          type: "diff",
+          id: "a-2",
+          sessionId,
+          title: "main.ts refactor",
+          path: "src/main.ts",
+          diff: `--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,5 +1,5 @@
+ import { mount } from "svelte";
+ import App from "./App.svelte";
+-import { getBridge } from "./lib/rig/bridge";
++import { getBridge, registerDefaultRenderers } from "./lib/rig/bridge";
+
+ mount(App, { target: document.getElementById("app")! });`,
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    );
+
+    const finalText =
+      "Done. I inspected the project, applied the refactor to `src/main.ts`, ran the test suite (all green) and had the code reviewer look at the change. The diff artifact is attached on the right.";
+    s(11700, () => emit("message.delta", { messageId, delta: finalText }));
+    s(12300, () =>
+      emit("thinking.completed", {
+        thinkingId: "th-1",
+        content: "I need to inspect the project structure first. Then apply the refactor, verify with tests and a review.",
+      }),
+    );
+    s(12500, () =>
+      emit("message.completed", {
+        message: { id: messageId, role: "assistant", content: finalText, model: "mock/gemini-2.5-flash" },
+      }),
+    );
+    s(13000, () => {
+      emit("run.completed", { result: { ok: true } });
+      this.sessions.forEach((x) => {
+        if (x.id === sessionId) x.status = "idle";
+      });
+      emit("session.updated", { status: "idle" });
+      this.settleResult(id, true, { ok: true });
+    });
+  }
+}
+
+
+
+function unwrapEvent(payload: unknown): RigEvent | null {
+  if (payload === null || payload === undefined) return null;
+  let value: unknown = payload;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === "object" && value !== null) {
+    if (isRigEvent(value)) return value;
+
+    const wrapped = value as { type?: unknown; event?: unknown };
+    if (wrapped.type === "event" && wrapped.event !== undefined) {
+      return unwrapEvent(wrapped.event);
+    }
+  }
+  return null;
+}
+
+function extractReady(payload: unknown): WorkerReady {
+  const p = asRecord(payload);
+  const caps = asRecord(p.capabilities);
+  return {
+    v: 1,
+    type: "ready",
+    projectId: asString(p.projectId),
+    projectDir: asString(p.projectDir),
+    agentName: typeof p.agentName === "string" ? p.agentName : undefined,
+    capabilities: {
+      git: caps.git === true,
+      worktrees: caps.worktrees === true,
+      desktop: caps.desktop === true,
+      web: caps.web === true,
+      mcp: Array.isArray(caps.mcp) ? caps.mcp.filter((m): m is string => typeof m === "string") : [],
+      subagents: Array.isArray(caps.subagents)
+        ? caps.subagents.filter((m): m is string => typeof m === "string")
+        : [],
+      models: typeof caps.models === "number" ? caps.models : 0,
+      providers: Array.isArray(caps.providers)
+        ? caps.providers.filter((m): m is string => typeof m === "string")
+        : [],
+    },
+  };
+}
+
+function asSerializedError(value: unknown): SerializedIpcError | undefined {
+  const p = asRecord(value);
+  if (typeof p.code === "string" && typeof p.message === "string") {
+    const code: RigErrorCode = isRigErrorCode(p.code) ? p.code : "RUNTIME_ERROR";
+    return { code, message: p.message, details: p.details };
+  }
+  return undefined;
+}
+
+function splitIntoChunks(text: string, size: number): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < text.length; i += size) {
+    out.push(text.slice(i, i + size));
+  }
+  return out;
+}
+
+function truncateForMock(text: string): string {
+  return text.length > 60 ? `${text.slice(0, 57)}…` : text;
+}
+
+
+
+let bridge: RigBridge | null = null;
+
+function detectWails(): boolean {
+  try {
+    if (getTransport() !== null) return true;
+  } catch {
+
+  }
+  if (typeof window === "undefined") return false;
+  const w = window as unknown as {
+    chrome?: { webview?: { postMessage?: unknown } };
+    webkit?: { messageHandlers?: { external?: { postMessage?: unknown } } };
+    wails?: { invoke?: unknown; invokeAsync?: unknown };
+    _wails?: { environment?: { OS?: unknown } };
+  };
+  return (
+    typeof w.chrome?.webview?.postMessage === "function" ||
+    typeof w.webkit?.messageHandlers?.external?.postMessage === "function" ||
+    typeof w.wails?.invoke === "function" ||
+    typeof w.wails?.invokeAsync === "function" ||
+    typeof w._wails?.environment?.OS === "string"
+  );
+}
+
+export function getBridge(): RigBridge {
+  if (!bridge) {
+    const created = detectWails() ? new WailsBridge() : new MockBridge();
+    created.start();
+    bridge = created;
+  }
+  return bridge;
+}
+
+
+export function sendCommand(
+  name: CommandName,
+  params?: Record<string, unknown>,
+  opts?: SendOptions,
+): Promise<unknown> {
+  return getBridge().send(name, params, opts);
+}
+
+export function restartWorker(): Promise<void> {
+  return getBridge().restartWorker();
+}
+
+export function stopWorker(): Promise<void> {
+  return getBridge().stopWorker();
+}
+
+
+export function isNativeEnvironment(): boolean {
+  return detectWails();
+}
