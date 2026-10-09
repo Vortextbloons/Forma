@@ -240,6 +240,39 @@ html[data-theme="light"] .select {
   white-space: nowrap;
 }
 
+.project-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.recent-list li:hover .project-actions,
+.recent-list li:focus-within .project-actions {
+  opacity: 1;
+}
+
+.project-actions .delete-armed {
+  color: var(--danger);
+}
+
+.rename-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.rename-input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ------------------------------ new project ------------------------------- */
 
 .new-project {

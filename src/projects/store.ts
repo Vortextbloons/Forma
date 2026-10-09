@@ -1,7 +1,8 @@
-import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, cp, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { RuntimeError } from "rig";
 import { atomicWriteFile } from "./atomic.ts";
+import { resolveProjectsHome } from "./home.ts";
 import {
   PROJECT_FILE,
   newContextId,
@@ -15,11 +16,21 @@ import {
 } from "./schema.ts";
 
 export interface CreateProjectInput {
-  dir: string;
+  dir?: string;
   name: string;
   prompt: string;
   mode: ProjectFile["mode"];
   settings: ProjectSettings;
+}
+
+export interface CreatedProject {
+  dir: string;
+  project: ProjectFile;
+}
+
+export interface ProjectListEntry {
+  dir: string;
+  project: ProjectFile;
 }
 
 export const ACCEPTED_CONTEXT_EXTENSIONS = [
@@ -60,8 +71,9 @@ export function projectFilePath(dir: string): string {
   return join(resolve(dir), PROJECT_FILE);
 }
 
-export async function createProject(input: CreateProjectInput): Promise<ProjectFile> {
-  const dir = resolve(input.dir);
+export async function createProject(input: CreateProjectInput): Promise<CreatedProject> {
+  const id = newProjectId();
+  const dir = resolve(input.dir ?? join(resolveProjectsHome(), id));
   const file = projectFilePath(dir);
   return withLock(file, async () => {
     if (await exists(file)) {
@@ -72,7 +84,7 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectF
     const timestamp = nowIso();
     const project: ProjectFile = {
       formatVersion: 1,
-      id: newProjectId(),
+      id,
       name: input.name.trim() || "Untitled project",
       prompt: input.prompt,
       mode: input.mode,
@@ -89,8 +101,84 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectF
     await mkdir(join(dir, "pages"), { recursive: true });
     await mkdir(join(dir, "assets"), { recursive: true });
     await writeProjectFile(dir, project);
-    return project;
+    return { dir, project };
   });
+}
+
+export async function listProjects(
+  home = resolveProjectsHome(),
+): Promise<{ home: string; projects: ProjectListEntry[] }> {
+  const root = resolve(home);
+  let names: string[];
+  try {
+    const entries = await readdir(root, { withFileTypes: true });
+    names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch {
+    return { home: root, projects: [] };
+  }
+  const projects: ProjectListEntry[] = [];
+  for (const name of names) {
+    const dir = join(root, name);
+    try {
+      projects.push({ dir, project: await openProject(dir) });
+    } catch {
+      continue;
+    }
+  }
+  projects.sort(
+    (a, b) =>
+      b.project.updatedAt.localeCompare(a.project.updatedAt) ||
+      a.project.name.localeCompare(b.project.name),
+  );
+  return { home: root, projects };
+}
+
+export async function renameProject(dir: string, name: string): Promise<ProjectFile> {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new RuntimeError("Project name cannot be empty");
+  }
+  return updateProject(dir, (project) => {
+    project.name = trimmed;
+  });
+}
+
+export async function duplicateProject(
+  sourceDir: string,
+  name?: string,
+): Promise<CreatedProject> {
+  const source = await openProject(sourceDir);
+  const id = newProjectId();
+  const dir = join(resolveProjectsHome(), id);
+  const timestamp = nowIso();
+  const project: ProjectFile = {
+    ...source,
+    id,
+    name: name?.trim() || `${source.name} copy`,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    conversation: { sessionIds: [] },
+  };
+  await mkdir(resolveProjectsHome(), { recursive: true });
+  await cp(resolve(sourceDir), dir, {
+    recursive: true,
+    filter: (path) => basename(path) !== ".rig",
+  });
+  await writeProjectFile(dir, project);
+  return { dir: resolve(dir), project };
+}
+
+export async function deleteProject(dir: string): Promise<string> {
+  const home = resolve(resolveProjectsHome());
+  const target = resolve(dir);
+  const inside = relative(home, target);
+  if (inside === "" || inside === ".." || inside.startsWith("..") || isAbsolute(inside)) {
+    throw new RuntimeError(`Refusing to delete "${target}": not a Forma-managed project`, {
+      details: { dir: target },
+    });
+  }
+  await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  return target;
 }
 
 export async function openProject(dir: string): Promise<ProjectFile> {

@@ -14,7 +14,7 @@
   const banner = $derived(notificationStore.items[0]);
 
   $effect(() => {
-    void projectStore.loadRecent();
+    void projectStore.loadProjects();
     const onOpenProviders = (): void => {
       settingsTab = "providers";
       showSettings = true;

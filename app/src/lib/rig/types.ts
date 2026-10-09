@@ -36,13 +36,15 @@ export { COMMAND_NAMES } from "rig/ipc";
 export const FORMA_COMMAND_NAMES = [
   "project.create",
   "project.open",
+  "project.list",
+  "project.rename",
+  "project.duplicate",
+  "project.delete",
   "project.updateSettings",
   "project.setConversation",
   "context.import",
   "context.remove",
   "context.update",
-  "project.recent",
-  "project.forget",
 ] as const;
 
 export type FormaCommandName = (typeof FORMA_COMMAND_NAMES)[number];

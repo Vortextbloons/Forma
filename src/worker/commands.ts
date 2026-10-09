@@ -9,17 +9,21 @@ import {
 import type { RigEventBus } from "rig/events";
 import type { SerializedIpcError, SessionInfo, WorkerResult } from "rig/ipc";
 import { setTimeout as delay } from "node:timers/promises";
+import { dirname, resolve } from "node:path";
 import type { WorkerAgentHost } from "./host.ts";
 import type { PendingRunRegistry } from "./runs.ts";
 import {
   createProject,
+  deleteProject,
+  duplicateProject,
   importContextFile,
+  listProjects,
   openProject,
   removeContextItem,
+  renameProject,
   updateContextItem,
   updateProject,
 } from "../projects/store.ts";
-import { forgetProject, readRecentProjects, rememberProject } from "../projects/recent.ts";
 import { repairSessionIndex } from "../projects/sessions.ts";
 import {
   CONTEXT_ROLES,
@@ -222,40 +226,55 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     },
 
     async "project.create"(params) {
-      const dir = asString(params.dir, "dir");
       const mode = asString(params.mode, "mode");
       if (!(PLAN_MODES as readonly string[]).includes(mode)) {
         throw new ProtocolError(`Invalid plan mode "${mode}"`);
       }
       const settings = parseSettings(params.settings);
       const prompt = asOptionalString(params.prompt) ?? "";
-      const project = await createProject({
-        dir,
+      const created = await createProject({
+        dir: asOptionalString(params.dir),
         name: asOptionalString(params.name) ?? deriveProjectName(prompt),
         prompt,
         mode: mode as ProjectFile["mode"],
         settings,
       });
-      await rememberProject({
-        path: dir,
-        name: project.name,
-        output: project.settings.output,
-        updatedAt: project.updatedAt,
-      });
-      return ok({ project: toProjectPayload(project, dir) });
+      return ok({ project: toProjectPayload(created.project, created.dir) });
     },
 
     async "project.open"(params) {
       const dir = asString(params.dir, "dir");
       await repairSessionIndex(dir);
       const project = await openProject(dir);
-      await rememberProject({
-        path: dir,
-        name: project.name,
-        output: project.settings.output,
-        updatedAt: project.updatedAt,
-      });
       return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "project.list"() {
+      const { home, projects } = await listProjects();
+      return ok({ home, projects });
+    },
+
+    async "project.rename"(params) {
+      const dir = asString(params.dir, "dir");
+      const name = asString(params.name, "name");
+      const project = await renameProject(dir, name);
+      return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "project.duplicate"(params) {
+      const dir = asString(params.dir, "dir");
+      const created = await duplicateProject(dir, asOptionalString(params.name));
+      return ok({ project: toProjectPayload(created.project, created.dir) });
+    },
+
+    async "project.delete"(params) {
+      const dir = asString(params.dir, "dir");
+      const target = resolve(dir);
+      if (target === resolve(process.cwd())) {
+        process.chdir(dirname(target));
+      }
+      const removed = await deleteProject(dir);
+      return ok({ dir: removed });
     },
 
     async "project.updateSettings"(params) {
@@ -312,17 +331,6 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
         name,
       });
       return ok({ project: toProjectPayload(project, dir) });
-    },
-
-    async "project.recent"() {
-      const projects = await readRecentProjects();
-      return ok({ projects });
-    },
-
-    async "project.forget"(params) {
-      const dir = asString(params.dir, "dir");
-      await forgetProject(dir);
-      return ok();
     },
   };
 }

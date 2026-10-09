@@ -4,25 +4,42 @@
   import PageIcon from "./PageIcon.svelte";
   import Icon from "../components/Icon.svelte";
   import { projectStore } from "./projectStore.svelte";
-  import { pickDirectory } from "../rig/native";
   import { notificationStore } from "../rig/stores/notificationStore.svelte";
+  import type { ProjectListEntry } from "./types";
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props();
 
   let opening = $state(false);
   let openingPath = $state("");
+  let renamingPath = $state("");
+  let renameDraft = $state("");
+  let armedDelete = $state("");
 
-  async function openExisting(dir?: string): Promise<void> {
-    const target = dir ?? (await pickDirectory("Open a Forma project folder"));
-    if (!target || opening) return;
+  function message(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  function dateLabel(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function focusOnMount(node: HTMLInputElement): void {
+    node.focus();
+    node.select();
+  }
+
+  async function open(entry: ProjectListEntry): Promise<void> {
+    if (opening) return;
     opening = true;
-    openingPath = target;
+    openingPath = entry.dir;
     try {
-      await projectStore.openProject(target);
+      await projectStore.openProject(entry.dir);
     } catch (error) {
       notificationStore.push({
         type: "error",
-        message: `Could not open project: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Could not open project: ${message(error)}`,
       });
     } finally {
       opening = false;
@@ -30,8 +47,46 @@
     }
   }
 
-  async function forget(dir: string): Promise<void> {
-    await projectStore.forgetRecent(dir);
+  function startRename(entry: ProjectListEntry): void {
+    renamingPath = entry.dir;
+    renameDraft = entry.project.name;
+  }
+
+  async function commitRename(): Promise<void> {
+    const dir = renamingPath;
+    const name = renameDraft.trim();
+    renamingPath = "";
+    renameDraft = "";
+    if (!dir || !name) return;
+    try {
+      await projectStore.renameProject(dir, name);
+    } catch (error) {
+      notificationStore.push({ type: "error", message: `Could not rename project: ${message(error)}` });
+    }
+  }
+
+  async function duplicate(entry: ProjectListEntry): Promise<void> {
+    try {
+      await projectStore.duplicateProject(entry.dir);
+    } catch (error) {
+      notificationStore.push({ type: "error", message: `Could not duplicate project: ${message(error)}` });
+    }
+  }
+
+  async function remove(entry: ProjectListEntry): Promise<void> {
+    if (armedDelete !== entry.dir) {
+      armedDelete = entry.dir;
+      setTimeout(() => {
+        if (armedDelete === entry.dir) armedDelete = "";
+      }, 4000);
+      return;
+    }
+    armedDelete = "";
+    try {
+      await projectStore.deleteProject(entry.dir);
+    } catch (error) {
+      notificationStore.push({ type: "error", message: `Could not delete project: ${message(error)}` });
+    }
   }
 </script>
 
@@ -52,50 +107,99 @@
         and refines it with you through chat.
       </p>
 
-      <div class="start-actions">
-        <button class="btn" type="button" disabled={opening} onclick={() => void openExisting()}>
-          <Icon name="folder" size={14} /> Open project…
-        </button>
-      </div>
-
       <ConnectionCard />
 
       <section class="recent-section">
-        <h2 class="section-heading">Recent projects</h2>
-        {#if projectStore.recent.length === 0}
-          <p class="muted small">No recent projects yet.</p>
+        <h2 class="section-heading">Projects</h2>
+        {#if projectStore.projects.length === 0}
+          <p class="muted small">No projects yet. Create one on the right.</p>
         {:else}
           <ul class="recent-list">
-            {#each projectStore.recent as item (item.path)}
+            {#each projectStore.projects as entry (entry.dir)}
               <li>
-                <button
-                  class="recent-open"
-                  type="button"
-                  disabled={opening}
-                  onclick={() => void openExisting(item.path)}
-                >
-                  {#if item.output === "poster"}
-                    <PageIcon width={1080} height={1350} size={18} />
-                  {:else}
-                    <PageIcon width={1920} height={1080} size={18} />
-                  {/if}
-                  <span class="recent-text">
-                    <span class="recent-name">{item.name}</span>
-                    <span class="recent-path" title={item.path}>{item.path}</span>
+                {#if renamingPath === entry.dir}
+                  <form
+                    class="rename-row"
+                    onsubmit={(event) => {
+                      event.preventDefault();
+                      void commitRename();
+                    }}
+                  >
+                    <input
+                      class="input rename-input"
+                      type="text"
+                      bind:value={renameDraft}
+                      use:focusOnMount
+                      onkeydown={(event) => {
+                        if (event.key === "Escape") renamingPath = "";
+                      }}
+                      aria-label="Project name"
+                    />
+                    <button class="icon-btn" type="submit" title="Save name" aria-label="Save name">
+                      <Icon name="check" size={13} />
+                    </button>
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      title="Cancel"
+                      aria-label="Cancel rename"
+                      onclick={() => (renamingPath = "")}
+                    >
+                      <Icon name="x" size={13} />
+                    </button>
+                  </form>
+                {:else}
+                  <button
+                    class="recent-open"
+                    type="button"
+                    disabled={opening}
+                    onclick={() => void open(entry)}
+                  >
+                    {#if entry.project.settings.output === "poster"}
+                      <PageIcon width={1080} height={1350} size={18} />
+                    {:else}
+                      <PageIcon width={1920} height={1080} size={18} />
+                    {/if}
+                    <span class="recent-text">
+                      <span class="recent-name">{entry.project.name}</span>
+                      <span class="recent-path">{dateLabel(entry.project.updatedAt)}</span>
+                    </span>
+                    {#if opening && openingPath === entry.dir}
+                      <span class="spinner"></span>
+                    {/if}
+                  </button>
+                  <span class="project-actions">
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      title="Rename"
+                      aria-label="Rename {entry.project.name}"
+                      onclick={() => startRename(entry)}
+                    >
+                      <Icon name="pencil" size={13} />
+                    </button>
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      title="Duplicate"
+                      aria-label="Duplicate {entry.project.name}"
+                      onclick={() => void duplicate(entry)}
+                    >
+                      <Icon name="copy" size={13} />
+                    </button>
+                    <button
+                      class="icon-btn delete-armed"
+                      type="button"
+                      title={armedDelete === entry.dir ? "Click again to delete" : "Delete"}
+                      aria-label={armedDelete === entry.dir
+                        ? `Click again to delete ${entry.project.name}`
+                        : `Delete ${entry.project.name}`}
+                      onclick={() => void remove(entry)}
+                    >
+                      <Icon name={armedDelete === entry.dir ? "alert" : "trash"} size={13} />
+                    </button>
                   </span>
-                  {#if opening && openingPath === item.path}
-                    <span class="spinner"></span>
-                  {/if}
-                </button>
-                <button
-                  class="icon-btn"
-                  type="button"
-                  title="Remove from list"
-                  aria-label="Remove {item.name} from recent projects"
-                  onclick={() => void forget(item.path)}
-                >
-                  <Icon name="x" size={13} />
-                </button>
+                {/if}
               </li>
             {/each}
           </ul>

@@ -1,16 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   createProject,
+  deleteProject,
+  duplicateProject,
   importContextFile,
+  listProjects,
   openProject,
   projectFilePath,
   removeContextItem,
+  renameProject,
   updateContextItem,
   updateProject,
 } from "../src/projects/store.ts";
+import { resolveProjectsHome } from "../src/projects/home.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
 import { repairSessionIndex } from "../src/projects/sessions.ts";
 
@@ -18,11 +23,17 @@ async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "forma-projects-"));
 }
 
+async function useDataDir(): Promise<string> {
+  const root = await tempDir();
+  process.env.FORMA_DATA_DIR = root;
+  return root;
+}
+
 describe("project persistence", () => {
   it("creates a project folder with project.json, pages/ and assets/", async () => {
     const root = await tempDir();
     const dir = join(root, "Deck");
-    const project = await createProject({
+    const { project } = await createProject({
       dir,
       name: "Deck",
       prompt: "A deck about persistence",
@@ -176,5 +187,156 @@ describe("project persistence", () => {
       join(moved, ".rig", "sessions", `${sessionId}.jsonl`),
     );
     await rm(root, { recursive: true, force: true });
+  });
+});
+
+describe("project library", () => {
+  it("creates projects under the projects home when no dir is given", async () => {
+    const root = await useDataDir();
+    try {
+      const { dir, project } = await createProject({
+        name: "Library deck",
+        prompt: "Store me in the library",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      expect(resolveProjectsHome()).toBe(join(root, "projects"));
+      expect(dir).toBe(join(resolveProjectsHome(), project.id));
+      expect(basename(dir)).toBe(project.id);
+      expect((await stat(projectFilePath(dir))).isFile()).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      delete process.env.FORMA_DATA_DIR;
+    }
+  });
+
+  it("lists library projects newest first and skips non-project folders", async () => {
+    const root = await useDataDir();
+    try {
+      const first = await createProject({
+        name: "First",
+        prompt: "first",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      const second = await createProject({
+        name: "Second",
+        prompt: "second",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      await mkdir(join(resolveProjectsHome(), "not-a-project"));
+      await updateProject(first.dir, () => undefined);
+
+      const { home, projects } = await listProjects();
+      expect(home).toBe(resolveProjectsHome());
+      expect(projects.map((entry) => entry.dir)).toEqual([first.dir, second.dir]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      delete process.env.FORMA_DATA_DIR;
+    }
+  });
+
+  it("renames a project on disk", async () => {
+    const root = await useDataDir();
+    try {
+      const created = await createProject({
+        name: "Before",
+        prompt: "rename me",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      const renamed = await renameProject(created.dir, "  After  ");
+      expect(renamed.name).toBe("After");
+      const reopened = await openProject(created.dir);
+      expect(reopened.name).toBe("After");
+      await expect(renameProject(created.dir, "   ")).rejects.toThrow(/empty/i);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      delete process.env.FORMA_DATA_DIR;
+    }
+  });
+
+  it("duplicates artwork and assets but starts a fresh conversation", async () => {
+    const root = await useDataDir();
+    try {
+      const source = await createProject({
+        name: "Source",
+        prompt: "duplicate me",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      await writeFile(join(source.dir, "pages", "slide-01.svg"), "<svg/>", "utf8");
+      const notes = join(root, "notes.txt");
+      await writeFile(notes, "facts for the deck", "utf8");
+      const { item } = await importContextFile(source.dir, notes, "content-source");
+      const sessionId = "rig_abcdef123456";
+      await mkdir(join(source.dir, ".rig", "sessions"), { recursive: true });
+      await writeFile(join(source.dir, ".rig", "sessions", `${sessionId}.jsonl`), "{}\n", "utf8");
+      await updateProject(source.dir, (project) => {
+        project.conversation.sessionIds = [sessionId];
+      });
+
+      const copy = await duplicateProject(source.dir);
+
+      expect(copy.dir).not.toBe(source.dir);
+      expect(basename(copy.dir)).toBe(copy.project.id);
+      expect(copy.project.id).not.toBe(source.project.id);
+      expect(copy.project.name).toBe("Source copy");
+      expect(copy.project.conversation.sessionIds).toEqual([]);
+      expect((await stat(join(copy.dir, "pages", "slide-01.svg"))).isFile()).toBe(true);
+      expect((await stat(join(copy.dir, item.asset))).isFile()).toBe(true);
+      expect(copy.project.context).toHaveLength(1);
+      await expect(stat(join(copy.dir, ".rig"))).rejects.toThrow();
+
+      const reopenedCopy = await openProject(copy.dir);
+      expect(reopenedCopy.conversation.sessionIds).toEqual([]);
+      const reopenedSource = await openProject(source.dir);
+      expect(reopenedSource.conversation.sessionIds).toEqual([sessionId]);
+
+      const custom = await duplicateProject(source.dir, "Custom name");
+      expect(custom.project.name).toBe("Custom name");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      delete process.env.FORMA_DATA_DIR;
+    }
+  });
+
+  it("deletes only the intended project and refuses folders outside the library", async () => {
+    const root = await useDataDir();
+    try {
+      const kept = await createProject({
+        name: "Kept",
+        prompt: "keep me",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      const removed = await createProject({
+        name: "Removed",
+        prompt: "remove me",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+
+      const deleted = await deleteProject(removed.dir);
+      expect(deleted).toBe(removed.dir);
+      await expect(stat(removed.dir)).rejects.toThrow();
+      const stillThere = await openProject(kept.dir);
+      expect(stillThere.id).toBe(kept.project.id);
+
+      const external = join(root, "External");
+      await createProject({
+        dir: external,
+        name: "External",
+        prompt: "outside the library",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      await expect(deleteProject(external)).rejects.toThrow(/not a Forma-managed project/i);
+      expect((await stat(projectFilePath(external))).isFile()).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      delete process.env.FORMA_DATA_DIR;
+    }
   });
 });

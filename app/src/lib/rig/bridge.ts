@@ -366,8 +366,8 @@ class MockBridge extends BaseBridge {
   private sessions: MockSession[] = [];
   private demoPlayed = false;
   private projectDir = "/mock/project";
-  private project: Record<string, unknown> | null = null;
-  private recent: Array<{ path: string; name: string; output: string; updatedAt: string; openedAt: string }> = [];
+  private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
+  private mockSeq = 0;
 
   constructor() {
     super(true);
@@ -490,11 +490,11 @@ class MockBridge extends BaseBridge {
     };
   }
 
-  private mockProject(dir: string, overrides: Record<string, unknown>): Record<string, unknown> {
+  private mockProject(dir: string, id: string, overrides: Record<string, unknown>): Record<string, unknown> {
     const now = new Date().toISOString();
     return {
       formatVersion: 1,
-      id: `prj_mock_${dir.length}`,
+      id,
       name: asString(overrides.name ?? "Untitled project"),
       prompt: asString(overrides.prompt ?? ""),
       mode: asString(overrides.mode ?? "plan"),
@@ -509,15 +509,16 @@ class MockBridge extends BaseBridge {
     };
   }
 
-  private remember(dir: string, project: Record<string, unknown>): void {
-    const entry = {
-      path: dir,
-      name: asString(project.name ?? "Untitled project"),
-      output: asRecord(project.settings).output === "poster" ? "poster" : "slides",
-      updatedAt: asString(project.updatedAt ?? new Date().toISOString()),
-      openedAt: new Date().toISOString(),
-    };
-    this.recent = [entry, ...this.recent.filter((item) => item.path !== dir)].slice(0, 20);
+  private projectEntry(dir: string): { dir: string; project: Record<string, unknown> } | undefined {
+    return this.projects.find((entry) => entry.dir === dir);
+  }
+
+  private ensureProject(dir: string, overrides: Record<string, unknown>): Record<string, unknown> {
+    const existing = this.projectEntry(dir);
+    if (existing) return existing.project;
+    const project = this.mockProject(dir, `prj_mock_${++this.mockSeq}`, overrides);
+    this.projects.unshift({ dir, project });
+    return project;
   }
 
   private async handleCommand(id: string, name: string, params: Record<string, unknown>): Promise<void> {
@@ -657,51 +658,93 @@ class MockBridge extends BaseBridge {
         break;
       }
       case "project.create": {
-        const dir = asString(params.dir ?? "");
-        const project = this.mockProject(dir, params);
-        this.project = project;
+        const pid = `prj_mock_${++this.mockSeq}`;
+        const dir = typeof params.dir === "string" && params.dir ? params.dir : `/mock/projects/${pid}`;
+        const project = this.mockProject(dir, pid, params);
+        this.projects.unshift({ dir, project });
         this.projectDir = dir;
-        this.remember(dir, project);
         this.settleResult(id, true, { project: { dir, project } });
         break;
       }
       case "project.open": {
         const dir = asString(params.dir ?? this.projectDir);
-        if (!this.project || this.projectDir !== dir) {
-          this.project = this.mockProject(dir, {
-            name: "Mock project",
-            prompt: "A mock project for browser development",
-            mode: "plan",
-            settings: {},
-          });
-        }
+        const project = this.ensureProject(dir, {
+          name: "Mock project",
+          prompt: "A mock project for browser development",
+          mode: "plan",
+          settings: {},
+        });
         this.projectDir = dir;
-        this.remember(dir, this.project);
-        this.settleResult(id, true, { project: { dir, project: this.project } });
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "project.list": {
+        const projects = [...this.projects].sort((a, b) =>
+          String(asRecord(b.project).updatedAt ?? "").localeCompare(String(asRecord(a.project).updatedAt ?? "")),
+        );
+        this.settleResult(id, true, { home: "/mock/projects", projects });
+        break;
+      }
+      case "project.rename": {
+        const dir = asString(params.dir ?? "");
+        const project = this.ensureProject(dir, {});
+        project.name = asString(params.name ?? "Untitled project");
+        project.updatedAt = new Date().toISOString();
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "project.duplicate": {
+        const dir = asString(params.dir ?? "");
+        const source = this.projectEntry(dir);
+        if (!source) {
+          this.settleResult(id, false, undefined, {
+            code: "RUNTIME_ERROR",
+            message: `No project at "${dir}"`,
+          });
+          break;
+        }
+        const pid = `prj_mock_${++this.mockSeq}`;
+        const copy = structuredClone(source.project);
+        copy.id = pid;
+        copy.name =
+          typeof params.name === "string" && params.name ? params.name : `${asString(copy.name)} copy`;
+        copy.createdAt = new Date().toISOString();
+        copy.updatedAt = copy.createdAt;
+        copy.conversation = { sessionIds: [] };
+        const copyDir = `/mock/projects/${pid}`;
+        this.projects.unshift({ dir: copyDir, project: copy });
+        this.settleResult(id, true, { project: { dir: copyDir, project: copy } });
+        break;
+      }
+      case "project.delete": {
+        const dir = asString(params.dir ?? "");
+        this.projects = this.projects.filter((entry) => entry.dir !== dir);
+        this.settleResult(id, true, { dir });
         break;
       }
       case "project.updateSettings": {
-        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
         project.settings = {
           ...asRecord(project.settings),
           ...asRecord(params.settings),
         };
         project.updatedAt = new Date().toISOString();
-        this.project = project;
-        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        this.settleResult(id, true, { project: { dir, project } });
         break;
       }
       case "project.setConversation": {
-        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
         project.conversation = {
           sessionIds: Array.isArray(params.sessionIds) ? params.sessionIds : [],
         };
-        this.project = project;
-        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        this.settleResult(id, true, { project: { dir, project } });
         break;
       }
       case "context.import": {
-        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
         const item = {
           id: `ctx_mock_${++this.seq}`,
           name: asString(params.name ?? "Mock asset"),
@@ -713,23 +756,23 @@ class MockBridge extends BaseBridge {
         };
         (project.context as unknown[]).push(item);
         project.updatedAt = new Date().toISOString();
-        this.project = project;
-        this.settleResult(id, true, { project: { dir: this.projectDir, project }, item });
+        this.settleResult(id, true, { project: { dir, project }, item });
         break;
       }
       case "context.remove": {
-        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
         const context = Array.isArray(project.context) ? project.context : [];
         project.context = context.filter(
           (entry) => asRecord(entry).id !== asString(params.id ?? ""),
         );
         project.updatedAt = new Date().toISOString();
-        this.project = project;
-        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        this.settleResult(id, true, { project: { dir, project } });
         break;
       }
       case "context.update": {
-        const project = this.project ?? this.mockProject(this.projectDir, {});
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
         const context = Array.isArray(project.context) ? project.context : [];
         for (const entry of context) {
           const record = asRecord(entry);
@@ -739,17 +782,9 @@ class MockBridge extends BaseBridge {
           }
         }
         project.updatedAt = new Date().toISOString();
-        this.project = project;
-        this.settleResult(id, true, { project: { dir: this.projectDir, project } });
+        this.settleResult(id, true, { project: { dir, project } });
         break;
       }
-      case "project.recent":
-        this.settleResult(id, true, { projects: this.recent });
-        break;
-      case "project.forget":
-        this.recent = this.recent.filter((item) => item.path !== asString(params.dir ?? ""));
-        this.settleResult(id, true);
-        break;
       default:
         this.settleResult(id, false, undefined, {
           code: "PROTOCOL_ERROR",

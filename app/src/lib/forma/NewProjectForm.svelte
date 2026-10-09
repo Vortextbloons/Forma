@@ -3,14 +3,13 @@
   import Icon from "../components/Icon.svelte";
   import { defaultProjectSettings } from "./defaults";
   import { projectStore } from "./projectStore.svelte";
-  import { pickDirectory, pickFiles } from "../rig/native";
+  import { pickFiles } from "../rig/native";
   import type { OutputKind, ProjectSettings } from "./types";
 
   let prompt = $state("");
   let kind = $state<OutputKind>("slides");
   let mode = $state<"plan" | "create">("plan");
   let settings = $state<ProjectSettings>(defaultProjectSettings("slides"));
-  let folder = $state("");
   let staged = $state<Array<{ path: string; name: string }>>([]);
   let showSettings = $state(false);
   let creating = $state(false);
@@ -19,11 +18,6 @@
   function setKind(next: OutputKind): void {
     kind = next;
     settings = { ...settings, output: next };
-  }
-
-  async function chooseFolder(): Promise<void> {
-    const chosen = await pickDirectory("Choose the project folder");
-    if (chosen) folder = chosen;
   }
 
   async function addAssets(): Promise<void> {
@@ -45,17 +39,9 @@
       error = "Describe what you want to create.";
       return;
     }
-    if (!folder) {
-      await chooseFolder();
-      if (!folder) {
-        error = "Choose a project folder first.";
-        return;
-      }
-    }
     creating = true;
     try {
       await projectStore.createProject({
-        dir: folder,
         prompt: prompt.trim(),
         mode,
         settings,
@@ -118,16 +104,6 @@
       ? "Forma proposes an outline first. Edit it, then generate."
       : "Forma creates the artwork directly from your brief."}
   </p>
-
-  <div class="field">
-    <span class="field-label">Project folder</span>
-    <div class="field-row">
-      <button class="btn" type="button" onclick={() => void chooseFolder()}>
-        <Icon name="folder" size={13} /> Choose…
-      </button>
-      <span class="folder-path" title={folder}>{folder || "No folder chosen"}</span>
-    </div>
-  </div>
 
   <div class="field">
     <span class="field-label">Assets</span>

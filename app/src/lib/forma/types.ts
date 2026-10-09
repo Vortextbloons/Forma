@@ -7,7 +7,6 @@ import type {
   ProjectSettings,
   StylePreset,
 } from "../../../../src/projects/schema.ts";
-import type { RecentProject } from "../../../../src/projects/recent.ts";
 
 export type {
   ContextItem,
@@ -16,13 +15,22 @@ export type {
   OutputKind,
   ProjectFile,
   ProjectSettings,
-  RecentProject,
   StylePreset,
 };
 
 export interface ProjectSnapshot {
   dir: string;
   project: ProjectFile;
+}
+
+export interface ProjectListEntry {
+  dir: string;
+  project: ProjectFile;
+}
+
+export interface ProjectLibrary {
+  home: string;
+  projects: ProjectListEntry[];
 }
 
 export const CONTEXT_ROLE_OPTIONS: readonly ContextRole[] = [
@@ -64,6 +72,27 @@ export function parseProjectSnapshot(data: unknown): ProjectSnapshot {
     throw new Error("The worker returned a malformed project payload");
   }
   return { dir, project };
+}
+
+export function parseProjectEntry(value: unknown): ProjectListEntry | null {
+  const record = (value ?? {}) as { dir?: unknown; project?: unknown };
+  const dir = typeof record.dir === "string" ? record.dir : "";
+  const project = record.project as ProjectFile | undefined;
+  if (!dir || !project || project.formatVersion !== 1 || !Array.isArray(project.context)) {
+    return null;
+  }
+  return { dir, project };
+}
+
+export function parseProjectLibrary(data: unknown): ProjectLibrary {
+  const record = (data ?? {}) as { home?: unknown; projects?: unknown };
+  const home = typeof record.home === "string" ? record.home : "";
+  const projects = Array.isArray(record.projects)
+    ? record.projects
+        .map(parseProjectEntry)
+        .filter((entry): entry is ProjectListEntry => entry !== null)
+    : [];
+  return { home, projects };
 }
 
 export function formatFileSize(bytes: number): string {
