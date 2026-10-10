@@ -10,6 +10,31 @@ _No user-facing changes yet._
 
 ---
 
+## [0.4.5] - 2026-10-10
+
+### Added
+
+- **In-place project switching** — opening another project rebinds the worker with `workspace.switch` instead of always restarting Chromium; sessions stay under the correct project folder.
+- **Web & image defaults** — global toggles for web search and image finder in Settings, plus per-project overrides (follow global, on, or off).
+- **Model picker on element feedback** — choose provider and model from the page-preview “Apply change” popover before sending a targeted refine.
+- **Faster export** — PDF, PNG, and PPTX export compose and render pages with limited concurrency instead of strictly one page at a time.
+
+### Changed
+
+- **Settings → Web & images** — research and photo-search controls moved here from the Design panel; API key copy updated to match.
+- **Design style tiles** — preset previews use sample headlines and artwork instead of abstract wireframes.
+- **New project flow** — density and related options collapse under “More options” on the creation screen.
+- **Chat thumbnail rail** — poster projects get the same preview rail with poster-specific labels (no slide numbers).
+- **Model picker menus** — provider/model submenus flip to the left when needed and stay within the viewport on scroll and resize.
+- **Page preview feedback** — popover placement prefers the side with more room above or below the selection.
+
+### Fixed
+
+- **Project open/create** — surfaces an error if the worker reports a different project directory than the one you opened.
+- **Editable PPTX export** — slide objects are created in page order when rendering runs in parallel.
+
+---
+
 ## [0.4.1] - 2026-10-10
 
 ### Added
@@ -129,7 +154,8 @@ _No user-facing changes yet._
 - **Desktop services** — file service and worker service bridging the Go host to the embedded runtime.
 - **Build scaffolding** — Windows-focused Wails taskfiles, icons, and dev/build PowerShell scripts.
 
-[Unreleased]: https://github.com/Vortextbloons/Forma/compare/cfa6cea...HEAD
+[Unreleased]: https://github.com/Vortextbloons/Forma/compare/dc19eed...HEAD
+[0.4.5]: https://github.com/Vortextbloons/Forma/commit/dc19eed
 [0.4.1]: https://github.com/Vortextbloons/Forma/commit/cfa6cea
 [0.4.0]: https://github.com/Vortextbloons/Forma/commit/05d6795
 [0.3.0]: https://github.com/Vortextbloons/Forma/releases/tag/v0.3.0
