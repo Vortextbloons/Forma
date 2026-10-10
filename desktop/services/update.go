@@ -21,7 +21,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-var Version = "0.3.0"
+var Version = "0.4.1"
 var ReleaseRepository = "Vortextbloons/Forma"
 
 type UpdateService struct {

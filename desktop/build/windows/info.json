@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "0.3.0"
+		"file_version": "0.4.1"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "0.3.0",
+			"ProductVersion": "0.4.1",
 			"CompanyName": "Forma",
 			"FileDescription": "Forma presentation and poster studio",
 			"LegalCopyright": "© 2026, Forma",
