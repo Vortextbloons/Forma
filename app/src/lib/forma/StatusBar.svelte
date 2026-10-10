@@ -24,15 +24,15 @@
     if (run) {
       const label =
         run.kind === "outline"
-          ? "Building the outline"
+          ? "Planning the project"
           : run.kind === "design"
             ? "Applying design settings"
             : run.kind === "refine"
-              ? "Refining"
+              ? "Working on your request"
               : project?.settings.output === "poster"
                 ? "Creating the poster"
                 : "Creating the slides";
-      const count = run.total > 0 ? ` · ${run.completed}/${run.total} pages` : "";
+      const count = run.total > 0 && (run.kind === "artwork" || run.completed > 0) ? ` · ${run.completed}/${run.total} pages` : "";
       return { text: `${label}…${count}`, tone: "busy" };
     }
     const sessionStatus = sessionStore.statusOf(sessionStore.activeSessionId);

@@ -24,6 +24,14 @@
       <span class="muted">·</span>
       <span class="muted">{formatDimensions(project.settings)}</span>
     </div>
+    <label class="field">
+      <span class="field-label">Project title</span>
+      <input class="input" value={project.name} aria-label="Project title" onchange={(event) => { const name = event.currentTarget.value.trim(); if (name) projectStore.updateBrief({ name }); }} />
+    </label>
+    <label class="field">
+      <span class="field-label">Overview</span>
+      <textarea class="input textarea" rows="4" value={project.prompt} oninput={(event) => projectStore.updateBrief({ prompt: event.currentTarget.value })}></textarea>
+    </label>
     <DesignSettingsForm
       settings={project.settings}
       onchange={(next) => projectStore.updateSettings(next)}

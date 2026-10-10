@@ -59,7 +59,12 @@ export function refinePrompt(
   mode: "plan" | "build",
 ): string {
   const lines: string[] = [];
-  if (scope === "page" && pageId) {
+  if (project.pages.length === 0) {
+    lines.push(
+      "The project has no artwork yet. Help the user develop the brief and outline, or create the artwork when requested in Build mode.",
+      "Read the current project first. For slides, follow the current outline when one exists; otherwise use the requested slide count. For posters, create exactly one page.",
+    );
+  } else if (scope === "page" && pageId) {
     const index = project.pages.indexOf(pageId) + 1;
     lines.push(
       `The user is refining slide ${index} (page id ${pageId}). Read it with read_page before changing it.`,
@@ -77,7 +82,7 @@ export function refinePrompt(
   }
   lines.push(
     mode === "plan"
-      ? "This is a planning request: do not edit, create, or delete any pages. Respond with a concrete plan of the changes you would make."
+      ? "This is a planning request: do not edit, create, or delete artwork pages. Discuss the request or persist an outline with submit_outline when the user asks to plan or revise it."
       : "If the message asks for changes, persist them with update_page or submit_page. If it is a question, answer it without editing.",
   );
   if (mode === "build") {

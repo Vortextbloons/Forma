@@ -1,5 +1,8 @@
 <script lang="ts">
   import NewProjectForm from "./NewProjectForm.svelte";
+  import { sendCommand } from "../rig/bridge";
+  import { effectiveSize } from "../../../../src/projects/size.ts";
+  import { onMount } from "svelte";
   import Icon from "../components/Icon.svelte";
   import { projectStore } from "./projectStore.svelte";
   import { notificationStore } from "../rig/stores/notificationStore.svelte";
@@ -7,6 +10,25 @@
   import type { ProjectListEntry } from "./types";
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props();
+
+  onMount(() => { void projectStore.refreshSearchCredentials(); });
+
+  let covers = $state<Record<string, string>>({});
+  let coverWidth = $state(0);
+
+  $effect(() => {
+    const projects = projectStore.projects;
+    let cancelled = false;
+    void Promise.all(projects.filter((entry) => entry.project.pages.length > 0).map(async (entry) => {
+      try {
+        const result = await sendCommand("artwork.compose", { dir: entry.dir, pageId: entry.project.pages[0] }) as { html: string };
+        return [entry.dir, result.html] as const;
+      } catch {
+        return [entry.dir, ""] as const;
+      }
+    })).then((results) => { if (!cancelled) covers = Object.fromEntries(results); });
+    return () => { cancelled = true; };
+  });
 
   let opening = $state(false);
   let openingPath = $state("");
@@ -106,10 +128,11 @@
     <section class="start-recent" aria-label="Recent projects">
       <h2 class="section-heading">Recent projects</h2>
       {#if projectStore.projects.length === 0}
-        <p class="muted small">Nothing here yet — your projects will appear as covers above once you create one.</p>
+        <p class="muted small">Your first project starts with a title and an idea. Saved projects will appear here.</p>
       {:else}
         <ul class="cover-grid">
           {#each projectStore.projects as entry (entry.dir)}
+            {@const size = effectiveSize(entry.project.settings)}
             <li class="cover-cell">
               {#if renamingPath === entry.dir}
                 <form
@@ -152,10 +175,17 @@
                   <span
                     class="cover-art cover-{entry.project.settings.output} cover-style-{entry.project.settings.style}"
                     class:opening={opening && openingPath === entry.dir}
+                    style:aspect-ratio={size.width / size.height}
+                    bind:clientWidth={coverWidth}
                   >
+                    {#if covers[entry.dir]}
+                      <iframe class="cover-preview" title={entry.project.name + " preview"} srcdoc={covers[entry.dir]} sandbox="" tabindex="-1" aria-hidden="true" style={`width:${size.width}px;height:${size.height}px;transform:scale(${coverWidth / size.width});`}></iframe>
+                    {:else}
+                    <span class="cover-format">{OUTPUT_LABELS[entry.project.settings.output]}</span>
                     <span class="cover-a"></span>
                     <span class="cover-b"></span>
                     <span class="cover-c"></span>
+                    {/if}
                     {#if opening && openingPath === entry.dir}
                       <span class="spinner cover-spinner"></span>
                     {/if}

@@ -14,7 +14,8 @@
   const isPoster = $derived(project?.settings.output === "poster");
 
   let scope = $state<"page" | "project">("project");
-  let mode = $state<"plan" | "build">("build");
+  const mode = $derived(project?.mode === "create" ? "build" : "plan");
+  const empty = $derived(messageStore.bySession(sessionId ?? "").length === 0);
   let historyOpen = $state(false);
   let switching = $state(false);
   const running = $derived(projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionId)));
@@ -44,7 +45,7 @@
 
   const targetLabel = $derived.by(() => {
     if (isPoster) return "Poster";
-    if (pages.length === 0) return "Planning";
+    if (pages.length === 0) return "Project brief";
     if (scope === "page" && selectedId) {
       const index = pages.indexOf(selectedId);
       return index >= 0 ? `Slide ${index + 1}` : "Entire presentation";
@@ -97,23 +98,23 @@
     {:else}
       <strong>{targetLabel}</strong>
     {/if}
-    {#if pages.length > 0 && !isPoster}
-      <div class="segmented segmented-small" role="group" aria-label="Chat mode">
-        <button
-          type="button"
-          class:active={mode === "plan"}
-          aria-pressed={mode === "plan"}
-          onclick={() => (mode = "plan")}
-        >Plan</button>
-        <button
-          type="button"
-          class:active={mode === "build"}
-          aria-pressed={mode === "build"}
-          onclick={() => (mode = "build")}
-        >Build</button>
-      </div>
-    {/if}
+
   </div>
+  <p class="work-mode-hint">{mode === "plan" ? "Plan ideas and outlines. Artwork stays unchanged." : "Ask Forma to create or change the artwork."}</p>
+  {#if project && pages.length === 0}
+    <div class="project-actions-bar">
+      <button class="btn" type="button" disabled={running} onclick={() => void projectStore.plan()}><Icon name="message" size={14} /> {project.outline?.length ? "Revise plan" : "Plan project"}</button>
+      <button class="btn btn-accent" type="button" disabled={running} onclick={() => void projectStore.generate()}><Icon name="zap" size={14} /> Build project</button>
+    </div>
+  {/if}
+  {#if empty && project}
+    <div class="chat-welcome">
+      <span class="creation-kicker">{isPoster ? "POSTER STUDIO" : "PRESENTATION STUDIO"}</span>
+      <h1>{project.name}</h1>
+      <p>{project.prompt}</p>
+      <span class="muted small">Your brief is ready. Talk through an idea, plan the project, or start building.</span>
+    </div>
+  {/if}
   {#if sessionId}
     <Messages {sessionId} />
   {:else}

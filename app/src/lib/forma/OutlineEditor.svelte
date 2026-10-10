@@ -19,9 +19,7 @@
 
   let entries = $state<DraftEntry[]>([]);
   let pointsText = $state<Record<number, string>>({});
-  let dirty = $state(false);
   let lastSynced = "";
-  let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let dragIndex = $state<number | null>(null);
 
   function signature(outline: unknown): string {
@@ -45,35 +43,16 @@
     lastSynced = sig;
     entries = toDraft(outline);
     pointsText = {};
-    dirty = false;
   });
 
   function scheduleSave(): void {
-    dirty = true;
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      void save();
-    }, 600);
-  }
-
-  async function save(): Promise<void> {
-    if (!dirty) return;
-    await projectStore.updateOutline(
-      entries.map((entry) => ({
-        ...(entry.id ? { id: entry.id } : {}),
-        title: entry.title,
-        points: entry.points,
-        ...(entry.visualDirection ? { visualDirection: entry.visualDirection } : {}),
-        assetIds: entry.assetIds,
-      })),
-    );
-    const serverSig = signature(projectStore.current?.project.outline ?? null);
-    lastSynced = serverSig;
-    if (!dirty) {
-      entries = toDraft(projectStore.current?.project.outline ?? null);
-      pointsText = {};
-    }
-    dirty = false;
+    projectStore.stageOutline(entries.map((entry) => ({
+      ...(entry.id ? { id: entry.id } : {}),
+      title: entry.title,
+      points: [...entry.points],
+      ...(entry.visualDirection ? { visualDirection: entry.visualDirection } : {}),
+      assetIds: [...entry.assetIds],
+    })));
   }
 
   function pointsFor(index: number): string {
@@ -272,7 +251,7 @@
       onclick={() => void projectStore.generate()}
     >
       {#if generating}<span class="spinner"></span>{/if}
-      {isPoster ? "Create the poster" : `Generate ${entries.length} slides`}
+      {isPoster ? "Build poster" : `Build ${entries.length} slides`}
     </button>
     <button
       class="btn btn-ghost"

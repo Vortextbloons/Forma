@@ -8,25 +8,33 @@
 
   let { onOpenSettings, onCloseProject }: { onOpenSettings: () => void; onCloseProject: () => void } = $props();
 
-  let drawerOpen = $state(false);
+  let windowWidth = $state(1440);
+  let layout = $state<"full" | "side">("full");
+  const effectiveLayout = $derived(windowWidth < 1100 ? "full" : layout);
+  let previewOpen = $state(false);
 
   const pages = $derived(projectStore.current?.project.pages ?? []);
   const isSlides = $derived(projectStore.current?.project.settings.output === "slides");
 </script>
 
-<div class="forma-workspace">
+<svelte:window bind:innerWidth={windowWidth} />
+
+<div class="forma-workspace" class:chat-full={effectiveLayout === "full"} class:preview-open={previewOpen}>
   <ProjectHeader
     {onOpenSettings}
     {onCloseProject}
-    drawerOpen={drawerOpen}
-    onToggleDrawer={() => (drawerOpen = !drawerOpen)}
+    layout={effectiveLayout}
+    compact={windowWidth < 1100}
+    {previewOpen}
+    onLayoutChange={(next) => { layout = next; previewOpen = false; }}
+    onTogglePreview={() => (previewOpen = !previewOpen)}
   />
   <div class="workspace-body">
     {#if isSlides && pages.length > 0}
       <ThumbnailRail />
     {/if}
     <ProjectMain />
-    <RightPanel {drawerOpen} onCloseDrawer={() => (drawerOpen = false)} />
+    <RightPanel />
   </div>
   <StatusBar />
 </div>

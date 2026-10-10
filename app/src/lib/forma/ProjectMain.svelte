@@ -18,18 +18,8 @@
   const run = $derived(projectStore.run);
   const generating = $derived(run !== null);
 
-  let nameDraft = $state("");
-  let promptDraft = $state("");
-  let loadedDir = "";
-
-  $effect(() => {
-    const snapshot = projectStore.current;
-    if (snapshot && snapshot.dir !== loadedDir) {
-      loadedDir = snapshot.dir;
-      nameDraft = snapshot.project.name;
-      promptDraft = snapshot.project.prompt;
-    }
-  });
+  let nameDraft = $derived(project?.name ?? "");
+  let promptDraft = $derived(project?.prompt ?? "");
 
   function saveName(): void {
     const name = nameDraft.trim();
@@ -45,25 +35,6 @@
       projectStore.updateBrief({ prompt: promptDraft });
     }
   }
-
-  function setMode(mode: "plan" | "create"): void {
-    if (project && mode !== project.mode) {
-      projectStore.updateBrief({ mode });
-    }
-  }
-
-  function start(): void {
-    if (!project || generating) return;
-    if (project.mode === "plan") void projectStore.plan();
-    else void projectStore.generate();
-  }
-
-  const actionLabel = $derived.by(() => {
-    if (!project) return "";
-    if (generating) return "Forma is working…";
-    if (project.mode === "plan") return "Draft the outline";
-    return project.settings.output === "poster" ? "Create the poster" : "Create the slides";
-  });
 
   const meta = $derived.by(() => {
     if (!project) return "";
@@ -159,51 +130,9 @@
         aria-label="Project brief"
       ></textarea>
 
-      <div class="mode-choices" role="radiogroup" aria-label="How to work">
-        <button
-          type="button"
-          class="mode-choice"
-          class:active={project.mode === "plan"}
-          role="radio"
-          aria-checked={project.mode === "plan"}
-          onclick={() => setMode("plan")}
-        >
-          <span class="mode-dot" aria-hidden="true"></span>
-          <span class="mode-text">
-            <strong>Plan first</strong>
-            <span>Propose an outline to edit before any artwork.</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          class="mode-choice"
-          class:active={project.mode === "create"}
-          role="radio"
-          aria-checked={project.mode === "create"}
-          onclick={() => setMode("create")}
-        >
-          <span class="mode-dot" aria-hidden="true"></span>
-          <span class="mode-text">
-            <strong>Create directly</strong>
-            <span>Make the artwork straight from the brief.</span>
-          </span>
-        </button>
-      </div>
-
       <p class="brief-summary muted small">{meta}</p>
 
-      <button
-        class="btn btn-accent brief-action"
-        type="button"
-        disabled={generating || promptDraft.trim() === ""}
-        onclick={start}
-      >
-        {#if generating}
-          <span class="spinner"></span>
-        {/if}
-        {actionLabel}
-      </button>
-      <p class="brief-hint muted small">Forma works in the chat beside you — follow along and refine there.</p>
+      <p class="brief-hint muted small">Open chat to plan the project or build from this brief.</p>
     </section>
   {/if}
 </main>

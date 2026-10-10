@@ -93,12 +93,10 @@
   <textarea
     class="input textarea composer-textarea"
     placeholder={sessionId
-      ? projectStore.current && projectStore.current.project.pages.length > 0
-        ? mode === "plan"
-          ? "Plan a change — describe what you want…"
-          : "Refine the artwork — describe the change…"
+      ? projectStore.current
+        ? mode === "plan" ? "Explore an idea or plan a change…" : "Describe what to build or change…"
         : "Describe a task…"
-      : "Create or select a session first"}
+      : "Preparing conversation…"}
     rows="1"
     bind:this={textarea}
     bind:value={draft}

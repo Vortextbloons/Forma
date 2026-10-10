@@ -1,20 +1,28 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
+  import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { projectStore } from "./projectStore.svelte";
 
   let {
     onOpenSettings,
     onCloseProject,
-    onToggleDrawer,
-    drawerOpen = false,
+    compact,
+    layout,
+    previewOpen,
+    onLayoutChange,
+    onTogglePreview,
   }: {
     onOpenSettings: () => void;
     onCloseProject: () => void;
-    onToggleDrawer: () => void;
-    drawerOpen?: boolean;
+    compact: boolean;
+    layout: "full" | "side";
+    previewOpen: boolean;
+    onLayoutChange: (layout: "full" | "side") => void;
+    onTogglePreview: () => void;
   } = $props();
 
   const project = $derived(projectStore.current?.project);
+  const running = $derived(projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionStore.activeSessionId)));
   const savedLabel = $derived(
     projectStore.saveStatus === "saving"
       ? "Saving…"
@@ -39,21 +47,19 @@
   <span class="header-project" title={project?.name ?? ""}>{project?.name ?? ""}</span>
   <span class="save-state" class:error={projectStore.saveStatus === "error"}>{savedLabel}</span>
   <span class="spacer"></span>
-  <button
-    class="icon-btn drawer-toggle"
-    class:active={drawerOpen}
-    type="button"
-    title="Toggle chat"
-    aria-label="Toggle chat"
-    aria-expanded={drawerOpen}
-    onclick={onToggleDrawer}
-  >
-    <Icon name="panel-right" size={15} />
+  <div class="segmented work-mode-switch" role="group" aria-label="Work mode">
+    <button type="button" class:active={project?.mode === "plan"} aria-pressed={project?.mode === "plan"} disabled={running} onclick={() => projectStore.updateBrief({ mode: "plan" })}>Plan</button>
+    <button type="button" class:active={project?.mode === "create"} aria-pressed={project?.mode === "create"} disabled={running} onclick={() => projectStore.updateBrief({ mode: "create" })}>Build</button>
+  </div>
+  <div class="segmented layout-switch" role="group" aria-label="Chat layout">
+    <button type="button" class:active={layout === "full"} aria-pressed={layout === "full"} onclick={() => onLayoutChange("full")}><Icon name="message" size={14} /> Full chat</button>
+    <button type="button" disabled={compact} class:active={layout === "side"} aria-pressed={layout === "side"} onclick={() => onLayoutChange("side")}><Icon name="panel-right" size={14} /> Side chat</button>
+  </div>
+  <button class="btn preview-toggle" type="button" aria-pressed={previewOpen} onclick={onTogglePreview}>
+    <Icon name="external" size={14} /> {previewOpen ? "Back to chat" : project?.pages.length ? "View artwork" : project?.outline?.length ? "View plan" : "Preview"}
   </button>
-  <button class="btn btn-ghost" type="button" onclick={onOpenSettings}>
-    <Icon name="gear" size={14} /> Project settings
+  <button class="btn btn-ghost" type="button" aria-label="Project settings" onclick={onOpenSettings}>
+    <Icon name="gear" size={14} /> <span class="project-settings-label">Project settings</span>
   </button>
-  <button class="btn" type="button" disabled title="Export is not available yet">
-    <Icon name="external" size={14} /> Export
-  </button>
+
 </header>

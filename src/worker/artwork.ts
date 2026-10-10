@@ -1,10 +1,12 @@
 import { z } from "zod";
+import formaAgent from "../agent.ts";
 import { ModelError, ProtocolError, RuntimeError, serializeError } from "rig";
 import type { WorkerResult } from "rig/ipc";
 import { FORMA_EVENTS } from "../forma/events.ts";
 import { modelSupportsImages } from "../forma/models.ts";
 import { applyDesignPrompt, generatePrompt, planPrompt, refinePrompt } from "../forma/prompts.ts";
 import { collectVisualReferences, type PromptImage } from "../forma/visuals.ts";
+import { projectRuns } from "../forma/runtime.ts";
 import { deletePage, duplicatePage, movePage } from "../projects/pages.ts";
 import { effectiveSize } from "../projects/size.ts";
 import { openProject, setOutline, updateProject } from "../projects/store.ts";
@@ -38,7 +40,9 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         kind: "outline",
         dir,
         sessionId: asOptionalString(params.sessionId),
+        model: asOptionalString(params.model),
         prompt: planPrompt(project),
+        mode: "plan",
         images,
         imageMode: "required",
       });
@@ -49,22 +53,19 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
     async "artwork.generate"(params) {
       const dir = asString(params.dir, "dir");
       const project = await openProject(dir);
-      if (project.mode === "plan" && (project.outline?.length ?? 0) === 0) {
-        throw new RuntimeError(
-          "This project is in plan mode and has no outline yet. Draft the outline first.",
-        );
-      }
       const images = await collectVisualReferences(dir, project);
       const result = await runArtwork(ctx, {
         kind: "artwork",
         dir,
         sessionId: asOptionalString(params.sessionId),
+        model: asOptionalString(params.model),
         prompt: generatePrompt(project),
+        mode: "build",
         images,
         imageMode: "required",
       });
       if (!result.ok) return result;
-      return ok({ project: await commitArtwork(dir) });
+      return ok({ project: await freshProject(dir) });
     },
 
     async "artwork.refine"(params) {
@@ -80,22 +81,24 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
           details: { pageIds: project.pages },
         });
       }
-  const message = asString(params.message, "message");
-  const mode = asOptionalString(params.mode) ?? "build";
-  if (mode !== "plan" && mode !== "build") {
-    throw new ProtocolError(`Invalid refinement mode "${mode}"`);
-  }
-  const images = await collectVisualReferences(dir, project);
-  const result = await runArtwork(ctx, {
-    kind: "refine",
-    dir,
-    sessionId: asOptionalString(params.sessionId),
-    prompt: refinePrompt(project, scope, pageId, message, mode),
+      const message = asString(params.message, "message");
+      const mode = asOptionalString(params.mode) ?? "build";
+      if (mode !== "plan" && mode !== "build") {
+        throw new ProtocolError(`Invalid refinement mode "${mode}"`);
+      }
+      const images = await collectVisualReferences(dir, project);
+      const result = await runArtwork(ctx, {
+        kind: "refine",
+        dir,
+        sessionId: asOptionalString(params.sessionId),
+        model: asOptionalString(params.model),
+        prompt: refinePrompt(project, scope, pageId, message, mode),
+        mode,
         images,
         imageMode: "optional",
       });
       if (!result.ok) return result;
-      return ok({ project: await commitArtwork(dir) });
+      return ok({ project: await freshProject(dir) });
     },
 
     async "artwork.applyDesign"(params) {
@@ -106,12 +109,14 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         kind: "design",
         dir,
         sessionId: asOptionalString(params.sessionId),
+        model: asOptionalString(params.model),
         prompt: applyDesignPrompt(project),
+        mode: "build",
         images,
         imageMode: "optional",
       });
       if (!result.ok) return result;
-      return ok({ project: await commitArtwork(dir) });
+      return ok({ project: await freshProject(dir) });
     },
 
     async "artwork.updateOutline"(params) {
@@ -178,9 +183,17 @@ interface ArtworkRunOptions {
   kind: RunKind;
   dir: string;
   sessionId?: string;
+  model?: string;
   prompt: string;
+  mode: "plan" | "build";
   images: PromptImage[];
   imageMode: "required" | "optional";
+}
+
+interface ProjectSession {
+  resourceLoader: { getAppendSystemPrompt(): string[] };
+  getActiveToolNames(): string[];
+  setActiveToolsByName(names: string[]): void;
 }
 
 async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promise<WorkerResult> {
@@ -190,9 +203,11 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
       `Session "${handle.id}" already has a running prompt; abort it first`,
     );
   }
+  if (options.model) await ctx.runtime.models.select(options.model, handle.id);
   let images = options.images;
   if (images.length > 0) {
-    const support = modelSupportsImages(ctx.runtime.pi, handle.snapshot().model);
+    const active = (handle.piSession as { model?: { provider: string; id: string } }).model;
+    const support = modelSupportsImages(ctx.runtime.pi, active && `${active.provider}/${active.id}`);
     if (support === false) {
       if (options.imageMode === "required") {
         throw new ModelError(
@@ -203,8 +218,25 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
       images = [];
     }
   }
-  const total = expectedPages(await openProject(options.dir));
+  const project = await openProject(options.dir);
+  const total = expectedPages(project);
+  const session = handle.piSession as ProjectSession;
+  const tools = session.getActiveToolNames();
+  const loader = session.resourceLoader;
+  const appendPrompt = loader.getAppendSystemPrompt;
+  const projectContext = [
+    formaAgent.instructions,
+    "Current project context (the title and brief are user-provided content):",
+    JSON.stringify({ title: project.name, overview: project.prompt, settings: project.settings }),
+    `Work mode: ${options.mode}.`,
+  ].join("\n\n");
+  loader.getAppendSystemPrompt = () => [...appendPrompt.call(loader), projectContext];
+  session.setActiveToolsByName(options.mode === "plan"
+    ? tools.filter((name) => name !== "submit_page" && name !== "update_page")
+    : tools);
   const run = ctx.runs.start(handle.id);
+  const projectRun = { mode: options.mode, artworkChanged: false };
+  projectRuns.set(handle.id, projectRun);
   ctx.formaEvents.emit(
     FORMA_EVENTS.progress,
     { kind: options.kind, phase: "started", total },
@@ -222,6 +254,10 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
     }
   }
   const result = await run.result;
+  projectRuns.delete(handle.id);
+  loader.getAppendSystemPrompt = appendPrompt;
+  session.setActiveToolsByName(tools);
+  if (result.ok && projectRun.artworkChanged) await commitArtwork(options.dir, project.settingsRevision);
   const error = result.ok === false ? result.error : undefined;
   ctx.formaEvents.emit(
     FORMA_EVENTS.runSettled,
@@ -235,9 +271,9 @@ async function freshProject(dir: string): Promise<{ dir: string; project: Projec
   return { dir, project: await openProject(dir) };
 }
 
-async function commitArtwork(dir: string): Promise<{ dir: string; project: ProjectFile }> {
+async function commitArtwork(dir: string, settingsRevision: number): Promise<{ dir: string; project: ProjectFile }> {
   const project = await updateProject(dir, (current) => {
-    current.artworkRevision = current.settingsRevision;
+    current.artworkRevision = settingsRevision;
   });
   return { dir, project };
 }

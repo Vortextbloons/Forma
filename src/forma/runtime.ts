@@ -12,6 +12,8 @@ export interface FormaEnv {
 
 let current: FormaEnv | undefined;
 
+export const projectRuns = new Map<string, { mode: "plan" | "build"; artworkChanged: boolean }>();
+
 export function setFormaEnv(next: FormaEnv | undefined): void {
   current = next;
 }

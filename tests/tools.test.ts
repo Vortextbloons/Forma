@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createToolHarness } from "rig/testing";
 import { researchTools } from "../src/tools/research.ts";
+import { projectRuns } from "../src/forma/runtime.ts";
+import { writePage, readPage } from "../src/projects/pages.ts";
 import { projectTools } from "../src/tools/project.ts";
 import { createProject, openProject, updateProject } from "../src/projects/store.ts";
 import {
@@ -112,6 +114,23 @@ describe("search tool gating", () => {
 });
 
 describe("artwork tools", () => {
+  it("blocks artwork creation and updates during a Plan run", async () => {
+    const dir = await makeProject("plan-guard");
+    const page = await writePage(dir, { index: 1, title: "Original", html: "<div>Original artwork</div>", css: "" });
+    const session = { id: "plan-guard" };
+    projectRuns.set(session.id, { mode: "plan", artworkChanged: false });
+    try {
+      const submit = createToolHarness(submitPage, { cwd: dir, session });
+      const update = createToolHarness(projectTools.find((tool) => tool.name === "update_page")!, { cwd: dir, session });
+      await expect(submit.run({ index: 2, html: "<div>New</div>", css: "", assets: [] })).rejects.toThrow(/Switch to Build/);
+      await expect(update.run({ pageId: page.pageId, html: "<div>Changed</div>" })).rejects.toThrow(/Switch to Build/);
+      expect((await openProject(dir)).pages).toEqual([page.pageId]);
+      expect((await readPage(dir, page.pageId)).html).toContain("Original artwork");
+    } finally {
+      projectRuns.delete(session.id);
+    }
+  });
+
   it("posters accept exactly one composition brief", async () => {
     const dir = await makeProject("poster", { output: "poster" });
     const harness = createToolHarness(submitOutline, { cwd: dir });

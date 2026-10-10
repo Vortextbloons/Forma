@@ -18,6 +18,8 @@
   openSearchSettings?: () => void;
 } = $props();
 
+  let moreOptions = $state(false);
+
   const SLIDE_PRESETS: Record<string, { width: number; height: number }> = {
     "16:9": { width: 1920, height: 1080 },
     "4:3": { width: 1440, height: 1080 },
@@ -82,62 +84,6 @@
 </script>
 
 <div class="design-settings">
-  <div class="field">
-    <span class="field-label">Style</span>
-    <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
-      {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
-        <button
-          type="button"
-          class="preset-tile"
-          class:active={settings.style === value}
-          aria-pressed={settings.style === value}
-          onclick={() => emit({ style: value as ProjectSettings["style"] })}
-        >
-          <span class="mini-slide mini-{value}">
-            <i class="m-rule"></i>
-            <i class="m-title"></i>
-            <i class="m-line"></i>
-            <i class="m-line m-short"></i>
-            <i class="m-accent"></i>
-          </span>
-          <span class="tile-label">{label}</span>
-        </button>
-      {/each}
-    </div>
-  </div>
-
-  <div class="field">
-    <span class="field-label">Density</span>
-    <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
-      {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
-        <button
-          type="button"
-          class="preset-tile"
-          class:active={settings.density === value}
-          aria-pressed={settings.density === value}
-          onclick={() => emit({ density: value as ProjectSettings["density"] })}
-        >
-          <span class="mini-slide mini-density-{value}">
-            <i class="m-title"></i>
-            <i class="m-line"></i>
-            <i class="m-line"></i>
-            {#if value !== "concise"}
-              <i class="m-line"></i>
-              <i class="m-line m-short"></i>
-            {/if}
-            {#if value === "detailed"}
-              <i class="m-line"></i>
-              <i class="m-line"></i>
-              <i class="m-line m-short"></i>
-              <i class="m-grid"></i>
-            {/if}
-          </span>
-          <span class="tile-label">{label}</span>
-        </button>
-      {/each}
-    </div>
-  </div>
-
   {#if settings.output === "slides"}
     <div class="field">
       <span class="field-label">Slide count</span>
@@ -177,6 +123,7 @@
           <span>4:3</span>
           <em>1440 × 1080</em>
         </button>
+        {#if moreOptions || settings.slideSize.preset === "custom"}
         <button
           type="button"
           class="size-tile"
@@ -187,6 +134,7 @@
           <span>Custom</span>
           <em>pixels</em>
         </button>
+        {/if}
       </div>
       {#if settings.slideSize.preset === "custom"}
         <div class="field-row">
@@ -262,7 +210,8 @@
             <span>Square</span>
             <em>1080 × 1080</em>
           </button>
-          <button
+          {#if moreOptions || settings.posterSize.preset === "custom"}
+        <button
             type="button"
             class="size-tile"
             class:active={settings.posterSize.preset === "custom"}
@@ -272,6 +221,7 @@
             <span>Custom</span>
             <em>pixels</em>
           </button>
+        {/if}
         </div>
       </div>
     {:else}
@@ -290,7 +240,8 @@
               <em>{option.width} × {option.height}</em>
             </button>
           {/each}
-          <button
+          {#if moreOptions || settings.posterSize.preset === "custom"}
+        <button
             type="button"
             class="size-tile"
             class:active={settings.posterSize.preset === "custom"}
@@ -300,8 +251,10 @@
             <span>Custom</span>
             <em>{settings.posterSize.unit}</em>
           </button>
+        {/if}
         </div>
       </div>
+    {/if}
       <div class="field">
         <span class="field-label">Orientation</span>
         <div class="segmented" role="group" aria-label="Orientation">
@@ -319,8 +272,6 @@
           >Landscape</button>
         </div>
       </div>
-    {/if}
-
     {#if settings.posterSize.preset === "custom"}
       <div class="field-row">
         <label class="inline-field">
@@ -396,21 +347,82 @@
         to enable research.
       </p>
     {/if}
-    <label class="toggle-row" class:disabled={!pexelsConfigured}>
-      <input
-        type="checkbox"
-        checked={settings.imageSearch}
-        disabled={!pexelsConfigured}
-        onchange={(event) => emit({ imageSearch: (event.currentTarget as HTMLInputElement).checked })}
-      />
-      <span>Find photos with image search</span>
-    </label>
-    {#if !pexelsConfigured}
-      <p class="muted small">
-        Add a Pexels API key in
-        <button class="link-btn" type="button" onclick={openSearchSettings}>Settings</button>
-        to enable image search.
-      </p>
-    {/if}
   </div>
+  <details class="settings-disclosure" bind:open={moreOptions}>
+    <summary>More options</summary>
+    <div class="advanced-settings">
+        <div class="field">
+          <span class="field-label">Style</span>
+          <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
+            {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
+              <button
+                type="button"
+                class="preset-tile"
+                class:active={settings.style === value}
+                aria-pressed={settings.style === value}
+                onclick={() => emit({ style: value as ProjectSettings["style"] })}
+              >
+                <span class="mini-slide mini-{value}">
+                  <i class="m-rule"></i>
+                  <i class="m-title"></i>
+                  <i class="m-line"></i>
+                  <i class="m-line m-short"></i>
+                  <i class="m-accent"></i>
+                </span>
+                <span class="tile-label">{label}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Density</span>
+          <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
+            {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
+              <button
+                type="button"
+                class="preset-tile"
+                class:active={settings.density === value}
+                aria-pressed={settings.density === value}
+                onclick={() => emit({ density: value as ProjectSettings["density"] })}
+              >
+                <span class="mini-slide mini-density-{value}">
+                  <i class="m-title"></i>
+                  <i class="m-line"></i>
+                  <i class="m-line"></i>
+                  {#if value !== "concise"}
+                    <i class="m-line"></i>
+                    <i class="m-line m-short"></i>
+                  {/if}
+                  {#if value === "detailed"}
+                    <i class="m-line"></i>
+                    <i class="m-line"></i>
+                    <i class="m-line m-short"></i>
+                    <i class="m-grid"></i>
+                  {/if}
+                </span>
+                <span class="tile-label">{label}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <label class="toggle-row" class:disabled={!pexelsConfigured}>
+          <input
+            type="checkbox"
+            checked={settings.imageSearch}
+            disabled={!pexelsConfigured}
+            onchange={(event) => emit({ imageSearch: (event.currentTarget as HTMLInputElement).checked })}
+          />
+          <span>Find photos with image search</span>
+        </label>
+        {#if !pexelsConfigured}
+          <p class="muted small">
+            Add a Pexels API key in
+            <button class="link-btn" type="button" onclick={openSearchSettings}>Settings</button>
+            to enable image search.
+          </p>
+        {/if}
+    </div>
+  </details>
 </div>

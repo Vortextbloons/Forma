@@ -17,13 +17,14 @@ import { WorkerAgentHost } from "../src/worker/host.ts";
 import { PendingRunRegistry } from "../src/worker/runs.ts";
 import { createFormaEventSink } from "../src/forma/events.ts";
 import { setFormaEnv } from "../src/forma/runtime.ts";
-import { createProject, openProject, setOutline } from "../src/projects/store.ts";
+import { createProject, openProject, setOutline, updateProject } from "../src/projects/store.ts";
 import { readPage, writePage } from "../src/projects/pages.ts";
 import { defaultSettings, type OutputKind } from "../src/projects/schema.ts";
 
 const AGENT_PATH = join(import.meta.dirname, "..", "src", "agent.ts");
 
 type ResponseSource = FauxResponseStep[] | ((dir: string) => FauxResponseStep[]);
+type ModelContext = Parameters<Extract<FauxResponseStep, (...args: never[]) => unknown>>[0];
 
 interface HarnessOptions {
   responses: ResponseSource;
@@ -293,18 +294,65 @@ describe("forma artwork pipeline", () => {
     }
   }, 90_000);
 
-  it("refuses to generate in plan mode before an outline exists", async () => {
-    const harness = await setup({ responses: [] });
+  it.each(["slides", "poster"] as const)("builds %s directly from the brief without an outline", async (output) => {
+    const harness = await setup({
+      output,
+      responses: [
+        fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "First page", html: "<div>Built from the brief</div>", css: "", assets: [] })]),
+        fauxAssistantMessage("Built", { stopReason: "stop" }),
+      ],
+    });
     try {
       const result = await harness.send("artwork.generate", { dir: harness.dir });
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toMatch(/outline/i);
-      }
+      expect(result.ok, JSON.stringify(result)).toBe(true);
       const project = await openProject(harness.dir);
+      expect(project.pages).toHaveLength(1);
+      expect(project.artworkRevision).toBe(project.settingsRevision);
+      expect((await readPage(harness.dir, project.pages[0]!)).html).toContain("Built from the brief");
+    } finally {
+      await harness.close();
+    }
+  }, 60_000);
+
+  it("refreshes project context and work mode in the system prompt without marking answers as artwork changes", async () => {
+    const harness = await setup({
+      responses: [
+        (context: ModelContext) => {
+          expect(context.systemPrompt).toContain('"title":"Deck"');
+          expect(context.systemPrompt).toContain('"overview":"A deck about the topic"');
+          expect(context.systemPrompt).toContain("Work mode: plan");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("submit_page");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("update_page");
+          return fauxAssistantMessage("Let's discuss the audience", { stopReason: "stop" });
+        },
+        (context: ModelContext) => {
+          expect(context.systemPrompt).toContain('"title":"Updated title"');
+          expect(context.systemPrompt).toContain('"overview":"Updated overview"');
+          expect(context.systemPrompt).not.toContain('"title":"Deck"');
+          expect(context.systemPrompt).toContain('"slideCount":3');
+          expect(context.systemPrompt).toContain("Work mode: build");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).toContain("submit_page");
+          return fauxAssistantMessage("Three slides would work", { stopReason: "stop" });
+        },
+      ],
+    });
+    try {
+      const session = await harness.runtime.sessions.create({ name: "Project chat" });
+      const first = await harness.send("artwork.refine", { dir: harness.dir, sessionId: session.id, scope: "project", mode: "plan", message: "Who is this for?" });
+      expect(first.ok, JSON.stringify(first)).toBe(true);
+      await updateProject(harness.dir, (project) => {
+        project.name = "Updated title";
+        project.prompt = "Updated overview";
+        project.settings.slideCount = 3;
+        project.settingsRevision = 1;
+      });
+      const second = await harness.send("artwork.refine", { dir: harness.dir, sessionId: session.id, scope: "project", mode: "build", message: "How many slides?" });
+      expect(second.ok, JSON.stringify(second)).toBe(true);
+      const project = await openProject(harness.dir);
+      expect(project.artworkRevision).toBe(-1);
       expect(project.pages).toEqual([]);
     } finally {
       await harness.close();
     }
-  }, 30_000);
+  }, 60_000);
 });

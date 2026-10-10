@@ -1,5 +1,4 @@
 <script lang="ts">
-  import ProviderManager from "../models/ProviderManager.svelte";
   import { providerStore } from "../rig/stores/providerStore.svelte";
 
   const loading = $derived(providerStore.providers.length === 0);
@@ -16,7 +15,7 @@
       Forma uses your own AI account. Add an API key or sign in once, and it
       stays on this machine.
     </p>
-    <ProviderManager compact />
+    <button class="btn" type="button" onclick={() => window.dispatchEvent(new CustomEvent("rig:open-provider-settings"))}>Connect an AI provider</button>
   </div>
 {:else if loading}
   <p class="muted small">Checking provider connections…</p>

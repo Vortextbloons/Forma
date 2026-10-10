@@ -2,6 +2,7 @@ import { getBridge, openProjectDir, sendCommand, waitForReady } from "../rig/bri
 import { notificationStore } from "../rig/stores/notificationStore.svelte";
 import { sessionStore } from "../rig/stores/sessionStore.svelte";
 import { messageStore } from "../rig/stores/messageStore.svelte";
+import { modelStore } from "../rig/stores/modelStore.svelte";
 import { isFormaDomainEvent, type FormaDomainEvent, type SessionStatus } from "../rig/types";
 import {
   parseProjectLibrary,
@@ -76,6 +77,7 @@ export async function loadProjects(): Promise<void> {
 }
 
 export interface CreateProjectInput {
+  name: string;
   prompt: string;
   mode: "plan" | "create";
   settings: ProjectSettings;
@@ -83,12 +85,14 @@ export interface CreateProjectInput {
 
 export async function createProject(input: CreateProjectInput): Promise<void> {
   await stopActiveGeneration();
+  await flushProjectChanges();
   opening = true;
   saveStatus = "saving";
   try {
     const created = await sendCommand(
       "project.create",
       {
+        name: input.name,
         prompt: input.prompt,
         mode: input.mode,
         settings: input.settings,
@@ -114,6 +118,7 @@ export async function createProject(input: CreateProjectInput): Promise<void> {
 
 export async function openProject(dir: string): Promise<void> {
   await stopActiveGeneration();
+  await flushProjectChanges();
   opening = true;
   saveStatus = "saving";
   try {
@@ -214,6 +219,11 @@ export interface BriefPatch {
 
 let pendingBrief: BriefPatch | null = null;
 let briefTimer: ReturnType<typeof setTimeout> | undefined;
+let briefSaving: Promise<void> | undefined;
+let settingsSaving: Promise<void> | undefined;
+let outlineSaving: Promise<void> | undefined;
+let outlineTimer: ReturnType<typeof setTimeout> | undefined;
+let pendingOutline: Parameters<typeof updateOutline>[0] | null = null;
 
 export function updateBrief(patch: BriefPatch): void {
   if (!current) return;
@@ -227,37 +237,54 @@ export function updateBrief(patch: BriefPatch): void {
 }
 
 async function flushBrief(): Promise<void> {
+  await briefSaving;
   const patch = pendingBrief;
   if (!patch || !current) return;
   pendingBrief = null;
-  try {
-    const data = await sendCommand("project.updateBrief", {
-      dir: current.dir,
-      ...patch,
-    });
-    current = parseProjectSnapshot(data);
-    saveStatus = "saved";
-    if (patch.name !== undefined) await loadProjects();
-  } catch (error) {
-    saveStatus = "error";
-    reportError(error, "Could not save the brief");
-  }
+  const dir = current.dir;
+  briefSaving = (async () => {
+    try {
+      const data = await sendCommand("project.updateBrief", { dir, ...patch });
+      applyProjectPayload(data);
+      saveStatus = pendingBrief || pendingSettings ? "saving" : "saved";
+      if (patch.name !== undefined) await loadProjects();
+    } catch (error) {
+      pendingBrief = { ...patch, ...(pendingBrief ?? {}) };
+      saveStatus = "error";
+      reportError(error, "Could not save the brief");
+    }
+  })();
+  await briefSaving;
 }
 
 async function flushSettings(): Promise<void> {
+  await settingsSaving;
   const settings = pendingSettings;
   if (!settings || !current) return;
   pendingSettings = null;
-  try {
-    const data = await sendCommand("project.updateSettings", {
-      dir: current.dir,
-      settings,
-    });
-    current = parseProjectSnapshot(data);
-    saveStatus = "saved";
-  } catch (error) {
-    saveStatus = "error";
-    reportError(error, "Could not save design settings");
+  const dir = current.dir;
+  settingsSaving = (async () => {
+    try {
+      const data = await sendCommand("project.updateSettings", { dir, settings });
+      applyProjectPayload(data);
+      saveStatus = pendingBrief || pendingSettings ? "saving" : "saved";
+    } catch (error) {
+      pendingSettings ??= settings;
+      saveStatus = "error";
+      reportError(error, "Could not save design settings");
+    }
+  })();
+  await settingsSaving;
+}
+
+async function flushProjectChanges(): Promise<void> {
+  clearTimeout(briefTimer);
+  clearTimeout(saveTimer);
+  await flushBrief();
+  await flushSettings();
+  await flushOutline();
+  if (pendingBrief || pendingSettings || pendingOutline || saveStatus === "error") {
+    throw new Error("Save the project changes before starting.");
   }
 }
 
@@ -290,9 +317,10 @@ async function startArtwork(
   };
   needsImageModel = false;
   try {
+    await flushProjectChanges();
     const data = await sendCommand(
       command,
-      { dir: current.dir, ...params, ...(sessionId ? { sessionId } : {}) },
+      { dir: current.dir, ...params, model: modelStore.selectedModel, ...(sessionId ? { sessionId } : {}) },
       { timeoutMs: 0 },
     );
     applyProjectPayload(data);
@@ -317,7 +345,8 @@ async function startArtwork(
 
 function applyProjectPayload(data: unknown): void {
   try {
-    current = parseProjectSnapshot(data);
+    const snapshot = parseProjectSnapshot(data);
+    current = { ...snapshot, project: { ...snapshot.project, ...(pendingBrief ?? {}), settings: pendingSettings ?? snapshot.project.settings } };
     if (!selectedPageId || !current.project.pages.includes(selectedPageId)) {
       selectedPageId = current.project.pages[0] ?? null;
     }
@@ -328,14 +357,20 @@ function applyProjectPayload(data: unknown): void {
 }
 
 export async function plan(): Promise<void> {
+  if (run) return;
+  updateBrief({ mode: "plan" });
   await startArtwork("artwork.plan", {}, "outline", "Could not draft the outline");
 }
 
 export async function generate(): Promise<void> {
+  if (run) return;
+  updateBrief({ mode: "create" });
   await startArtwork("artwork.generate", {}, "artwork", "Could not generate the artwork");
 }
 
 export async function applyDesign(): Promise<void> {
+  if (run) return;
+  updateBrief({ mode: "create" });
   await startArtwork("artwork.applyDesign", {}, "design", "Could not apply the design changes");
 }
 
@@ -365,26 +400,24 @@ export async function sendChat(
   target: ChatTarget,
   mode: "plan" | "build" = "build",
 ): Promise<void> {
-  if (!current) return;
-  if (current.project.pages.length > 0) {
-    await sendRefine(message, target, mode);
-    return;
-  }
-  const sessionId = sessionStore.activeSessionId;
-  if (!sessionId || run) return;
-  messageStore.addUserMessage(sessionId, message);
-  run = { kind: "outline", total: expectedPages(), completed: 0, startedAt: new Date().toISOString() };
-  try {
-    await sendCommand("prompt", { sessionId, prompt: message }, { timeoutMs: 0 });
-  } catch (error) {
-    if ((error as { code?: string }).code !== "CANCELLATION_ERROR") {
-      reportError(error, "The request failed");
-    } else {
-      void refreshProject();
-    }
-  } finally {
-    run = null;
-  }
+  await sendRefine(message, target, mode);
+}
+
+export function stageOutline(outline: Parameters<typeof updateOutline>[0]): void {
+  pendingOutline = outline;
+  saveStatus = "saving";
+  clearTimeout(outlineTimer);
+  outlineTimer = setTimeout(() => { void flushOutline(); }, 600);
+}
+
+async function flushOutline(): Promise<void> {
+  clearTimeout(outlineTimer);
+  await outlineSaving;
+  if (!pendingOutline) return;
+  const outline = pendingOutline;
+  pendingOutline = null;
+  outlineSaving = updateOutline(outline);
+  await outlineSaving;
 }
 
 export async function updateOutline(
@@ -400,9 +433,10 @@ export async function updateOutline(
   saveStatus = "saving";
   try {
     const data = await sendCommand("artwork.updateOutline", { dir: current.dir, outline });
-    current = parseProjectSnapshot(data);
+    applyProjectPayload(data);
     saveStatus = "saved";
   } catch (error) {
+    pendingOutline ??= outline;
     saveStatus = "error";
     reportError(error, "Could not save the outline");
   }
@@ -626,6 +660,7 @@ export async function deleteProject(dir: string): Promise<void> {
 
 export async function closeProject(): Promise<void> {
   await stopActiveGeneration();
+  try { await flushProjectChanges(); } catch { return; }
   current = null;
   selectedPageId = null;
   run = null;
@@ -843,6 +878,7 @@ export const projectStore = {
   updateSettings,
   updateBrief,
   updateOutline,
+  stageOutline,
   plan,
   generate,
   applyDesign,

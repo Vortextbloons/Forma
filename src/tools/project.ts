@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RuntimeError, type RigTool, type ToolContext } from "rig";
 import { loadExtraction } from "../extraction/index.ts";
 import { FORMA_EVENTS } from "../forma/events.ts";
-import { formaEnv } from "../forma/runtime.ts";
+import { formaEnv, projectRuns } from "../forma/runtime.ts";
 import { pageRefs, readPage, updatePage, writePage } from "../projects/pages.ts";
 import { openProject, setOutline } from "../projects/store.ts";
 import { effectiveSize } from "../projects/size.ts";
@@ -247,6 +247,8 @@ function submitPageTool(): RigTool<typeof submitPageInput, unknown> {
       "Submit one finished page. Call once per slide (or once for a poster), in outline order. html is a fragment; css styles it; no JavaScript.",
     input: submitPageInput,
     async execute(input, ctx) {
+      const run = projectRuns.get(ctx.session.id);
+      if (run?.mode === "plan") throw new RuntimeError("Switch to Build to create artwork.");
       const dir = dirOf(ctx);
       const before = await openProject(dir);
       const { project, pageId } = await writePage(dir, {
@@ -258,6 +260,7 @@ function submitPageTool(): RigTool<typeof submitPageInput, unknown> {
         assets: input.assets,
       });
       const index = project.pages.indexOf(pageId);
+      if (run) run.artworkChanged = true;
       const total = totalPages(before);
       ctx.progress.report({
         message: `Page ${index + 1}/${total} ready`,
@@ -281,6 +284,8 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
       "Replace parts of an existing page (html, css, title, or assets). Use for refinements; other pages stay untouched.",
     input: updatePageInput,
     async execute(input, ctx) {
+      const run = projectRuns.get(ctx.session.id);
+      if (run?.mode === "plan") throw new RuntimeError("Switch to Build to change artwork.");
       if (
         input.title === undefined &&
         input.html === undefined &&
@@ -297,6 +302,7 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         css: input.css,
         assets: input.assets,
       });
+      if (run) run.artworkChanged = true;
       const index = project.pages.indexOf(pageId);
       emit(
         FORMA_EVENTS.pageReady,
