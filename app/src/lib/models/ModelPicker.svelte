@@ -14,10 +14,6 @@
         list.push({ id: provider.id, name: provider.name ?? provider.id });
       }
     }
-    const seen = new Set(list.map((provider) => provider.id));
-    for (const id of ids) {
-      if (!seen.has(id)) list.push({ id, name: id });
-    }
     return list;
   });
 
@@ -43,6 +39,43 @@
   const activeProvider = $derived(selectedInfo?.provider ?? "auto");
   const models = $derived(pool.filter((model) => model.provider === activeProvider));
 
+  let query = $state("");
+  const normalizedQuery = $derived(query.trim().toLowerCase());
+  const providerMatches = $derived(
+    connected.filter((provider) => provider.name.toLowerCase().includes(normalizedQuery)),
+  );
+  const modelMatches = $derived(
+    models.filter(
+      (model) =>
+        (model.name ?? model.id).toLowerCase().includes(normalizedQuery) ||
+        model.id.toLowerCase().includes(normalizedQuery),
+    ),
+  );
+
+  let searchEl: HTMLInputElement | undefined = $state();
+  let leaveTimer: number | undefined;
+
+  $effect(() => {
+    if (hoveredRow) searchEl?.focus();
+    return () => window.clearTimeout(leaveTimer);
+  });
+
+  function clearSearch(): void {
+    query = "";
+  }
+
+  function scheduleClear(): void {
+    window.clearTimeout(leaveTimer);
+    leaveTimer = window.setTimeout(() => {
+      hoveredRow = null;
+      clearSearch();
+    }, 150);
+  }
+
+  function cancelClear(): void {
+    window.clearTimeout(leaveTimer);
+  }
+
   function refOf(model: ModelInfo): string {
     return `${model.provider}/${model.id}`;
   }
@@ -63,7 +96,11 @@
   }
 </script>
 
-<div class="model-picker" onpointerleave={() => (hoveredRow = null)}>
+<div
+  class="model-picker"
+  onpointerleave={scheduleClear}
+  onpointerenter={cancelClear}
+>
   <div class="model-picker-rows">
     <div
       class="model-menu-row"
@@ -71,7 +108,7 @@
       tabindex="0"
       aria-haspopup="listbox"
       aria-expanded={hoveredRow === "provider"}
-      onpointerenter={() => (hoveredRow = "provider")}
+      onpointerenter={() => { hoveredRow = "provider"; clearSearch(); }}
     >
       <span class="model-menu-label">Provider</span>
       <span class="model-menu-value">{providerValue}</span>
@@ -83,7 +120,7 @@
       tabindex="0"
       aria-haspopup="listbox"
       aria-expanded={hoveredRow === "model"}
-      onpointerenter={() => (hoveredRow = "model")}
+      onpointerenter={() => { hoveredRow = "model"; clearSearch(); }}
     >
       <span class="model-menu-label">Model</span>
       <span class="model-menu-value">{modelValue}</span>
@@ -96,6 +133,13 @@
       role="listbox"
       aria-label={hoveredRow === "model" ? "Models" : "Providers"}
     >
+      <input
+        class="model-menu-search"
+        type="text"
+        placeholder={hoveredRow === "model" ? "Search models…" : "Search providers…"}
+        bind:this={searchEl}
+        bind:value={query}
+      />
       {#if hoveredRow === "model"}
         <button
           class="model-option"
@@ -105,7 +149,7 @@
         >
           <span class="model-option-name">Auto</span>
         </button>
-        {#each models as model (refOf(model))}
+        {#each modelMatches as model (refOf(model))}
           <button
             class="model-option"
             class:model-option-selected={modelStore.selectedModel === refOf(model)}
@@ -114,16 +158,17 @@
             onclick={() => choose(model)}
           >
             <span class="model-option-name">{model.name ?? model.id}</span>
-            {#if model.reasoning}
-              <span class="model-option-meta">reasoning</span>
-            {/if}
             {#if model.contextWindow}
               <span class="model-option-meta">{Math.round(model.contextWindow / 1000)}k</span>
             {/if}
           </button>
         {:else}
           <p class="model-picker-empty muted small">
-            {activeProvider === "auto" ? "Pick a provider first." : "No models."}
+            {activeProvider === "auto"
+              ? "Pick a provider first."
+              : normalizedQuery
+                ? "No matching models."
+                : "No models."}
           </p>
         {/each}
       {:else}
@@ -135,7 +180,7 @@
         >
           <span class="model-option-name">Auto</span>
         </button>
-        {#each connected as provider (provider.id)}
+        {#each providerMatches as provider (provider.id)}
           <button
             class="model-option"
             class:model-option-selected={activeProvider === provider.id}
@@ -145,7 +190,9 @@
             <span class="model-option-name">{provider.name}</span>
           </button>
         {:else}
-          <p class="model-picker-empty muted small">No connected providers.</p>
+          <p class="model-picker-empty muted small">
+            {normalizedQuery ? "No matching providers." : "No connected providers."}
+          </p>
         {/each}
       {/if}
     </div>

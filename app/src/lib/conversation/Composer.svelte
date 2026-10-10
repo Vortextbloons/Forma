@@ -17,7 +17,6 @@
   let draft = $state("");
   let busy = $state(false);
   let menuOpen = $state(false);
-  let menuCloseTimer: number | undefined;
   let menuWrap: HTMLDivElement | undefined = $state();
   let textarea: HTMLTextAreaElement | undefined = $state();
 
@@ -47,29 +46,11 @@
   $effect(() => {
     if (!menuOpen) return;
     const close = (event: PointerEvent): void => {
-      if (menuWrap && !menuWrap.contains(event.target as Node)) {
-        window.clearTimeout(menuCloseTimer);
-        menuOpen = false;
-      }
+      if (menuWrap && !menuWrap.contains(event.target as Node)) menuOpen = false;
     };
     window.addEventListener("pointerdown", close, true);
     return () => window.removeEventListener("pointerdown", close, true);
   });
-
-  function openMenu(): void {
-    window.clearTimeout(menuCloseTimer);
-    menuOpen = true;
-  }
-
-  function scheduleMenuClose(): void {
-    window.clearTimeout(menuCloseTimer);
-    menuCloseTimer = window.setTimeout(() => (menuOpen = false), 200);
-  }
-
-  function closeMenu(): void {
-    window.clearTimeout(menuCloseTimer);
-    menuOpen = false;
-  }
 
   async function submit(): Promise<void> {
     const text = draft.trim();
@@ -124,18 +105,13 @@
     aria-label="Message the agent"
   ></textarea>
   <div class="composer-toolbar">
-    <div
-      class="composer-menu-wrap"
-      bind:this={menuWrap}
-      onpointerenter={openMenu}
-      onpointerleave={scheduleMenuClose}
-    >
+    <div class="composer-menu-wrap" bind:this={menuWrap}>
       <button
         class="composer-model"
         type="button"
         aria-expanded={menuOpen}
         aria-haspopup="true"
-        onclick={() => (menuOpen ? closeMenu() : openMenu())}
+        onclick={() => (menuOpen = !menuOpen)}
       >
         <Icon name="zap" size={13} />
         <span class="composer-model-stack">
@@ -146,7 +122,7 @@
       </button>
       {#if menuOpen}
         <div class="composer-menu" role="menu" aria-label="Model settings">
-          <ModelPicker onselect={closeMenu} />
+          <ModelPicker onselect={() => (menuOpen = false)} />
         </div>
       {/if}
     </div>

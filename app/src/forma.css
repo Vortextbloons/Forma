@@ -1082,7 +1082,7 @@ html[data-theme="light"] .stage-page {
   width: var(--forma-panel-width, 400px);
   flex-shrink: 0;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   border-left: 1px solid var(--border);
 }
 
@@ -1272,7 +1272,47 @@ html[data-theme="light"] .stage-page {
 }
 
 .model-menu-list {
-  width: 170px;
+  position: absolute;
+  right: calc(100% + 8px);
+  bottom: -11px;
+  width: 190px;
+  max-height: 340px;
+}
+
+.model-menu-list::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -8px;
+  width: 8px;
+}
+
+.model-menu-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+
+.model-menu-search::placeholder {
+  color: var(--faint);
+}
+
+.model-menu-search:focus {
+  border-bottom-color: var(--accent);
+}
+
+.model-menu-list .model-option {
+  padding: 4px 10px;
 }
 
 .model-picker-rows {
@@ -1443,6 +1483,7 @@ html[data-theme="light"] .stage-page {
     bottom: 0;
     display: none;
     width: min(400px, calc(100% - 32px));
+    overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 12px 0 0 12px;
     background: var(--surface);

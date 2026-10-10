@@ -28,6 +28,7 @@ html[data-theme="light"] { color-scheme:light; --bg:#e8e6df; --surface:#f6f4ee; 
   align-self: stretch;
   height: auto;
   min-height: 0;
+  overflow: visible;
 }
 
 .sidebar,
