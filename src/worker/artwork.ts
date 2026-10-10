@@ -82,6 +82,12 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         });
       }
       const message = asString(params.message, "message");
+      const element = params.element === undefined ? undefined : z.object({
+        selector: z.string().min(1).max(2000),
+        html: z.string().max(4000),
+        text: z.string().max(160),
+      }).parse(params.element);
+      if (element && scope !== "page") throw new ProtocolError("Element feedback requires a page target");
       const mode = asOptionalString(params.mode) ?? "build";
       if (mode !== "plan" && mode !== "build") {
         throw new ProtocolError(`Invalid refinement mode "${mode}"`);
@@ -92,7 +98,7 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         dir,
         sessionId: asOptionalString(params.sessionId),
         model: asOptionalString(params.model),
-        prompt: refinePrompt(project, scope, pageId, message, mode),
+        prompt: refinePrompt(project, scope, pageId, message, mode, element),
         mode,
         references: images,
         allowedPageIds: scope === "page" && pageId ? [pageId] : undefined,

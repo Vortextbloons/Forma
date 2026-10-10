@@ -8,6 +8,7 @@ import type { ProjectFile } from "../projects/schema.ts";
 import { launchBrowser, renderPage } from "./browser.ts";
 import { composePage } from "./compose.ts";
 import { cssPixelSize } from "./validate.ts";
+import { addEditableArtwork } from "./editable.ts";
 
 export type ExportFormat = "pdf" | "png" | "pptx";
 
@@ -155,13 +156,7 @@ async function exportPptx(
     for (const pageId of request.pageIds) {
       throwIfAborted(request.signal);
       await renderPage(page, composed.get(pageId)!, viewport, PPTX_SCALE);
-      const shot = await page.screenshot({
-        type: "png",
-        clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
-      });
-      presentation
-        .addSlide()
-        .addImage({ data: `image/png;base64,${Buffer.from(shot).toString("base64")}`, x: 0, y: 0, w: width, h: height });
+      await addEditableArtwork(page, presentation.addSlide(), viewport);
       completed += 1;
       request.onProgress?.(completed, request.pageIds.length);
     }

@@ -47,6 +47,7 @@ import {
   CONTEXT_ROLES,
   PLAN_MODES,
   deriveProjectName,
+  projectPreferencesSchema,
   projectSettingsSchema,
   type ContextRole,
   type ProjectFile,
@@ -380,6 +381,15 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const sessionIds = asStringArray(params.sessionIds, "sessionIds");
       const project = await updateProject(dir, (current) => {
         current.conversation.sessionIds = sessionIds;
+      });
+      return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "project.updatePreferences"(params) {
+      const dir = asString(params.dir, "dir");
+      const preferences = projectPreferencesSchema.parse(params.preferences ?? {});
+      const project = await updateProject(dir, (current) => {
+        current.preferences = preferences;
       });
       return ok({ project: toProjectPayload(project, dir) });
     },

@@ -14,11 +14,13 @@
 
 <script lang="ts">
   import { modelStore } from "../rig/stores/modelStore.svelte";
+  import { projectStore } from "../forma/projectStore.svelte";
 
-  function onSelect(event: Event): void {
+  async function onSelect(event: Event): Promise<void> {
     const value = (event.currentTarget as HTMLSelectElement).value;
     if (!(modelStore.supportedThinkingLevels() as readonly string[]).includes(value)) return;
-    void modelStore.setThinkingLevel(value as ThinkingLevel);
+    await modelStore.setThinkingLevel(value as ThinkingLevel);
+    projectStore.savePreferences();
   }
 </script>
 

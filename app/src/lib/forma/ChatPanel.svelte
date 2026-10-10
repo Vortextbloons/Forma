@@ -12,11 +12,12 @@
   const project = $derived(projectStore.current?.project);
   const pages = $derived(project?.pages ?? []);
   const selectedId = $derived(projectStore.selectedPageId);
+  const selectedElement = $derived(projectStore.selectedElement);
   const isPoster = $derived(project?.settings.output === "poster");
   const isSlides = $derived(project?.settings.output === "slides");
   const showRail = $derived(isSlides && pages.length > 0);
 
-  let scope = $state<"page" | "project">("project");
+  const scope = $derived(projectStore.refineScope);
   const empty = $derived(messageStore.bySession(sessionId ?? "").length === 0);
   let historyOpen = $state(false);
   let historyEl = $state<HTMLElement | null>(null);
@@ -62,7 +63,9 @@
   }
 
   const target = $derived<ChatTarget>(
-    scope === "page" && selectedId && !isPoster
+    selectedElement
+      ? { scope: "page", pageId: selectedElement.pageId, element: selectedElement }
+      : scope === "page" && selectedId && !isPoster
       ? { scope: "page", pageId: selectedId }
       : { scope: "project" },
   );
@@ -104,20 +107,23 @@
   </div>
   <div class="chat-target">
     <span>{pages.length > 0 ? "Working on" : "Project"}</span>
-    {#if pages.length > 0 && !isPoster}
+    {#if selectedElement}
+      <strong class="selected-element" title={selectedElement.selector}>Selected element: {selectedElement.text || "Shape"}</strong>
+      <button class="icon-btn" type="button" aria-label="Clear selected element" title="Clear selected element" onclick={() => projectStore.selectElement(null)}><Icon name="x" size={14} /></button>
+    {:else if pages.length > 0 && !isPoster}
       <div class="segmented segmented-small" role="group" aria-label="Refinement target">
         <button
           type="button"
           class:active={scope === "page"}
           aria-pressed={scope === "page"}
           disabled={!selectedId}
-          onclick={() => (scope = "page")}
+          onclick={() => projectStore.setRefineScope("page")}
         >Selected slide</button>
         <button
           type="button"
           class:active={scope === "project"}
           aria-pressed={scope === "project"}
-          onclick={() => (scope = "project")}
+          onclick={() => projectStore.setRefineScope("project")}
         >Entire presentation</button>
       </div>
     {:else}
@@ -125,6 +131,11 @@
     {/if}
 
   </div>
+  {#if selectedElement}
+    <p class="element-feedback-hint muted small">Describe the change below. AI will apply your feedback to this element.</p>
+  {:else if pages.length > 0}
+    <p class="element-feedback-hint muted small">Click an element in the preview to give AI feedback.</p>
+  {/if}
   {#if empty && project}
     <div class="chat-welcome">
       <span class="creation-kicker">{isPoster ? "POSTER STUDIO" : "PRESENTATION STUDIO"}</span>
@@ -178,7 +189,7 @@
         <Icon name="x" size={16} />
       </button>
       <div class="chat-lightbox-stage">
-        <PagePreview pageId={previewPageId} />
+        <PagePreview pageId={previewPageId} onsubmit={() => (previewPageId = null)} />
       </div>
       <p class="chat-lightbox-caption">{titleOf(previewPageId)}</p>
     </div>
@@ -186,3 +197,19 @@
 </div>
 
 <svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />
+
+<style>
+  .selected-element {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .element-feedback-hint {
+    margin: 0;
+    padding: 8px 14px;
+    flex-shrink: 0;
+  }
+</style>

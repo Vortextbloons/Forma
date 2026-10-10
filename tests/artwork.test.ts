@@ -20,8 +20,42 @@ import { setFormaEnv } from "../src/forma/runtime.ts";
 import { createProject, importContextAsset, openProject, setOutline, updateProject } from "../src/projects/store.ts";
 import { readPage, writePage } from "../src/projects/pages.ts";
 import { defaultSettings, type OutputKind } from "../src/projects/schema.ts";
+import { launchBrowser } from "../src/rendering/browser.ts";
+import { document as composeDocument } from "../src/rendering/compose.ts";
+import { elementSelectionScript } from "../src/rendering/selection.ts";
 
 const AGENT_PATH = join(import.meta.dirname, "..", "src", "agent.ts");
+
+it("selects the clicked element from a sandboxed preview without changing its source context", async () => {
+  const browser = await launchBrowser();
+  const page = await browser.newPage();
+  try {
+    const html = composeDocument('<section><h1>Heading</h1><p>Give feedback on this</p></section>', "", { width: 1920, height: 1080, unit: "px" }).replace("</body>", `${elementSelectionScript("page-one")}</body>`);
+    await page.setContent('<iframe sandbox="allow-scripts"></iframe>');
+    await page.evaluate((source) => {
+      (window as unknown as { selection: unknown }).selection = null;
+      window.addEventListener("message", (event) => { (window as unknown as { selection: unknown }).selection = event.data; });
+      document.querySelector("iframe")!.srcdoc = source;
+    }, html);
+    await page.waitForFunction(() => document.querySelector("iframe")?.contentWindow !== null);
+    const iframe = await page.$("iframe");
+    const frame = await iframe!.contentFrame();
+    await frame!.waitForSelector("p");
+    await frame!.click("p");
+    await page.waitForFunction(() => (window as unknown as { selection: unknown }).selection !== null);
+    const selection = await page.evaluate(() => (window as unknown as { selection: unknown }).selection);
+    expect(selection).toMatchObject({ type: "forma:element-selected", pageId: "page-one", selector: ".forma-page > section:nth-child(1) > p:nth-child(2)", html: "<p>Give feedback on this</p>", text: "Give feedback on this" });
+    const bounds = await frame!.evaluate(() => {
+      const rect = document.querySelector("p")!.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
+    expect((selection as { bounds: unknown }).bounds).toEqual(bounds);
+    await page.evaluate(() => document.querySelector("iframe")!.contentWindow!.postMessage({ type: "forma:selection", selector: null }, "*"));
+    await frame!.waitForFunction(() => (document.body.lastElementChild as HTMLElement).style.display === "none");
+  } finally {
+    await page.close();
+  }
+}, 60_000);
 
 type ResponseSource = FauxResponseStep[] | ((dir: string) => FauxResponseStep[]);
 type ModelContext = Parameters<Extract<FauxResponseStep, (...args: never[]) => unknown>>[0];
@@ -296,7 +330,7 @@ describe("forma artwork pipeline", () => {
     }
   }, 90_000);
 
-  it("refining one slide leaves the other slides untouched", async () => {
+  it("passes selected element feedback to AI and leaves other slides untouched", async () => {
     let ids: string[] = [];
     const harness = await setup({
       prepare: async (dir) => {
@@ -309,9 +343,12 @@ describe("forma artwork pipeline", () => {
         await writePage(dir, { index: 2, title: "Two", html: '<div class="two">two</div>', css: "" });
       },
       responses: () => [
-        fauxAssistantMessage([
-          fauxToolCall("update_page", { pageId: ids[0]!, html: '<div class="one">one blue</div>' }),
-        ]),
+        (context: ModelContext) => {
+          const prompt = JSON.stringify(context.messages);
+          expect(prompt).toContain(".forma-page > div:nth-child(1)");
+          expect(prompt).toContain("Apply the user's feedback only to this element");
+          return fauxAssistantMessage([fauxToolCall("update_page", { pageId: ids[0]!, html: '<div class="one">one blue</div>' })]);
+        },
         fauxAssistantMessage("Updated slide one", { stopReason: "stop" }),
       ],
     });
@@ -321,6 +358,7 @@ describe("forma artwork pipeline", () => {
         scope: "page",
         pageId: ids[0],
         message: "Make slide one blue",
+        element: { selector: ".forma-page > div:nth-child(1)", html: '<div class="one">one</div>', text: "one" },
       });
       expect(result.ok, JSON.stringify(result)).toBe(true);
 

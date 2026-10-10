@@ -5,6 +5,7 @@ import { messageStore } from "../rig/stores/messageStore.svelte";
 import { modelStore } from "../rig/stores/modelStore.svelte";
 import { workerStore } from "../rig/stores/workerStore.svelte";
 import type { DesignTheme } from "../../../../src/projects/themes.ts";
+import type { SelectedElement } from "../../../../src/forma/prompts.ts";
 import { isFormaDomainEvent, type FormaDomainEvent, type SessionStatus } from "../rig/types";
 import {
   parseExportFiles,
@@ -21,6 +22,7 @@ import {
   type FormaRunState,
   type ProjectFile,
   type ProjectListEntry,
+  type ProjectPreferences,
   type ProjectSettings,
   type ProjectSnapshot,
   type SearchCredentialStatus,
@@ -30,7 +32,7 @@ import {
 } from "./types";
 
 export type SaveStatus = "saved" | "saving" | "error";
-export type ChatTarget = { scope: "page" | "project"; pageId?: string };
+export type ChatTarget = { scope: "page" | "project"; pageId?: string; element?: SelectedElement };
 
 let current = $state<ProjectSnapshot | null>(null);
 let library = $state<ProjectListEntry[]>([]);
@@ -43,7 +45,9 @@ let run = $state<FormaRunState | null>(null);
 let validation = $state<ValidationReport | null>(null);
 let validating = $state(false);
 let selectedPageId = $state<string | null>(null);
+let selectedElement = $state<(SelectedElement & { pageId: string }) | null>(null);
 let zoom = $state<number | "fit">("fit");
+let refineScope = $state<"page" | "project">("project");
 let needsImageModel = $state(false);
 let composed = $state<Record<string, { html: string; missing: string[] }>>({});
 let exportRun = $state<ExportRunState | null>(null);
@@ -172,8 +176,33 @@ async function attach(snapshot: ProjectSnapshot): Promise<void> {
   exportRun = null;
   exportResult = null;
   selectedPageId = snapshot.project.pages[0] ?? null;
+  selectedElement = null;
   needsImageModel = false;
+  zoom = snapshot.project.preferences.zoom;
+  refineScope = snapshot.project.preferences.refineScope;
   await Promise.all([loadProjects(), loadThemes(), refreshSearchCredentials(), ensureConversation()]);
+}
+
+async function applyModelPreferences(): Promise<void> {
+  const preferences = current?.project.preferences;
+  if (!preferences) return;
+  await modelStore.select(preferences.model);
+  await modelStore.setThinkingLevel(preferences.thinkingLevel);
+}
+
+export function savePreferences(): void {
+  if (!current) return;
+  const dir = current.dir;
+  const preferences: ProjectPreferences = {
+    model: modelStore.selectedModel,
+    thinkingLevel: modelStore.thinkingLevel,
+    refineScope,
+    zoom,
+  };
+  current = { ...current, project: { ...current.project, preferences } };
+  sendCommand("project.updatePreferences", { dir, preferences }).catch((error: unknown) => {
+    reportError(error, "Could not save preferences");
+  });
 }
 
 export async function loadThemes(): Promise<void> {
@@ -271,6 +300,7 @@ async function createChatSession(): Promise<void> {
   const sessionIds = [...snapshot.project.conversation.sessionIds, info.id];
   patchConversationSessionIds(sessionIds);
   sessionStore.select(info.id);
+  await applyModelPreferences();
   await persistConversation(sessionIds);
 }
 
@@ -278,7 +308,7 @@ export function ensureConversation(): Promise<void> {
   return withConversation(async () => {
     if (!current) return;
     for (const id of conversationOrder(current.project.conversation.sessionIds)) {
-      if (await sessionStore.resume(id)) return;
+      if (await sessionStore.resume(id)) return applyModelPreferences();
     }
     await createChatSession();
   });
@@ -292,7 +322,9 @@ export function selectChat(id: string): Promise<void> {
   return withConversation(async () => {
     if (!current || run || !current.project.conversation.sessionIds.includes(id)) return;
     await stopActiveGeneration();
-    if (!await sessionStore.resume(id)) {
+    if (await sessionStore.resume(id)) {
+      await applyModelPreferences();
+    } else {
       reportError(new Error("The conversation could not be loaded. Try again."), "Could not open chat");
     }
   });
@@ -319,6 +351,7 @@ export function updateSettings(settings: ProjectSettings): void {
   current = { ...current, project: { ...current.project, settings } };
   composed = {};
   validation = null;
+  selectedElement = null;
   saveStatus = "saving";
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -505,6 +538,7 @@ export async function sendRefine(
     {
       scope: target.scope,
       ...(target.scope === "page" && target.pageId ? { pageId: target.pageId } : {}),
+      ...(target.element ? { element: target.element } : {}),
       message,
       mode,
     },
@@ -584,17 +618,31 @@ export async function deletePage(pageId: string): Promise<void> {
     if (selectedPageId === pageId) {
       selectedPageId = current.project.pages[0] ?? null;
     }
+    if (selectedElement?.pageId === pageId) selectedElement = null;
   } catch (error) {
     reportError(error, "Could not delete the slide");
   }
 }
 
 export function selectPage(pageId: string): void {
+  if (selectedPageId !== pageId) selectedElement = null;
   selectedPageId = pageId;
+}
+
+export function selectElement(element: (SelectedElement & { pageId: string }) | null): void {
+  if (element && !current?.project.pages.includes(element.pageId)) return;
+  selectedElement = element;
+  if (element) selectedPageId = element.pageId;
 }
 
 export function setZoom(value: number | "fit"): void {
   zoom = value;
+  savePreferences();
+}
+
+export function setRefineScope(value: "page" | "project"): void {
+  refineScope = value;
+  savePreferences();
 }
 
 export async function composePage(pageId: string): Promise<string | null> {
@@ -844,6 +892,7 @@ function resetProject(): void {
   pendingOutline = null;
   current = null;
   selectedPageId = null;
+  selectedElement = null;
   run = null;
   validation = null;
   composed = {};
@@ -950,6 +999,7 @@ function handleFormaEvent(event: FormaDomainEvent): void {
         runPageIds.add(pageId);
         const { [pageId]: _removed, ...rest } = composed;
         composed = rest;
+        if (selectedElement?.pageId === pageId) selectedElement = null;
       }
       validation = null;
       if (run) run = { ...run, completed: runPageIds.size };
@@ -1060,8 +1110,14 @@ export const projectStore = {
   get selectedPageId() {
     return selectedPageId;
   },
+  get selectedElement() {
+    return selectedElement;
+  },
   get zoom() {
     return zoom;
+  },
+  get refineScope() {
+    return refineScope;
   },
   get needsImageModel() {
     return needsImageModel;
@@ -1105,7 +1161,10 @@ export const projectStore = {
   duplicatePage,
   deletePage,
   selectPage,
+  selectElement,
   setZoom,
+  setRefineScope,
+  savePreferences,
   composePage,
   validateArtwork,
   startExport,

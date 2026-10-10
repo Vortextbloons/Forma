@@ -212,7 +212,7 @@
                 onclick={() => selectFormat("pptx")}
               >
                 <span class="export-format-name">Google Slides (.pptx)</span>
-                <span class="muted small">One flattened image per slide, ready to import</span>
+                <span class="muted small">Editable text and shapes, ready to import</span>
               </button>
             {/if}
           </div>
@@ -261,7 +261,7 @@
 
         {#if format === "pptx"}
           <p class="muted small export-note">
-            Artwork is flattened into slide images. Import the .pptx into Google Slides to present it; animations and transitions are added there.
+            Import the .pptx into Google Slides to edit supported text and shapes. Complex artwork remains images; animations and transitions are added there.
           </p>
         {/if}
 

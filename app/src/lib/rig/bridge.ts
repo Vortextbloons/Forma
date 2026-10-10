@@ -562,6 +562,7 @@ class MockBridge extends BaseBridge {
       context: [],
       sources: [],
       conversation: { sessionIds: [] },
+      preferences: { model: "auto", thinkingLevel: "medium", refineScope: "project", zoom: "fit" },
     };
   }
 
@@ -868,6 +869,13 @@ class MockBridge extends BaseBridge {
         project.conversation = {
           sessionIds: Array.isArray(params.sessionIds) ? params.sessionIds : [],
         };
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "project.updatePreferences": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        project.preferences = asRecord(params.preferences);
         this.settleResult(id, true, { project: { dir, project } });
         break;
       }

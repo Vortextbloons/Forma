@@ -1,6 +1,7 @@
 <script lang="ts">
   import { modelStore } from "../rig/stores/modelStore.svelte";
   import { providerStore } from "../rig/stores/providerStore.svelte";
+  import { projectStore } from "../forma/projectStore.svelte";
   import Icon from "../components/Icon.svelte";
   import type { ModelInfo } from "../rig/types";
 
@@ -85,13 +86,15 @@
     if (match) choose(match);
   }
 
-  function chooseAuto(): void {
-    void modelStore.select("auto");
+  async function chooseAuto(): Promise<void> {
+    await modelStore.select("auto");
+    projectStore.savePreferences();
     onselect?.();
   }
 
-  function choose(model: ModelInfo): void {
-    void modelStore.select(refOf(model));
+  async function choose(model: ModelInfo): Promise<void> {
+    await modelStore.select(refOf(model));
+    projectStore.savePreferences();
     onselect?.();
   }
 </script>

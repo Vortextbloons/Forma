@@ -23,7 +23,7 @@ export default defineAgent({
     "- Each page is a fixed-size composition matching pageSize from read_project exactly (for example 1920x1080 pixels). Design for that size; never rely on scrolling.",
     "- The HTML source file contains an HTML fragment (no <html>, <body>, <script>, or event handlers) and the CSS source file styles that page. All artwork must be static: no JavaScript, no external URLs, no web fonts fetched from the network.",
     "- Reference context images with their project-relative path exactly as shown in read_project (for example assets/ctx_ab12cd34ef56.png).",
-    "- Use inline SVG for illustrations and charts when it helps. Keep text readable at the target size and inside page bounds.",
+    "- Use inline SVG only when it carries real information: charts, diagrams, simple functional icons, or brand marks. Do not add decorative clip-art illustrations, icon packs, abstract blobs, or doodle mascots; they read as cheap AI filler. Prefer type, photography, layout, and color when SVG is not earning its place. Keep any SVG text readable at the target size and inside page bounds.",
     "- Use font stacks that exist on Windows (for example \"Segoe UI\", Bahnschrift, Georgia, \"Trebuchet MS\", Arial).",
     "",
     "Context:",

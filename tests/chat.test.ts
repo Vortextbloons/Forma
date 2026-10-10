@@ -68,7 +68,7 @@ async function loadProjectStore(
       select: (id: string) => { harness.sessionStore.activeSessionId = id; },
       newSession: async () => ({ id: `chat-${++sessionCount}` }),
     },
-    messageStore: {},
+    messageStore: { addUserMessage: () => {} },
     modelStore: { selectedModel: "auto" },
     workerStore: { status: overrides.workerStatus ?? "ready", readyInfo: undefined },
     isFormaDomainEvent: () => false,
@@ -103,6 +103,29 @@ async function loadProjectStore(
 }
 
 describe("project conversation lifecycle", () => {
+  it("sends selected element feedback and clears the target when switching slides", async () => {
+    const dir = "C:\\Forma-test\\projects\\element-feedback";
+    const project = { id: "element-feedback", formatVersion: 1, name: "Elements", settings: { slideCount: 2 }, context: [], pages: ["one", "two"], conversation: { sessionIds: [] } };
+    let refinement: Record<string, unknown> | undefined;
+    const harness = await loadProjectStore(async (name, params) => {
+      if (name === "artwork.refine") refinement = params;
+      if (name === "project.open" || name === "project.setConversation" || name === "artwork.refine") return { project: { dir, project } };
+      return {};
+    });
+    try {
+      await harness.store.openProject(dir);
+      const element = { pageId: "two", selector: ".forma-page > h1:nth-child(1)", html: "<h1>Heading</h1>", text: "Heading" };
+      harness.store.selectElement(element);
+      expect(harness.store.selectedPageId).toBe("two");
+      await harness.store.sendRefine("Make this bigger", { scope: "page", pageId: "two", element: harness.store.selectedElement });
+      expect(refinement).toMatchObject({ scope: "page", pageId: "two", element, message: "Make this bigger" });
+      harness.store.selectPage("one");
+      expect(harness.store.selectedElement).toBeNull();
+    } finally {
+      harness.close();
+    }
+  });
+
   it.each(["saved", "missing"])("ignores a late %s conversation result after closing the project", async (result) => {
     const dir = "C:\\Forma-test\\projects\\closed-project";
     const project = { id: "closed-project", formatVersion: 1, name: "Closed project", settings: {}, context: [], pages: [], conversation: { sessionIds: [] } };

@@ -11,6 +11,7 @@ import {
   newSourceId,
   nowIso,
   parseProjectFile,
+  projectPreferencesSchema,
   type ContextItem,
   type ContextRole,
   type ProjectFile,
@@ -119,6 +120,7 @@ export async function createProject(input: CreateProjectInput): Promise<CreatedP
       context: [],
       sources: [],
       conversation: { sessionIds: [] },
+      preferences: projectPreferencesSchema.parse({}),
     };
     await mkdir(dir, { recursive: true });
     await mkdir(join(dir, "pages"), { recursive: true });

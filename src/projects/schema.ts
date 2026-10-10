@@ -25,6 +25,8 @@ export type Density = (typeof DENSITIES)[number];
 export const PLAN_MODES = ["plan", "create"] as const;
 export type PlanMode = (typeof PLAN_MODES)[number];
 
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
 const slideSizeSchema = z.object({
   preset: z.enum(["16:9", "4:3", "custom"]).default("16:9"),
   width: z.number().int().positive().default(1920),
@@ -112,6 +114,15 @@ export const outlineEntrySchema = z.object({
 
 export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 
+export const projectPreferencesSchema = z.object({
+  model: z.string().default("auto"),
+  thinkingLevel: z.enum(THINKING_LEVELS).default("medium"),
+  refineScope: z.enum(["page", "project"]).default("project"),
+  zoom: z.union([z.number().positive(), z.literal("fit")]).default("fit"),
+});
+
+export type ProjectPreferences = z.infer<typeof projectPreferencesSchema>;
+
 export const pageMetaSchema = z.object({
   title: z.string().default(""),
   assets: z.array(z.string()).default([]),
@@ -142,6 +153,7 @@ export const projectFileSchema = z.object({
       sessionIds: z.array(z.string()).default([]),
     })
     .default({}),
+  preferences: projectPreferencesSchema.default({}),
 });
 
 export type ProjectFile = z.infer<typeof projectFileSchema>;

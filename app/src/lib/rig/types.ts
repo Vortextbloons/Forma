@@ -44,6 +44,7 @@ export const FORMA_COMMAND_NAMES = [
   "design.saveTheme",
   "project.updateBrief",
   "project.setConversation",
+  "project.updatePreferences",
   "context.import",
   "context.importAsset",
   "context.importNote",

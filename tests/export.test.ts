@@ -197,7 +197,7 @@ describe("forma exports", () => {
     expect(Math.abs(size.height - (297 / 25.4) * 300)).toBeLessThanOrEqual(2);
   }, 120_000);
 
-  it("exports a PPTX with one full-page image per slide in project order", async () => {
+  it("exports solid slide backgrounds as native shapes in project order", async () => {
     const { dir, pages } = await deck();
     const result = await runExport({
       dir,
@@ -211,17 +211,39 @@ describe("forma exports", () => {
       .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
       .sort((a, b) => Number(a.match(/\d+/)![0]) - Number(b.match(/\d+/)![0]));
     expect(slides).toEqual(["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"]);
-    const colors: Array<[number, number, number]> = [];
-    for (const slide of slides) {
-      const rels = await zip.file(`ppt/slides/_rels/${slide.split("/").pop()}.rels`)!.async("string");
-      const target = /Target="\.\.\/media\/([^"]+)"/.exec(rels)![1]!;
-      colors.push(await centerColor(await zip.file(`ppt/media/${target}`)!.async("nodebuffer")));
-    }
-    expect(colors[0]![0]).toBeGreaterThan(200);
-    expect(colors[0]![2]).toBeLessThan(80);
-    expect(colors[1]![2]).toBeGreaterThan(200);
-    expect(colors[1]![0]).toBeLessThan(80);
+    const first = await zip.file(slides[0]!)!.async("string");
+    const second = await zip.file(slides[1]!)!.async("string");
+    expect(first).toContain('<a:srgbClr val="FF0000"');
+    expect(second).toContain('<a:srgbClr val="0000FF"');
+    expect(first).toContain('<a:ext cx="18288000" cy="10287000"');
+    expect(first).not.toContain("<p:pic>");
+    expect(second).not.toContain("<p:pic>");
   }, 180_000);
+
+  it("exports editable text and shapes alongside transparent raster artwork", async () => {
+    const { dir, pages } = await deck();
+    await updatePage(dir, pages[0]!, {
+      html: '<h1 style="position:absolute;left:96px;top:96px;width:600px;height:100px;margin:0;font:700 48px Arial;color:#123456">Editable heading</h1><div style="position:absolute;left:96px;top:250px;width:200px;height:100px;border-radius:16px;background:#22cc66"></div><div style="position:absolute;left:400px;top:250px;width:100px;height:100px;border-radius:50%;background:#cc2266"></div><div style="position:absolute;left:700px;top:250px;width:200px;height:100px;background:linear-gradient(red,blue)"><p>Editable on gradient</p></div>',
+      css: "",
+    });
+    const result = await runExport({ dir, project: await openProject(dir), format: "pptx", pageIds: [pages[0]!], destination: join(root, "editable.pptx") });
+    const zip = await JSZip.loadAsync(await readFile(result.files[0]!));
+    const xml = await zip.file("ppt/slides/slide1.xml")!.async("string");
+    expect(xml).toContain("<a:t>Editable heading</a:t>");
+    expect(xml).toContain("<a:t>Editable on gradient</a:t>");
+    expect(xml).toContain('sz="3600"');
+    expect(xml).toContain('<a:off x="914400" y="914400"');
+    expect(xml).toContain('prst="roundRect"');
+    expect(xml).toContain('prst="ellipse"');
+    expect(xml.match(/<p:pic>/g)).toHaveLength(1);
+    const media = Object.keys(zip.files).find((name) => /^ppt\/media\/.*\.png$/.test(name))!;
+    const image = await loadImage(await zip.file(media)!.async("nodebuffer"));
+    const canvas = createCanvas(image.width, image.height);
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    expect(context.getImageData(200, 200, 1, 1).data[3]).toBe(0);
+    expect(context.getImageData(1500, 600, 1, 1).data[3]).toBe(255);
+  }, 120_000);
 
   it("blocks export when artwork references missing assets", async () => {
     const dir = join(root, "broken");

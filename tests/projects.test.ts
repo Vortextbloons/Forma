@@ -122,6 +122,23 @@ describe("project persistence", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it("keeps saved chat preferences and defaults projects saved before they existed", async () => {
+    const root = await tempDir();
+    const dir = join(root, "Preferences");
+    await createProject({ dir, name: "Preferences", prompt: "", mode: "plan", settings: defaultSettings() });
+
+    await updateProject(dir, (project) => {
+      project.preferences = { model: "openai/gpt-5", thinkingLevel: "high", refineScope: "page", zoom: 150 };
+    });
+    expect((await openProject(dir)).preferences).toEqual({ model: "openai/gpt-5", thinkingLevel: "high", refineScope: "page", zoom: 150 });
+
+    const legacy = JSON.parse(await readFile(projectFilePath(dir), "utf8"));
+    delete legacy.preferences;
+    await writeFile(projectFilePath(dir), JSON.stringify(legacy));
+    expect((await openProject(dir)).preferences).toEqual({ model: "auto", thinkingLevel: "medium", refineScope: "project", zoom: "fit" });
+    await rm(root, { recursive: true, force: true });
+  });
+
   it("refuses to create a second project in the same folder", async () => {
     const root = await tempDir();
     const dir = join(root, "Deck");
