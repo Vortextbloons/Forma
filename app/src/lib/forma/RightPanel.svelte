@@ -7,14 +7,20 @@
 
   let {
     drawerOpen = false,
+    width,
     onCloseDrawer,
-  }: { drawerOpen?: boolean; onCloseDrawer: () => void } = $props();
+  }: { drawerOpen?: boolean; width?: number; onCloseDrawer: () => void } = $props();
 
   let tab = $state<"chat" | "assets" | "design">("chat");
   const contextCount = $derived(projectStore.current?.project.context.length ?? 0);
 </script>
 
-<aside class="forma-right-panel" class:drawer-open={drawerOpen} aria-label="Project panel">
+<aside
+  class="forma-right-panel"
+  class:drawer-open={drawerOpen}
+  style={width !== undefined ? `--forma-panel-width:${width}px` : undefined}
+  aria-label="Project panel"
+>
   <div class="panel-tabs" role="tablist" aria-label="Project panel">
     <button
       type="button"

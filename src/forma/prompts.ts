@@ -1,0 +1,97 @@
+import { effectiveSize } from "../projects/size.ts";
+import type { ProjectFile } from "../projects/schema.ts";
+
+export function planPrompt(project: ProjectFile): string {
+  const size = effectiveSize(project.settings);
+  if (project.settings.output === "poster") {
+    return [
+      "Plan this poster project. Call read_project first, then submit_outline exactly once with a single composition brief entry.",
+      `The poster is ${size.width}x${size.height}${size.unit === "px" ? " pixels" : ` ${size.unit}`}.`,
+      "The brief entry should hold the poster headline, the key messages as points, and a visual direction that describes the composition.",
+      "Do not create artwork yet.",
+    ].join("\n");
+  }
+  return [
+    `Plan this presentation: ${project.settings.slideCount} slides unless the brief asks for something else.`,
+    "Call read_project first, then submit_outline exactly once with the complete ordered outline.",
+    "Each entry needs a title, the key points to show, a short visual direction, and the context item ids it should use.",
+    "Do not create artwork yet.",
+  ].join("\n");
+}
+
+export function generatePrompt(project: ProjectFile): string {
+  const size = effectiveSize(project.settings);
+  const sizeText =
+    size.unit === "px"
+      ? `${size.width}x${size.height} pixels`
+      : `${size.width}x${size.height} ${size.unit}`;
+  if (project.settings.output === "poster") {
+    return [
+      "Create the poster artwork now.",
+      "Call read_project first, read any context you need, then submit exactly one page with submit_page (index 1).",
+      `The page is ${sizeText}; fill it exactly.`,
+      "When done, call inspect_page and fix any reported layout problems.",
+    ].join("\n");
+  }
+  const outline = project.outline ?? [];
+  if (outline.length > 0) {
+    return [
+      `Create the artwork for the approved outline now (${outline.length} pages).`,
+      "Call read_project first, then submit one page per outline entry with submit_page, using the entry's 1-based index and its page id, in outline order.",
+      "Do not add, remove, or reorder entries. Every outline entry must produce exactly one page.",
+      `Each page is ${sizeText}; fill it exactly.`,
+      "When done, call inspect_page on the pages and fix any reported layout problems.",
+    ].join("\n");
+  }
+  return [
+    `Create the artwork now (${project.settings.slideCount} slides).`,
+    "Call read_project first. Then submit one page per slide with submit_page in order, starting at index 1.",
+    `Each page is ${sizeText}; fill it exactly.`,
+    "When done, call inspect_page on the pages and fix any reported layout problems.",
+  ].join("\n");
+}
+
+export function refinePrompt(
+  project: ProjectFile,
+  scope: "page" | "project",
+  pageId: string | undefined,
+  message: string,
+): string {
+  const lines: string[] = [];
+  if (scope === "page" && pageId) {
+    const index = project.pages.indexOf(pageId) + 1;
+    lines.push(
+      `The user is refining slide ${index} (page id ${pageId}). Read it with read_page before changing it.`,
+      "Only update this page unless the request clearly requires another page. Never rewrite other pages.",
+    );
+  } else if (project.settings.output === "poster") {
+    lines.push(
+      "The user is refining the poster. Read the current page with read_page before changing it.",
+    );
+  } else {
+    lines.push(
+      "The user is refining the entire presentation. Read the pages you plan to change with read_page first.",
+      "Apply the change consistently, but leave pages the request does not touch unchanged.",
+    );
+  }
+  lines.push(
+    "If the message asks for changes, persist them with update_page or submit_page. If it is a question, answer it without editing.",
+    "After editing a page, call inspect_page and fix any reported layout problems.",
+    "",
+    "User message:",
+    message,
+  );
+  return lines.join("\n");
+}
+
+export function applyDesignPrompt(project: ProjectFile): string {
+  const settings = project.settings;
+  const size = effectiveSize(settings);
+  return [
+    "The user changed the design settings and wants the existing artwork updated to match.",
+    `Current settings: style ${settings.style}, density ${settings.density}, output ${settings.output}, page size ${size.width}x${size.height}${size.unit}.`,
+    "Read the pages with read_page, then update them with update_page so they follow the new style and density.",
+    "Keep the content, slide order, and titles. Do not add or remove pages.",
+    "Call inspect_page after updating and fix any reported layout problems.",
+  ].join("\n");
+}

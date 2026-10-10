@@ -44,9 +44,24 @@ export const FORMA_COMMAND_NAMES = [
   "project.updateBrief",
   "project.setConversation",
   "context.import",
+  "context.importNote",
+  "context.getText",
   "context.remove",
   "context.update",
   "provider.setApiKey",
+  "settings.getSearch",
+  "settings.setSearchKey",
+  "settings.clearSearchKey",
+  "artwork.plan",
+  "artwork.generate",
+  "artwork.refine",
+  "artwork.applyDesign",
+  "artwork.updateOutline",
+  "artwork.reorder",
+  "artwork.duplicate",
+  "artwork.delete",
+  "artwork.compose",
+  "rendering.validate",
 ] as const;
 
 export type FormaCommandName = (typeof FORMA_COMMAND_NAMES)[number];
@@ -205,6 +220,20 @@ export function isRigEvent(value: unknown): value is RigEvent {
     typeof v.sessionId === "string" &&
     typeof v.timestamp === "string"
   );
+}
+
+export interface FormaDomainEvent {
+  version: 1;
+  seq: number;
+  timestamp: string;
+  projectId: string;
+  sessionId: string;
+  type: string;
+  data: Record<string, unknown>;
+}
+
+export function isFormaDomainEvent(value: unknown): value is FormaDomainEvent {
+  return isRigEvent(value) && (value as { type: string }).type.startsWith("forma.");
 }
 
 export function isSessionInfo(value: unknown): value is SessionInfo {

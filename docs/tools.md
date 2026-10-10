@@ -23,6 +23,6 @@ tool factories: enable them in `rig.config.ts` (`capabilities.question` /
 agent automatically.
 
 Custom tools are `defineTool({ name, description, input: z.object(...), execute })`
-modules — see `src/tools/example.ts`. Add one with `rig add tool <name>`.
+modules under `src/tools/`. Add one with `rig add tool <name>`.
 
 See `rig docs tools` for the full documentation.

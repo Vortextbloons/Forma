@@ -1,10 +1,14 @@
 import { open, rename, rm } from "node:fs/promises";
 
-export async function atomicWriteFile(path: string, data: string): Promise<void> {
+export async function atomicWriteFile(path: string, data: string | Uint8Array): Promise<void> {
   const tmp = `${path}.${process.pid}.tmp`;
   const handle = await open(tmp, "w");
   try {
-    await handle.writeFile(data, "utf8");
+    if (typeof data === "string") {
+      await handle.writeFile(data, "utf8");
+    } else {
+      await handle.writeFile(data);
+    }
     await handle.sync();
   } finally {
     await handle.close();

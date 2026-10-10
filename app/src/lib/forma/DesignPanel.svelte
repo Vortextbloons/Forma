@@ -8,6 +8,12 @@
 
   const project = $derived(projectStore.current?.project);
   const size = $derived(project ? effectiveSize(project.settings) : null);
+  const run = $derived(projectStore.run);
+  const credentials = $derived(projectStore.searchCredentials);
+
+  function openSearchSettings(): void {
+    window.dispatchEvent(new CustomEvent("forma:open-search-settings"));
+  }
 </script>
 
 <div class="design-panel">
@@ -21,10 +27,24 @@
     <DesignSettingsForm
       settings={project.settings}
       onchange={(next) => projectStore.updateSettings(next)}
+      exaConfigured={credentials.exa.configured}
+      pexelsConfigured={credentials.pexels.configured}
+      {openSearchSettings}
     />
+    {#if projectStore.needsDesignApply}
+      <div class="design-apply">
+        <p class="small">Design settings changed since the artwork was made.</p>
+        <button
+          class="btn btn-accent block"
+          type="button"
+          disabled={run !== null}
+          onclick={() => void projectStore.applyDesign()}
+        >Apply to artwork</button>
+      </div>
+    {/if}
     <p class="muted small">
-      Changes are saved automatically and apply the next time artwork is
-      generated or refined.
+      Changes are saved automatically. Artwork changes only when you generate,
+      refine, or apply design settings.
     </p>
   {/if}
 </div>

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WorkerReady } from "rig/ipc";
 import { createProject } from "../src/projects/store.ts";
+import { writePage } from "../src/projects/pages.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
 
 interface WorkerResultOk {
@@ -32,6 +33,11 @@ class WorkerHarness {
   #readyResolve!: (ready: WorkerReady) => void;
   #readyReject!: (error: Error) => void;
   readonly stderr: string[] = [];
+  readonly events: Array<{ type: string; data?: unknown }> = [];
+  #eventWaiters: Array<{
+    type: string;
+    resolve: (event: { type: string; data?: unknown }) => void;
+  }> = [];
 
   constructor(projectDir: string, env: Record<string, string> = {}) {
     this.child = spawn(
@@ -66,8 +72,39 @@ class WorkerHarness {
         const result = message as unknown as WorkerResult;
         this.#pending.get(result.id)?.(result);
         this.#pending.delete(result.id);
+      } else if (message.type === "event") {
+        const event = message.event as { type?: unknown; data?: unknown } | undefined;
+        if (event && typeof event.type === "string") {
+          const record = { type: event.type, data: event.data };
+          this.events.push(record);
+          for (let i = this.#eventWaiters.length - 1; i >= 0; i -= 1) {
+            const waiter = this.#eventWaiters[i]!;
+            if (waiter.type === record.type) {
+              this.#eventWaiters.splice(i, 1);
+              waiter.resolve(record);
+            }
+          }
+        }
       }
     }
+  }
+
+  waitForEvent(
+    type: string,
+    timeoutMs = 30_000,
+  ): Promise<{ type: string; data?: unknown }> {
+    const existing = this.events.find((event) => event.type === type);
+    if (existing) return Promise.resolve(existing);
+    return new Promise((resolveEvent, rejectEvent) => {
+      const waiter = { type, resolve: resolveEvent };
+      this.#eventWaiters.push(waiter);
+      const timer = setTimeout(() => {
+        const index = this.#eventWaiters.indexOf(waiter);
+        if (index >= 0) this.#eventWaiters.splice(index, 1);
+        rejectEvent(new Error(`timed out waiting for worker event "${type}"`));
+      }, timeoutMs);
+      timer.unref?.();
+    });
   }
 
   send(name: string, params: Record<string, unknown> = {}): Promise<WorkerResult> {
@@ -191,8 +228,100 @@ describe("forma worker", () => {
     }
   }, 90_000);
 
-  it("saves and removes API keys through the credential store", async () => {
-    const root = await mkdtemp(join(tmpdir(), "forma-keys-"));
+  it("handles outline, extraction, compose and validation commands", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-artwork-ipc-"));
+    const projectDir = join(root, "Deck");
+    const harness = new WorkerHarness(root);
+    try {
+      await harness.ready;
+      const created = await harness.send("project.create", {
+        dir: projectDir,
+        name: "Deck",
+        prompt: "IPC artwork",
+        mode: "plan",
+        settings: { output: "slides" },
+      });
+      expect(created.ok).toBe(true);
+
+      const updated = await harness.send("artwork.updateOutline", {
+        dir: projectDir,
+        outline: [
+          { title: "One", points: ["a"], assetIds: [] },
+          { title: "Two", points: ["b"], assetIds: [] },
+        ],
+      });
+      expect(updated.ok, JSON.stringify(updated)).toBe(true);
+      const outline = (updated as WorkerResultOk).data as {
+        project: { project: { outline: Array<{ id: string }> } };
+      };
+      const ids = outline.project.project.outline.map((entry) => entry.id);
+      expect(ids).toHaveLength(2);
+
+      const note = await harness.send("context.importNote", {
+        dir: projectDir,
+        text: "A supplied fact for the deck.",
+        role: "content-source",
+      });
+      expect(note.ok, JSON.stringify(note)).toBe(true);
+      const ready = await harness.waitForEvent("forma.context.ready");
+      expect(ready.data).toMatchObject({ status: "ready" });
+
+      await writePage(projectDir, {
+        index: 1,
+        title: "One",
+        html: "<div class='t'>hello</div>",
+        css: ".t{color:#111}",
+      });
+      await writePage(projectDir, {
+        index: 2,
+        title: "Two",
+        html: "<div class='u'>world</div>",
+        css: "",
+      });
+
+      const composed = await harness.send("artwork.compose", {
+        dir: projectDir,
+        pageId: ids[0],
+      });
+      expect(composed.ok, JSON.stringify(composed)).toBe(true);
+      const composedData = (composed as WorkerResultOk).data as { html: string };
+      expect(composedData.html).toContain("hello");
+      expect(composedData.html).toContain(".t{color:#111}");
+
+      const reordered = await harness.send("artwork.reorder", {
+        dir: projectDir,
+        pageId: ids[0],
+        toIndex: 2,
+      });
+      expect(reordered.ok, JSON.stringify(reordered)).toBe(true);
+      const reorderedProject = (reordered as WorkerResultOk).data as {
+        project: { project: { pages: string[] } };
+      };
+      expect(reorderedProject.project.project.pages).toEqual([ids[1], ids[0]]);
+
+      const validation = await harness.send("rendering.validate", { dir: projectDir });
+      expect(validation.ok, JSON.stringify(validation)).toBe(true);
+      const report = (validation as WorkerResultOk).data as {
+        report: { issues: unknown[] };
+      };
+      expect(Array.isArray(report.report.issues)).toBe(true);
+
+      const noteId = ((note as WorkerResultOk).data as { item: { id: string } }).item.id;
+      const text = await harness.send("context.getText", { dir: projectDir, id: noteId });
+      expect(text.ok, JSON.stringify(text)).toBe(true);
+      const extraction = (text as WorkerResultOk).data as {
+        extraction: { pages: Array<{ text: string }> } | null;
+      };
+      expect(extraction.extraction?.pages[0]?.text).toContain("supplied fact");
+
+      expect(await harness.stop()).toBe(0);
+    } finally {
+      if (harness.child.exitCode === null) harness.child.kill();
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+    }
+  }, 180_000);
+
+  it("saves and removes API keys through the credential store", async () => {    const root = await mkdtemp(join(tmpdir(), "forma-keys-"));
     const agentDir = join(root, "agent");
     const harness = new WorkerHarness(root, { PI_CODING_AGENT_DIR: agentDir });
     try {

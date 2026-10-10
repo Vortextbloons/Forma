@@ -3,19 +3,64 @@
   import ProviderManager from "../models/ProviderManager.svelte";
   import ModelPicker from "../models/ModelPicker.svelte";
   import { workerStore } from "../rig/stores/workerStore.svelte";
+  import { notificationStore } from "../rig/stores/notificationStore.svelte";
   import { restartWorker } from "../rig/bridge";
+  import { projectStore } from "./projectStore.svelte";
+  import type { SearchProviderId } from "./types";
   import { onMount } from "svelte";
 
   let {
     initialTab = "providers",
     onclose,
-  }: { initialTab?: "providers" | "project"; onclose: () => void } = $props();
+  }: {
+    initialTab?: "providers" | "search" | "project";
+    onclose: () => void;
+  } = $props();
 
-  let tab = $state<"providers" | "project">("providers");
+  let tab = $state<"providers" | "search" | "project">("providers");
+  let exaKey = $state("");
+  let pexelsKey = $state("");
+  let saving = $state<SearchProviderId | null>(null);
+
+  const credentials = $derived(projectStore.searchCredentials);
 
   onMount(() => {
     tab = initialTab;
+    void projectStore.refreshSearchCredentials();
   });
+
+  async function saveKey(provider: SearchProviderId): Promise<void> {
+    const key = provider === "exa" ? exaKey : pexelsKey;
+    if (!key.trim()) return;
+    saving = provider;
+    try {
+      await projectStore.setSearchKey(provider, key.trim());
+      if (provider === "exa") exaKey = "";
+      else pexelsKey = "";
+      notificationStore.push({
+        type: "success",
+        message: `${provider === "exa" ? "Exa" : "Pexels"} key saved`,
+      });
+    } catch (error) {
+      notificationStore.push({
+        type: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      saving = null;
+    }
+  }
+
+  async function clearKey(provider: SearchProviderId): Promise<void> {
+    try {
+      await projectStore.clearSearchKey(provider);
+    } catch (error) {
+      notificationStore.push({
+        type: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   function onOverlayKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape") onclose();
@@ -52,6 +97,11 @@
         >Providers & models</button>
         <button
           type="button"
+          class:settings-nav-active={tab === "search"}
+          onclick={() => (tab = "search")}
+        >Search credentials</button>
+        <button
+          type="button"
           class:settings-nav-active={tab === "project"}
           onclick={() => (tab = "project")}
         >Project & app</button>
@@ -67,6 +117,68 @@
             <span class="field-label">Model</span>
             <ModelPicker />
           </div>
+        {:else if tab === "search"}
+          <div class="field">
+            <span class="field-label">Exa — research</span>
+            <p class="muted small">
+              Used by the research tools when Research is enabled for a project.
+              {#if credentials.exa.configured}
+                <span class="badge">Configured · {credentials.exa.masked}</span>
+              {:else}
+                <span class="badge">Not configured</span>
+              {/if}
+            </p>
+            <div class="field-row">
+              <input
+                class="input"
+                type="password"
+                placeholder="Exa API key"
+                bind:value={exaKey}
+                aria-label="Exa API key"
+              />
+              <button
+                class="btn"
+                type="button"
+                disabled={saving !== null || exaKey.trim() === ""}
+                onclick={() => void saveKey("exa")}
+              >Save</button>
+              {#if credentials.exa.configured}
+                <button class="btn btn-ghost" type="button" onclick={() => void clearKey("exa")}>Remove</button>
+              {/if}
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Pexels — image search</span>
+            <p class="muted small">
+              Used by photo search when Image search is enabled for a project.
+              {#if credentials.pexels.configured}
+                <span class="badge">Configured · {credentials.pexels.masked}</span>
+              {:else}
+                <span class="badge">Not configured</span>
+              {/if}
+            </p>
+            <div class="field-row">
+              <input
+                class="input"
+                type="password"
+                placeholder="Pexels API key"
+                bind:value={pexelsKey}
+                aria-label="Pexels API key"
+              />
+              <button
+                class="btn"
+                type="button"
+                disabled={saving !== null || pexelsKey.trim() === ""}
+                onclick={() => void saveKey("pexels")}
+              >Save</button>
+              {#if credentials.pexels.configured}
+                <button class="btn btn-ghost" type="button" onclick={() => void clearKey("pexels")}>Remove</button>
+              {/if}
+            </div>
+          </div>
+          <p class="muted small">
+            Keys are stored per user, outside projects, and protected with Windows DPAPI.
+          </p>
         {:else}
           <div class="field">
             <span class="field-label">Worker</span>

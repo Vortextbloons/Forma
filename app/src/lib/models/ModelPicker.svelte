@@ -2,51 +2,152 @@
   import { modelStore } from "../rig/stores/modelStore.svelte";
   import { providerStore } from "../rig/stores/providerStore.svelte";
   import Icon from "../components/Icon.svelte";
+  import type { ModelInfo } from "../rig/types";
 
-  const selected = $derived(modelStore.selectedInfo());
-  const providerId = $derived(modelStore.selectedModel === "auto" ? "auto" : (selected?.provider ?? "auto"));
-  const providerOptions = $derived.by(() => {
+  let { onselect }: { onselect?: () => void } = $props();
+
+  const connected = $derived.by(() => {
     const ids = new Set(modelStore.models.map((model) => model.provider));
-    return providerStore.providers.filter((provider) => ids.has(provider.id));
+    const list: Array<{ id: string; name: string }> = [];
+    for (const provider of providerStore.providers) {
+      if (provider.configured && ids.has(provider.id)) {
+        list.push({ id: provider.id, name: provider.name ?? provider.id });
+      }
+    }
+    const seen = new Set(list.map((provider) => provider.id));
+    for (const id of ids) {
+      if (!seen.has(id)) list.push({ id, name: id });
+    }
+    return list;
   });
-  const modelOptions = $derived(
-    providerId === "auto" ? [] : modelStore.models.filter((model) => model.provider === providerId),
+
+  const pool = $derived(modelStore.available.length > 0 ? modelStore.available : modelStore.models);
+
+  let hoveredRow = $state<"provider" | "model" | null>(null);
+
+  const selectedInfo = $derived(
+    modelStore.selectedModel === "auto" ? undefined : modelStore.selectedInfo(),
+  );
+  const providerValue = $derived(
+    selectedInfo
+      ? (providerStore.providers.find((p) => p.id === selectedInfo.provider)?.name ??
+          selectedInfo.provider)
+      : "Auto",
+  );
+  const modelValue = $derived(
+    modelStore.selectedModel === "auto"
+      ? "Auto"
+      : (selectedInfo?.name ?? modelStore.selectedModel),
   );
 
-  function onProvider(event: Event): void {
-    const nextProvider = (event.currentTarget as HTMLSelectElement).value;
-    if (nextProvider === "auto") void modelStore.select("auto");
-    else {
-      const first = modelStore.available.find((model) => model.provider === nextProvider)
-        ?? modelStore.models.find((model) => model.provider === nextProvider);
-      if (first) void modelStore.select(`${first.provider}/${first.id}`);
-    }
+  const activeProvider = $derived(selectedInfo?.provider ?? "auto");
+  const models = $derived(pool.filter((model) => model.provider === activeProvider));
+
+  function refOf(model: ModelInfo): string {
+    return `${model.provider}/${model.id}`;
   }
 
-  function onModel(event: Event): void {
-    void modelStore.select((event.currentTarget as HTMLSelectElement).value);
+  function pickProvider(id: string): void {
+    const match = pool.find((model) => model.provider === id);
+    if (match) choose(match);
+  }
+
+  function chooseAuto(): void {
+    void modelStore.select("auto");
+    onselect?.();
+  }
+
+  function choose(model: ModelInfo): void {
+    void modelStore.select(refOf(model));
+    onselect?.();
   }
 </script>
 
-<div class="model-picker-group">
-  <select class="select provider-select" aria-label="Provider" value={providerId} onchange={onProvider}>
-    <option value="auto">Auto provider</option>
-    {#each providerOptions as provider (provider.id)}
-      <option value={provider.id}>{provider.name ?? provider.id}</option>
-    {/each}
-  </select>
-  {#if providerId !== "auto"}
-    <select class="select model-select" aria-label="Model" value={modelStore.selectedModel} onchange={onModel}>
-      {#each modelOptions as model (`${model.provider}/${model.id}`)}
-        <option value={`${model.provider}/${model.id}`}>{model.name ?? model.id}</option>
-      {/each}
-    </select>
+<div class="model-picker" onpointerleave={() => (hoveredRow = null)}>
+  <div class="model-picker-rows">
+    <div
+      class="model-menu-row"
+      role="button"
+      tabindex="0"
+      aria-haspopup="listbox"
+      aria-expanded={hoveredRow === "provider"}
+      onpointerenter={() => (hoveredRow = "provider")}
+    >
+      <span class="model-menu-label">Provider</span>
+      <span class="model-menu-value">{providerValue}</span>
+      <Icon name="chevron-right" size={12} />
+    </div>
+    <div
+      class="model-menu-row"
+      role="button"
+      tabindex="0"
+      aria-haspopup="listbox"
+      aria-expanded={hoveredRow === "model"}
+      onpointerenter={() => (hoveredRow = "model")}
+    >
+      <span class="model-menu-label">Model</span>
+      <span class="model-menu-value">{modelValue}</span>
+      <Icon name="chevron-right" size={12} />
+    </div>
+  </div>
+  {#if hoveredRow}
+    <div
+      class="model-pane model-menu-list"
+      role="listbox"
+      aria-label={hoveredRow === "model" ? "Models" : "Providers"}
+    >
+      {#if hoveredRow === "model"}
+        <button
+          class="model-option"
+          class:model-option-selected={modelStore.selectedModel === "auto"}
+          type="button"
+          onclick={chooseAuto}
+        >
+          <span class="model-option-name">Auto</span>
+        </button>
+        {#each models as model (refOf(model))}
+          <button
+            class="model-option"
+            class:model-option-selected={modelStore.selectedModel === refOf(model)}
+            type="button"
+            aria-pressed={modelStore.selectedModel === refOf(model)}
+            onclick={() => choose(model)}
+          >
+            <span class="model-option-name">{model.name ?? model.id}</span>
+            {#if model.reasoning}
+              <span class="model-option-meta">reasoning</span>
+            {/if}
+            {#if model.contextWindow}
+              <span class="model-option-meta">{Math.round(model.contextWindow / 1000)}k</span>
+            {/if}
+          </button>
+        {:else}
+          <p class="model-picker-empty muted small">
+            {activeProvider === "auto" ? "Pick a provider first." : "No models."}
+          </p>
+        {/each}
+      {:else}
+        <button
+          class="model-option"
+          class:model-option-selected={activeProvider === "auto"}
+          type="button"
+          onclick={chooseAuto}
+        >
+          <span class="model-option-name">Auto</span>
+        </button>
+        {#each connected as provider (provider.id)}
+          <button
+            class="model-option"
+            class:model-option-selected={activeProvider === provider.id}
+            type="button"
+            onclick={() => pickProvider(provider.id)}
+          >
+            <span class="model-option-name">{provider.name}</span>
+          </button>
+        {:else}
+          <p class="model-picker-empty muted small">No connected providers.</p>
+        {/each}
+      {/if}
+    </div>
   {/if}
-  <button
-    class="model-manage-button"
-    type="button"
-    title="Add or manage providers"
-    aria-label="Add or manage providers"
-    onclick={() => window.dispatchEvent(new CustomEvent("rig:open-provider-settings"))}
-  ><Icon name="plus" size={13} /></button>
 </div>

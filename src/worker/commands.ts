@@ -2,6 +2,7 @@ import {
   CancellationError,
   ModelError,
   ProtocolError,
+  RuntimeError,
   serializeError,
   createLogger,
   type HostInteraction,
@@ -14,11 +15,22 @@ import { setTimeout as delay } from "node:timers/promises";
 import { dirname, resolve } from "node:path";
 import type { WorkerAgentHost } from "./host.ts";
 import type { PendingRunRegistry } from "./runs.ts";
+import { createArtworkHandlers } from "./artwork.ts";
+import { scheduleExtraction, loadExtraction } from "../extraction/index.ts";
+import type { FormaEventSink } from "../forma/runtime.ts";
+import {
+  SEARCH_PROVIDERS,
+  clearSearchKey,
+  searchCredentialStatus,
+  setSearchKey,
+  type SearchProviderId,
+} from "../settings/credentials.ts";
 import {
   createProject,
   deleteProject,
   duplicateProject,
   importContextFile,
+  importContextNote,
   listProjects,
   openProject,
   removeContextItem,
@@ -49,6 +61,7 @@ export interface WorkerContext {
   logger: RigLogger;
   selectedModel: string;
   runs: PendingRunRegistry;
+  formaEvents: FormaEventSink;
   getOrCreateSession(sessionId?: string): Promise<SessionHandle>;
   defaultSessionId(): string | undefined;
 }
@@ -61,7 +74,7 @@ export interface CommandFrame {
   params?: Record<string, unknown>;
 }
 
-type CommandHandler = (params: Record<string, unknown>) => Promise<WorkerResult>;
+export type CommandHandler = (params: Record<string, unknown>) => Promise<WorkerResult>;
 
 export function isCommandFrame(frame: unknown): frame is CommandFrame {
   if (typeof frame !== "object" || frame === null) return false;
@@ -79,6 +92,8 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
   const ok = (data?: unknown): WorkerResult => resultOk("", data);
 
   return {
+    ...createArtworkHandlers(ctx),
+
     async prompt(params) {
       const prompt = asString(params.prompt, "prompt");
       const sessionId = asOptionalString(params.sessionId);
@@ -312,6 +327,9 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const dir = asString(params.dir, "dir");
       const settings = parseSettings(params.settings);
       const project = await updateProject(dir, (current) => {
+        if (JSON.stringify(current.settings) !== JSON.stringify(settings)) {
+          current.settingsRevision += 1;
+        }
         current.settings = settings;
       });
       return ok({ project: toProjectPayload(project, dir) });
@@ -355,7 +373,34 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
         role,
         asOptionalString(params.name),
       );
+      if (item.status === "processing") {
+        void scheduleExtraction(dir, item.id);
+      }
       return ok({ project: toProjectPayload(project, dir), item });
+    },
+
+    async "context.importNote"(params) {
+      const dir = asString(params.dir, "dir");
+      const text = asString(params.text, "text");
+      const role = asString(params.role, "role") as ContextRole;
+      if (!(CONTEXT_ROLES as readonly string[]).includes(role)) {
+        throw new ProtocolError(`Invalid context role "${role}"`);
+      }
+      const { project, item } = await importContextNote(dir, text, role, asOptionalString(params.name));
+      void scheduleExtraction(dir, item.id);
+      return ok({ project: toProjectPayload(project, dir), item });
+    },
+
+    async "context.getText"(params) {
+      const dir = asString(params.dir, "dir");
+      const id = asString(params.id, "id");
+      const project = await openProject(dir);
+      const item = project.context.find((entry) => entry.id === id);
+      if (!item) {
+        throw new RuntimeError(`Unknown context item "${id}"`, { details: { id } });
+      }
+      const extraction = await loadExtraction(dir, id);
+      return ok({ item, extraction });
     },
 
     async "context.remove"(params) {
@@ -378,6 +423,26 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
         name,
       });
       return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "settings.getSearch"() {
+      const credentials = await searchCredentialStatus();
+      return ok({ credentials });
+    },
+
+    async "settings.setSearchKey"(params) {
+      const provider = asSearchProvider(params.provider);
+      const key = asString(params.key, "key");
+      await setSearchKey(provider, key);
+      const credentials = await searchCredentialStatus();
+      return ok({ credentials });
+    },
+
+    async "settings.clearSearchKey"(params) {
+      const provider = asSearchProvider(params.provider);
+      await clearSearchKey(provider);
+      const credentials = await searchCredentialStatus();
+      return ok({ credentials });
     },
   };
 }
@@ -423,6 +488,15 @@ function asStringArray(value: unknown, name: string): string[] {
     throw new ProtocolError(`Missing or invalid parameter "${name}" (expected string[])`);
   }
   return value as string[];
+}
+
+function asSearchProvider(value: unknown): SearchProviderId {
+  if (typeof value !== "string" || !(SEARCH_PROVIDERS as readonly string[]).includes(value)) {
+    throw new ProtocolError(
+      `Invalid search provider "${String(value)}" (expected ${SEARCH_PROVIDERS.join(" or ")})`,
+    );
+  }
+  return value as SearchProviderId;
 }
 
 function parseSettings(value: unknown): ProjectSettings {

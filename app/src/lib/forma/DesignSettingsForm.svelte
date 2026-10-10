@@ -4,7 +4,19 @@
   import { formatDimensions } from "./sizes";
   import PageIcon from "./PageIcon.svelte";
 
-  let { settings, onchange }: { settings: ProjectSettings; onchange: (next: ProjectSettings) => void } = $props();
+  let {
+  settings,
+  onchange,
+  exaConfigured = true,
+  pexelsConfigured = true,
+  openSearchSettings,
+}: {
+  settings: ProjectSettings;
+  onchange: (next: ProjectSettings) => void;
+  exaConfigured?: boolean;
+  pexelsConfigured?: boolean;
+  openSearchSettings?: () => void;
+} = $props();
 
   const SLIDE_PRESETS: Record<string, { width: number; height: number }> = {
     "16:9": { width: 1920, height: 1080 },
@@ -368,21 +380,37 @@
 
   <div class="field">
     <span class="field-label">Sources</span>
-    <label class="toggle-row">
+    <label class="toggle-row" class:disabled={!exaConfigured}>
       <input
         type="checkbox"
         checked={settings.research}
+        disabled={!exaConfigured}
         onchange={(event) => emit({ research: (event.currentTarget as HTMLInputElement).checked })}
       />
       <span>Research the web for supporting facts</span>
     </label>
-    <label class="toggle-row">
+    {#if !exaConfigured}
+      <p class="muted small">
+        Add an Exa API key in
+        <button class="link-btn" type="button" onclick={openSearchSettings}>Settings</button>
+        to enable research.
+      </p>
+    {/if}
+    <label class="toggle-row" class:disabled={!pexelsConfigured}>
       <input
         type="checkbox"
         checked={settings.imageSearch}
+        disabled={!pexelsConfigured}
         onchange={(event) => emit({ imageSearch: (event.currentTarget as HTMLInputElement).checked })}
       />
       <span>Find photos with image search</span>
     </label>
+    {#if !pexelsConfigured}
+      <p class="muted small">
+        Add a Pexels API key in
+        <button class="link-btn" type="button" onclick={openSearchSettings}>Settings</button>
+        to enable image search.
+      </p>
+    {/if}
   </div>
 </div>

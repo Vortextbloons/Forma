@@ -6,13 +6,16 @@ import { resolveProjectsHome } from "./home.ts";
 import {
   PROJECT_FILE,
   newContextId,
+  newPageId,
   newProjectId,
+  newSourceId,
   nowIso,
   parseProjectFile,
   type ContextItem,
   type ContextRole,
   type ProjectFile,
   type ProjectSettings,
+  type SourceRecord,
 } from "./schema.ts";
 
 export interface CreateProjectInput {
@@ -91,8 +94,11 @@ export async function createProject(input: CreateProjectInput): Promise<CreatedP
       createdAt: timestamp,
       updatedAt: timestamp,
       settings: input.settings,
+      settingsRevision: 0,
+      artworkRevision: -1,
       outline: null,
       pages: [],
+      pageMeta: {},
       context: [],
       sources: [],
       conversation: { sessionIds: [] },
@@ -248,13 +254,71 @@ export async function importContextFile(
   const assetAbs = join(resolve(dir), "assets", assetName);
   await mkdir(dirname(assetAbs), { recursive: true });
   await copyFile(sourcePath, assetAbs);
+  const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
   const item: ContextItem = {
     id,
     name: name?.trim() || basename(sourcePath),
     role,
     asset: assetRel,
-    mime: MIME_BY_EXTENSION[extension] ?? "application/octet-stream",
+    mime,
     size: info.size,
+    status: needsExtraction(mime) ? "processing" : "ready",
+    createdAt: nowIso(),
+  };
+  const project = await updateProject(dir, (current) => {
+    current.context.push(item);
+  });
+  return { project, item };
+}
+
+export async function importContextNote(
+  dir: string,
+  text: string,
+  role: ContextRole,
+  name?: string,
+): Promise<{ project: ProjectFile; item: ContextItem }> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new RuntimeError("A pasted note cannot be empty");
+  }
+  return importContextAsset(dir, {
+    name: name?.trim() || "Pasted note",
+    extension: ".md",
+    mime: "text/markdown",
+    data: `${trimmed}\n`,
+    role,
+  });
+}
+
+export interface ImportAssetInput {
+  name: string;
+  extension: string;
+  mime: string;
+  data: Uint8Array | string;
+  role: ContextRole;
+  sourceId?: string;
+}
+
+export async function importContextAsset(
+  dir: string,
+  input: ImportAssetInput,
+): Promise<{ project: ProjectFile; item: ContextItem }> {
+  const id = newContextId();
+  const extension = input.extension.startsWith(".") ? input.extension : `.${input.extension}`;
+  const assetRel = `assets/${id}${extension}`;
+  const bytes =
+    typeof input.data === "string" ? Buffer.from(input.data, "utf8") : Buffer.from(input.data);
+  await mkdir(join(resolve(dir), "assets"), { recursive: true });
+  await atomicWriteFile(join(resolve(dir), assetRel), bytes);
+  const item: ContextItem = {
+    id,
+    name: input.name.trim() || `Asset ${id.slice(-4)}`,
+    role: input.role,
+    asset: assetRel,
+    mime: input.mime,
+    size: bytes.byteLength,
+    status: needsExtraction(input.mime) ? "processing" : "ready",
+    ...(input.sourceId ? { sourceId: input.sourceId } : {}),
     createdAt: nowIso(),
   };
   const project = await updateProject(dir, (current) => {
@@ -266,6 +330,10 @@ export async function importContextFile(
 export interface ContextPatch {
   name?: string;
   role?: ContextRole;
+  status?: ContextItem["status"];
+  extraction?: ContextItem["extraction"];
+  error?: string | null;
+  sourceId?: string;
 }
 
 export async function updateContextItem(
@@ -280,10 +348,79 @@ export async function updateContextItem(
     }
     if (patch.name !== undefined) item.name = patch.name;
     if (patch.role !== undefined) item.role = patch.role;
+    if (patch.status !== undefined) item.status = patch.status;
+    if (patch.extraction !== undefined) item.extraction = patch.extraction;
+    if (patch.error !== undefined) {
+      if (patch.error === null) delete item.error;
+      else item.error = patch.error;
+    }
+    if (patch.sourceId !== undefined) item.sourceId = patch.sourceId;
   });
 }
 
-export async function removeContextItem(dir: string, id: string): Promise<ProjectFile> {  let removed: ContextItem | undefined;
+export interface SourceInput {
+  kind: SourceRecord["kind"];
+  title: string;
+  url?: string;
+  provider?: string;
+  author?: string;
+  authorUrl?: string;
+  query?: string;
+}
+
+export async function addSource(
+  dir: string,
+  input: SourceInput,
+): Promise<{ project: ProjectFile; source: SourceRecord }> {
+  const source: SourceRecord = {
+    id: newSourceId(),
+    createdAt: nowIso(),
+    ...input,
+  };
+  const project = await updateProject(dir, (current) => {
+    current.sources.push(source);
+  });
+  return { project, source };
+}
+
+export interface OutlineInput {
+  id?: string;
+  title: string;
+  points?: string[];
+  visualDirection?: string;
+  assetIds?: string[];
+}
+
+export async function setOutline(dir: string, entries: OutlineInput[]): Promise<ProjectFile> {
+  return updateProject(dir, (current) => {
+    const knownAssets = new Set(current.context.map((item) => item.id));
+    const used = new Set<string>();
+    current.outline = entries.map((entry) => {
+      const id = entry.id && !used.has(entry.id) ? entry.id : newPageId();
+      used.add(id);
+      const assetIds = entry.assetIds ?? [];
+      for (const asset of assetIds) {
+        if (!knownAssets.has(asset)) {
+          throw new RuntimeError(`Unknown asset "${asset}"`, {
+            details: { asset, contextIds: [...knownAssets] },
+          });
+        }
+      }
+      return {
+        id,
+        title: entry.title.trim() || "Untitled",
+        points: (entry.points ?? [])
+          .map((point) => point.trim())
+          .filter((point) => point.length > 0),
+        visualDirection: entry.visualDirection?.trim() || undefined,
+        assetIds: [...new Set(assetIds)],
+      };
+    });
+  });
+}
+
+export async function removeContextItem(dir: string, id: string): Promise<ProjectFile> {
+  let removed: ContextItem | undefined;
   const project = await updateProject(dir, (current) => {
     const index = current.context.findIndex((item) => item.id === id);
     if (index === -1) {
@@ -294,8 +431,17 @@ export async function removeContextItem(dir: string, id: string): Promise<Projec
   });
   if (removed) {
     await removeAssetFile(dir, removed.asset);
+    await rm(extractionPath(dir, id), { force: true }).catch(() => undefined);
   }
   return project;
+}
+
+export function extractionPath(dir: string, contextId: string): string {
+  return join(resolve(dir), "assets", `${contextId}.text.json`);
+}
+
+export function needsExtraction(mime: string): boolean {
+  return mime === "application/pdf" || mime === "text/plain" || mime === "text/markdown";
 }
 
 async function removeAssetFile(dir: string, assetRel: string): Promise<void> {

@@ -14,6 +14,9 @@ import formaAgent from "../agent.ts";
 import { WorkerWriter } from "./io.ts";
 import { WorkerAgentHost } from "./host.ts";
 import { PendingRunRegistry } from "./runs.ts";
+import { createFormaEventSink } from "../forma/events.ts";
+import { setFormaEnv } from "../forma/runtime.ts";
+import { closeOcrWorker } from "../extraction/ocr.ts";
 import {
   buildDispatcher,
   dispatchCommand,
@@ -155,6 +158,7 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
     logger,
     config,
     agent: formaAgent,
+    modelRefresh: true,
   });
 
   const sessionsOptions: SessionsFacadeOptions = { cwd: runtime.projectDir, host };
@@ -163,6 +167,9 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
   );
 
   const capabilities = await runtime.capabilities();
+
+  const formaEvents = createFormaEventSink((message) => writer.write(message), runtime.projectId);
+  setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents });
 
   bus.subscribe((event) => {
     writer.write({ v: 1, type: "event", event });
@@ -187,6 +194,7 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
     logger,
     selectedModel: "auto",
     runs,
+    formaEvents,
     getOrCreateSession,
     defaultSessionId: () => runtime.session?.id,
   });
@@ -216,6 +224,7 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
     logger.info("[worker] shutting down");
     host.rejectAll(new CancellationError("Worker is shutting down"));
     runs.rejectAll(new CancellationError("Worker is shutting down"));
+    await closeOcrWorker().catch(() => undefined);
     try {
       await runtime.close();
     } catch (error) {

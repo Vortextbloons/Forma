@@ -85,10 +85,14 @@ export function handleEvent(event: RigEvent): void {
   if (isThinkingLevel(event.data.thinkingLevel)) thinkingLevel = event.data.thinkingLevel;
 }
 
+export function infoFor(ref: ModelRef): ModelInfo | undefined {
+  return available.find((model) => `${model.provider}/${model.id}` === ref)
+    ?? models.find((model) => `${model.provider}/${model.id}` === ref);
+}
+
 export function selectedInfo(): ModelInfo | undefined {
   if (selectedModel !== "auto") {
-    const match = available.find((model) => `${model.provider}/${model.id}` === selectedModel)
-      ?? models.find((model) => `${model.provider}/${model.id}` === selectedModel);
+    const match = infoFor(selectedModel);
     if (match) return match;
   }
   return available[0] ?? models[0];
@@ -110,6 +114,7 @@ export const modelStore = {
   refresh,
   select,
   setThinkingLevel,
+  infoFor,
   selectedInfo,
   handleEvent,
 };

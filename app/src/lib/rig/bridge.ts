@@ -368,6 +368,10 @@ class MockBridge extends BaseBridge {
   private projectDir = "/mock/project";
   private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
   private mockSeq = 0;
+  private mockSearch: Record<string, { configured: boolean; masked?: string }> = {
+    exa: { configured: false },
+    pexels: { configured: false },
+  };
   private mockProviders = [
     {
       id: "openai",
@@ -480,15 +484,21 @@ class MockBridge extends BaseBridge {
   }
 
   private emit(
-    type: RigEvent["type"],
+    type: string,
     data: unknown,
-    extra: { sessionId?: string; runId?: string; toolCallId?: string; subagentRunId?: string } = {},
+    extra: {
+      sessionId?: string;
+      runId?: string;
+      toolCallId?: string;
+      subagentRunId?: string;
+      projectId?: string;
+    } = {},
   ): void {
     const envelope = {
       version: 1,
       seq: ++this.seq,
       timestamp: new Date().toISOString(),
-      projectId: "mock-project",
+      projectId: extra.projectId ?? "mock-project",
       sessionId: extra.sessionId ?? "mock-1",
       runId: extra.runId,
       toolCallId: extra.toolCallId,
@@ -539,8 +549,11 @@ class MockBridge extends BaseBridge {
       createdAt: now,
       updatedAt: now,
       settings: { ...this.mockSettings(asRecord(overrides.settings).output), ...asRecord(overrides.settings) },
+      settingsRevision: 0,
+      artworkRevision: -1,
       outline: null,
       pages: [],
+      pageMeta: {},
       context: [],
       sources: [],
       conversation: { sessionIds: [] },
@@ -882,6 +895,175 @@ class MockBridge extends BaseBridge {
         this.settleResult(id, true, { project: { dir, project } });
         break;
       }
+      case "context.importNote": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const text = asString(params.text ?? "");
+        const item: Record<string, unknown> = {
+          id: `ctx_mock_${++this.seq}`,
+          name: asString(params.name ?? "Pasted note"),
+          role: asString(params.role ?? "content-source"),
+          asset: "assets/mock-note.md",
+          mime: "text/markdown",
+          size: text.length,
+          status: "processing",
+          createdAt: new Date().toISOString(),
+        };
+        (project.context as unknown[]).push(item);
+        project.updatedAt = new Date().toISOString();
+        this.later(600, () => {
+          item.status = "ready";
+          const extraction = { kind: "text", pages: 1, chars: text.length };
+          item.extraction = extraction;
+          this.emit(
+            "forma.context.ready",
+            { id: item.id, status: "ready", extraction },
+            { sessionId, projectId: asString(project.id) },
+          );
+        });
+        this.settleResult(id, true, { project: { dir, project }, item });
+        break;
+      }
+      case "context.getText": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const item = (Array.isArray(project.context) ? project.context : []).find(
+          (entry) => asRecord(entry).id === asString(params.id ?? ""),
+        );
+        this.settleResult(id, true, {
+          item,
+          extraction: {
+            id: asString(params.id ?? ""),
+            name: asRecord(item).name ?? "Note",
+            mime: "text/markdown",
+            kind: "text",
+            pages: [{ page: 1, source: "text", text: "Mock extracted text for browser development." }],
+          },
+        });
+        break;
+      }
+      case "settings.getSearch":
+        this.settleResult(id, true, { credentials: { ...this.mockSearch } });
+        break;
+      case "settings.setSearchKey": {
+        const provider = asString(params.provider ?? "");
+        const key = asString(params.key ?? "");
+        this.mockSearch[provider] = {
+          configured: true,
+          masked: `${key.slice(0, 4)}…${key.slice(-4)}`,
+        };
+        this.settleResult(id, true, { credentials: { ...this.mockSearch } });
+        break;
+      }
+      case "settings.clearSearchKey": {
+        const provider = asString(params.provider ?? "");
+        this.mockSearch[provider] = { configured: false };
+        this.settleResult(id, true, { credentials: { ...this.mockSearch } });
+        break;
+      }
+      case "artwork.plan":
+      case "artwork.generate":
+      case "artwork.refine":
+      case "artwork.applyDesign":
+        this.playArtwork(id, sessionId, name, params);
+        break;
+      case "artwork.updateOutline": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const entries = Array.isArray(params.outline) ? params.outline : [];
+        project.outline = entries.map((entry) => {
+          const record = asRecord(entry);
+          return {
+            id: asString(record.id ?? `pg_mock_${++this.seq}`),
+            title: asString(record.title ?? "Untitled"),
+            points: Array.isArray(record.points) ? record.points : [],
+            visualDirection: record.visualDirection,
+            assetIds: Array.isArray(record.assetIds) ? record.assetIds : [],
+          };
+        });
+        project.updatedAt = new Date().toISOString();
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "artwork.reorder": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const pages = Array.isArray(project.pages) ? [...project.pages] : [];
+        const from = pages.indexOf(asString(params.pageId ?? ""));
+        const toIndex = typeof params.toIndex === "number" ? params.toIndex : 1;
+        if (from >= 0) {
+          pages.splice(from, 1);
+          pages.splice(Math.min(Math.max(toIndex - 1, 0), pages.length), 0, asString(params.pageId ?? ""));
+        }
+        project.pages = pages;
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "artwork.duplicate": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const pages = Array.isArray(project.pages) ? [...project.pages] : [];
+        const from = pages.indexOf(asString(params.pageId ?? ""));
+        const copyId = `pg_mock_${++this.seq}`;
+        if (from >= 0) pages.splice(from + 1, 0, copyId);
+        project.pages = pages;
+        const meta = asRecord(asRecord(project.pageMeta)[asString(params.pageId ?? "")]);
+        asRecord(project.pageMeta)[copyId] = {
+          title: `${asString(meta.title ?? "Slide")} copy`,
+          assets: [],
+          updatedAt: new Date().toISOString(),
+        };
+        this.settleResult(id, true, { project: { dir, project }, pageId: copyId });
+        break;
+      }
+      case "artwork.delete": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        project.pages = (Array.isArray(project.pages) ? project.pages : []).filter(
+          (pageId) => pageId !== asString(params.pageId ?? ""),
+        );
+        delete asRecord(project.pageMeta)[asString(params.pageId ?? "")];
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "artwork.compose": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const settings = asRecord(project.settings);
+        const size = settings.output === "poster" ? asRecord(settings.posterSize) : asRecord(settings.slideSize);
+        const width = typeof size.width === "number" ? size.width : 1920;
+        const height = typeof size.height === "number" ? size.height : 1080;
+        const unit = typeof size.unit === "string" ? size.unit : "px";
+        const pageId = asString(params.pageId ?? "");
+        const index = (Array.isArray(project.pages) ? project.pages : []).indexOf(pageId);
+        const title = asString(asRecord(asRecord(project.pageMeta)[pageId]).title ?? `Slide ${index + 1}`);
+        const html = [
+          "<!doctype html><html><head><meta charset=\"utf-8\"><style>",
+          `html,body{margin:0;width:${width}${unit};height:${height}${unit};background:#fff;font-family:"Segoe UI",sans-serif}`,
+          `.forma-page{width:${width}${unit};height:${height}${unit};padding:7%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;gap:3%}`,
+          `h1{font-size:${Math.max(28, Math.round(height / 9))}px;margin:0;color:#24343D}`,
+          `p{font-size:${Math.max(14, Math.round(height / 26))}px;color:#61717B;margin:0}`,
+          "</style></head><body><div class=\"forma-page\">",
+          `<h1>${title.replace(/[<>&]/g, "")}</h1>`,
+          `<p>Mock artwork preview · page ${index + 1}</p>`,
+          "</div></body></html>",
+        ].join("");
+        this.settleResult(id, true, { html, missing: [] });
+        break;
+      }
+      case "rendering.validate": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const pages = Array.isArray(project.pages) ? project.pages.length : 0;
+        const report = { issues: [], pages, checkedAt: new Date().toISOString() };
+        this.emit(
+          "forma.validation.ready",
+          { issues: [], pages },
+          { sessionId, projectId: asString(project.id) },
+        );
+        this.settleResult(id, true, { report });
+        break;
+      }
       default:
         this.settleResult(id, false, undefined, {
           code: "PROTOCOL_ERROR",
@@ -891,6 +1073,91 @@ class MockBridge extends BaseBridge {
   }
 
 
+
+  private playArtwork(id: string, sessionId: string, command: string, params: Record<string, unknown>): void {
+    const dir = asString(params.dir ?? this.projectDir);
+    const project = this.ensureProject(dir, {});
+    const settings = asRecord(project.settings);
+    const isPoster = settings.output === "poster";
+    const kind =
+      command === "artwork.plan"
+        ? "outline"
+        : command === "artwork.refine"
+          ? "refine"
+          : command === "artwork.applyDesign"
+            ? "design"
+            : "artwork";
+    const slideCount = typeof settings.slideCount === "number" ? settings.slideCount : 8;
+    const existingOutline = Array.isArray(project.outline) ? project.outline : [];
+    const count = isPoster ? 1 : existingOutline.length > 0 ? existingOutline.length : slideCount;
+    const eventExtra = { sessionId, projectId: asString(project.id) };
+    this.emit("forma.run.progress", { kind, phase: "started", total: count }, eventExtra);
+    const finish = (): void => {
+      project.updatedAt = new Date().toISOString();
+      if (kind !== "outline") {
+        project.artworkRevision =
+          typeof project.settingsRevision === "number" ? project.settingsRevision : 0;
+      }
+      this.emit("forma.run.settled", { kind, ok: true }, eventExtra);
+      this.settleResult(id, true, { project: { dir, project } });
+    };
+    if (kind === "outline") {
+      const entries = Array.from({ length: count }, (_, i) => ({
+        id: `pg_mock_${++this.mockSeq}`,
+        title: isPoster ? "Poster" : `Slide ${i + 1}`,
+        points: ["A key point", "Supporting detail"],
+        visualDirection: "Quiet studio layout",
+        assetIds: [],
+      }));
+      project.outline = entries;
+      this.later(800, () => {
+        this.emit("forma.outline.ready", { outline: entries }, eventExtra);
+        finish();
+      });
+      return;
+    }
+    const outline = Array.isArray(project.outline) ? project.outline : [];
+    const pageIds: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const entry = asRecord(outline[i]);
+      const existing = Array.isArray(project.pages) ? project.pages[i] : undefined;
+      pageIds.push(asString(entry.id ?? existing ?? `pg_mock_${++this.mockSeq}`));
+    }
+    project.pages = pageIds;
+    const pageMeta = asRecord(project.pageMeta);
+    for (const [i, pageId] of pageIds.entries()) {
+      const entry = asRecord(outline[i]);
+      pageMeta[pageId] = {
+        title: asString(entry.title ?? `Slide ${i + 1}`),
+        assets: [],
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    project.pageMeta = pageMeta;
+    let step = 0;
+    const tick = (): void => {
+      if (step >= pageIds.length) {
+        finish();
+        return;
+      }
+      const pageId = pageIds[step]!;
+      const entry = asRecord(outline[step]);
+      this.emit(
+        "forma.page.ready",
+        {
+          pageId,
+          index: step + 1,
+          total: pageIds.length,
+          title: asString(entry.title ?? `Slide ${step + 1}`),
+          assets: [],
+        },
+        eventExtra,
+      );
+      step += 1;
+      this.later(420, tick);
+    };
+    this.later(600, tick);
+  }
 
   private playCannedReply(id: string, sessionId: string, prompt: string): void {
     const runId = `run-${Date.now()}`;

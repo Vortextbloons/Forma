@@ -3,8 +3,10 @@ import type {
   ContextRole,
   Density,
   OutputKind,
+  PageMeta,
   ProjectFile,
   ProjectSettings,
+  SourceRecord,
   StylePreset,
 } from "../../../../src/projects/schema.ts";
 
@@ -13,10 +15,55 @@ export type {
   ContextRole,
   Density,
   OutputKind,
+  PageMeta,
   ProjectFile,
   ProjectSettings,
+  SourceRecord,
   StylePreset,
 };
+
+export interface ValidationIssue {
+  pageId?: string;
+  pageIndex?: number;
+  kind: "missing-asset" | "overflow" | "clipped-text" | "must-include";
+  message: string;
+  detail?: string;
+}
+
+export interface ValidationReport {
+  issues: ValidationIssue[];
+  renderError?: string;
+  pages: number;
+  checkedAt: string;
+}
+
+export interface ExtractedPage {
+  page: number;
+  text: string;
+  source: "text" | "ocr";
+}
+
+export interface StoredExtraction {
+  id: string;
+  name: string;
+  mime: string;
+  kind: "text" | "ocr" | "mixed";
+  pages: ExtractedPage[];
+}
+
+export interface SearchCredentialStatus {
+  configured: boolean;
+  masked?: string;
+}
+
+export type SearchProviderId = "exa" | "pexels";
+
+export interface FormaRunState {
+  kind: "outline" | "artwork" | "refine" | "design";
+  total: number;
+  completed: number;
+  startedAt: string;
+}
 
 export interface ProjectSnapshot {
   dir: string;
@@ -103,4 +150,29 @@ export function formatFileSize(bytes: number): string {
 
 export function countLabel(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+export function parseValidationReport(value: unknown): ValidationReport | null {
+  const report = (value as { report?: unknown } | null)?.report as ValidationReport | undefined;
+  if (!report || !Array.isArray(report.issues)) return null;
+  return report;
+}
+
+export function parseSearchCredentials(
+  value: unknown,
+): Record<SearchProviderId, SearchCredentialStatus> | null {
+  const credentials = (value as { credentials?: unknown } | null)?.credentials as
+    | Record<SearchProviderId, SearchCredentialStatus>
+    | undefined;
+  if (!credentials || typeof credentials.exa?.configured !== "boolean") return null;
+  return credentials;
+}
+
+export function parseStoredExtraction(value: unknown): StoredExtraction | null {
+  const extraction = (value as { extraction?: unknown } | null)?.extraction as
+    | StoredExtraction
+    | null
+    | undefined;
+  if (!extraction || !Array.isArray(extraction.pages)) return null;
+  return extraction;
 }

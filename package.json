@@ -22,12 +22,23 @@
     "build:desktop": "cd desktop && wails3 build"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.10",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "pdfjs-dist": "^6.4.299",
+    "puppeteer": "^25.13.0",
     "rig": "file:../../Misc/Rig/packages/rig",
+    "tesseract.js": "^7.0.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
+    "pdf-lib": "^1.17.1",
     "typescript": "^5.9.0",
     "vitest": "^4.1.0"
+  },
+  "allowScripts": {
+    "puppeteer@25.13.0": true,
+    "esbuild@0.28.2": true,
+    "tesseract.js@7.0.0": true
   }
 }

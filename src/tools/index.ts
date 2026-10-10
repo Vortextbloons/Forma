@@ -1,10 +1,4 @@
-import exampleTool from "./example.ts";
+import { projectTools } from "./project.ts";
+import { researchTools } from "./research.ts";
 
-
-
-
-
-
-
-
-export const customTools = [exampleTool];
+export const customTools = [...projectTools, ...researchTools];

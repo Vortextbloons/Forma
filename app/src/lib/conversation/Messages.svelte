@@ -49,12 +49,38 @@
   }
 
   let container: HTMLDivElement | undefined = $state();
+  let timelineEl: HTMLDivElement | undefined = $state();
+  let pinned = $state(true);
 
-  $effect(() => {
-    const len = timeline.length;
+  function isNearBottom(): boolean {
+    const el = container;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }
+
+  function scrollToBottom(): void {
     const el = container;
     if (el) el.scrollTop = el.scrollHeight;
-    void len;
+  }
+
+  function onScroll(): void {
+    pinned = isNearBottom();
+  }
+
+  $effect(() => {
+    sessionId;
+    pinned = true;
+    scrollToBottom();
+  });
+
+  $effect(() => {
+    const el = timelineEl;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (pinned) scrollToBottom();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   });
 
   function itemSeqKey(item: TimelineItem): string {
@@ -65,8 +91,8 @@
   }
 </script>
 
-<div class="scroll messages-scroll" bind:this={container}>
-  <div class="messages-timeline">
+<div class="scroll messages-scroll" bind:this={container} onscroll={onScroll}>
+  <div class="messages-timeline" bind:this={timelineEl}>
     {#if timeline.length === 0}
       <div class="messages-empty">
         <div class="messages-empty-inner">

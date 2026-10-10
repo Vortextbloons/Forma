@@ -12,9 +12,18 @@ import {
   projectFilePath,
   removeContextItem,
   renameProject,
+  setOutline,
   updateContextItem,
   updateProject,
 } from "../src/projects/store.ts";
+import {
+  deletePage,
+  duplicatePage,
+  movePage,
+  readPage,
+  updatePage,
+  writePage,
+} from "../src/projects/pages.ts";
 import { resolveProjectsHome } from "../src/projects/home.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
 import { repairSessionIndex } from "../src/projects/sessions.ts";
@@ -337,6 +346,104 @@ describe("project library", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
       delete process.env.FORMA_DATA_DIR;
+    }
+  });
+});
+
+describe("page persistence", () => {
+  it("writes, edits, reorders, duplicates and deletes pages", async () => {
+    const root = await tempDir();
+    try {
+      const created = await createProject({
+        dir: join(root, "Deck"),
+        name: "Deck",
+        prompt: "pages",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      const dir = created.dir;
+      const outline = await setOutline(dir, [
+        { title: "One", points: ["a"] },
+        { title: "Two", points: ["b"] },
+      ]);
+      const ids = outline.outline!.map((entry) => entry.id);
+
+      const first = await writePage(dir, {
+        index: 1,
+        title: "One",
+        html: "<div>one</div>",
+        css: ".one{}",
+      });
+      expect(first.pageId).toBe(ids[0]);
+      await writePage(dir, { index: 2, title: "Two", html: "<div>two</div>", css: "" });
+
+      let project = await openProject(dir);
+      expect(project.pages).toEqual(ids);
+      expect(project.pageMeta[ids[0]!]?.title).toBe("One");
+      expect((await readPage(dir, ids[0]!)).html.trim()).toBe("<div>one</div>");
+
+      await updatePage(dir, ids[0]!, { html: "<div>one updated</div>" });
+      expect((await readPage(dir, ids[0]!)).html.trim()).toBe("<div>one updated</div>");
+
+      await movePage(dir, ids[0]!, 2);
+      project = await openProject(dir);
+      expect(project.pages).toEqual([ids[1], ids[0]]);
+
+      const copy = await duplicatePage(dir, ids[1]!);
+      project = await openProject(dir);
+      expect(project.pages).toEqual([ids[1], copy.pageId, ids[0]]);
+      expect((await readPage(dir, copy.pageId)).html.trim()).toBe("<div>two</div>");
+
+      await deletePage(dir, copy.pageId);
+      project = await openProject(dir);
+      expect(project.pages).toEqual([ids[1], ids[0]]);
+      await expect(stat(join(dir, "pages", `${copy.pageId}.html`))).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses out-of-order pages and scripts in artwork", async () => {
+    const root = await tempDir();
+    try {
+      const created = await createProject({
+        dir: join(root, "Guards"),
+        name: "Guards",
+        prompt: "guards",
+        mode: "create",
+        settings: defaultSettings("slides"),
+      });
+      const dir = created.dir;
+      await expect(
+        writePage(dir, { index: 3, title: "Hole", html: "<div/>", css: "" }),
+      ).rejects.toThrow(/out of order/i);
+      await expect(
+        writePage(dir, { index: 1, title: "Script", html: "<script>alert(1)</script>", css: "" }),
+      ).rejects.toThrow(/script/i);
+      const project = await openProject(dir);
+      expect(project.pages).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("validates outline asset assignments against context", async () => {
+    const root = await tempDir();
+    try {
+      const created = await createProject({
+        dir: join(root, "Outline"),
+        name: "Outline",
+        prompt: "outline",
+        mode: "plan",
+        settings: defaultSettings("slides"),
+      });
+      await expect(
+        setOutline(created.dir, [{ title: "One", points: [], assetIds: ["ctx_nope"] }]),
+      ).rejects.toThrow(/Unknown asset/i);
+      const project = await openProject(created.dir);
+      expect(project.outline).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

@@ -54,6 +54,11 @@ export const projectSettingsSchema = z.object({
 
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 
+export const CONTEXT_STATUSES = ["ready", "processing", "error"] as const;
+export type ContextStatus = (typeof CONTEXT_STATUSES)[number];
+
+export const EXTRACTION_KINDS = ["text", "ocr", "mixed"] as const;
+
 export const contextItemSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -61,7 +66,16 @@ export const contextItemSchema = z.object({
   asset: z.string(),
   mime: z.string().default("application/octet-stream"),
   size: z.number().int().nonnegative().default(0),
-  pages: z.number().int().positive().optional(),
+  status: z.enum(CONTEXT_STATUSES).default("ready"),
+  extraction: z
+    .object({
+      kind: z.enum(EXTRACTION_KINDS),
+      pages: z.number().int().nonnegative(),
+      chars: z.number().int().nonnegative(),
+    })
+    .optional(),
+  error: z.string().optional(),
+  sourceId: z.string().optional(),
   createdAt: z.string(),
 });
 
@@ -91,6 +105,14 @@ export const outlineEntrySchema = z.object({
 
 export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 
+export const pageMetaSchema = z.object({
+  title: z.string().default(""),
+  assets: z.array(z.string()).default([]),
+  updatedAt: z.string().optional(),
+});
+
+export type PageMeta = z.infer<typeof pageMetaSchema>;
+
 export const projectFileSchema = z.object({
   formatVersion: z.literal(PROJECT_FORMAT_VERSION),
   id: z.string(),
@@ -100,8 +122,11 @@ export const projectFileSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   settings: projectSettingsSchema.default({}),
+  settingsRevision: z.number().int().nonnegative().default(0),
+  artworkRevision: z.number().int().min(-1).default(-1),
   outline: z.array(outlineEntrySchema).nullable().default(null),
   pages: z.array(z.string()).default([]),
+  pageMeta: z.record(z.string(), pageMetaSchema).default({}),
   context: z.array(contextItemSchema).default([]),
   sources: z.array(sourceRecordSchema).default([]),
   conversation: z
@@ -119,6 +144,14 @@ export function newProjectId(): string {
 
 export function newContextId(): string {
   return `ctx_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+export function newPageId(): string {
+  return `pg_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+export function newSourceId(): string {
+  return `src_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
 }
 
 export function nowIso(): string {

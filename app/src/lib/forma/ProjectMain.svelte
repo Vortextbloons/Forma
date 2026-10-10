@@ -1,22 +1,22 @@
 <script lang="ts">
+  import Icon from "../components/Icon.svelte";
+  import OutlineEditor from "./OutlineEditor.svelte";
+  import PagePreview from "./PagePreview.svelte";
   import PageIcon from "./PageIcon.svelte";
   import { projectStore } from "./projectStore.svelte";
   import { DENSITY_LABELS, OUTPUT_LABELS, STYLE_LABELS, countLabel } from "./types";
   import { effectiveSize } from "../../../../src/projects/size.ts";
-  import { sendCommand } from "../rig/bridge";
-  import { messageStore } from "../rig/stores/messageStore.svelte";
-  import { sessionStore } from "../rig/stores/sessionStore.svelte";
-  import { notificationStore } from "../rig/stores/notificationStore.svelte";
-
-  let { page = null }: { page: number | null } = $props();
 
   const project = $derived(projectStore.current?.project);
   const size = $derived(project ? effectiveSize(project.settings) : null);
-  const sessionId = $derived(sessionStore.activeSessionId);
-  const generating = $derived.by(() => {
-    const status = sessionStore.statusOf(sessionId);
-    return status === "running" || status === "waiting" || status === "approval";
-  });
+  const pages = $derived(project?.pages ?? []);
+  const selectedPageId = $derived(projectStore.selectedPageId);
+  const selectedIndex = $derived(
+    selectedPageId ? pages.indexOf(selectedPageId) : -1,
+  );
+  const hasOutline = $derived((project?.outline?.length ?? 0) > 0);
+  const run = $derived(projectStore.run);
+  const generating = $derived(run !== null);
 
   let nameDraft = $state("");
   let promptDraft = $state("");
@@ -52,31 +52,16 @@
     }
   }
 
-  async function startGeneration(): Promise<void> {
-    const current = project;
-    if (!current || !sessionId || generating) return;
-    const brief = promptDraft.trim();
-    if (!brief) return;
-    const ask =
-      current.mode === "plan"
-        ? `Draft the outline for this project based on the brief:\n\n${brief}`
-        : `Create the ${current.settings.output === "poster" ? "poster" : "slides"} for this project from the brief:\n\n${brief}`;
-    messageStore.addUserMessage(sessionId, ask);
-    try {
-      await sendCommand("prompt", { sessionId, prompt: ask }, { timeoutMs: 0 });
-    } catch (err) {
-      notificationStore.push({
-        type: "error",
-        sessionId,
-        message: err instanceof Error ? err.message : String(err),
-      });
-    }
+  function start(): void {
+    if (!project || generating) return;
+    if (project.mode === "plan") void projectStore.plan();
+    else void projectStore.generate();
   }
 
   const actionLabel = $derived.by(() => {
     if (!project) return "";
     if (generating) return "Forma is working…";
-    if (project.mode === "plan" && !project.outline) return "Draft the outline";
+    if (project.mode === "plan") return "Draft the outline";
     return project.settings.output === "poster" ? "Create the poster" : "Create the slides";
   });
 
@@ -97,30 +82,47 @@
   });
 
   const pageTitle = $derived.by(() => {
-    if (page === null || !project) return "";
-    return project.outline?.[page]?.title ?? "";
+    if (!selectedPageId || !project) return "";
+    return project.pageMeta[selectedPageId]?.title ?? "";
   });
 </script>
 
 <main class="project-main">
-  {#if project && size && page !== null && page < project.pages.length}
-    <section
-      class="stage"
-      style={`--page-ratio:${(size.width / size.height).toFixed(4)}`}
-    >
-      <div class="stage-page">
-        <span class="stage-placeholder">
-          <PageIcon width={size.width} height={size.height} size={28} />
-          <strong>{project.settings.output === "poster" ? "Poster" : `Slide ${page + 1}`}</strong>
-          <span>Artwork appears here as it is generated.</span>
-        </span>
-      </div>
+  {#if project && size && pages.length > 0 && selectedPageId && selectedIndex >= 0}
+    <section class="stage" style={`--page-ratio:${(size.width / size.height).toFixed(4)}`}>
+      <PagePreview pageId={selectedPageId} />
       {#if project.settings.output === "slides"}
         <p class="stage-caption">
-          Slide {page + 1} of {project.pages.length}{pageTitle ? ` · ${pageTitle}` : ""}
+          Slide {selectedIndex + 1} of {pages.length}{pageTitle ? ` · ${pageTitle}` : ""}
         </p>
       {/if}
     </section>
+
+    {#if projectStore.needsImageModel}
+      <div class="stage-banner">
+        <Icon name="alert" size={14} />
+        <span>The selected model cannot read the image references in this project.</span>
+        <button
+          class="btn btn-ghost"
+          type="button"
+          onclick={() => window.dispatchEvent(new CustomEvent("rig:open-provider-settings"))}
+        >Choose a model</button>
+      </div>
+    {/if}
+    {#if projectStore.needsDesignApply}
+      <div class="stage-banner">
+        <Icon name="message" size={14} />
+        <span>Design settings changed since the artwork was made.</span>
+        <button
+          class="btn btn-ghost"
+          type="button"
+          disabled={generating}
+          onclick={() => void projectStore.applyDesign()}
+        >Apply to artwork</button>
+      </div>
+    {/if}
+  {:else if project && hasOutline}
+    <OutlineEditor />
   {:else if project && size}
     <section class="brief">
       <header class="brief-head">
@@ -185,8 +187,8 @@
       <button
         class="btn btn-accent brief-action"
         type="button"
-        disabled={generating || promptDraft.trim() === "" || sessionId === null}
-        onclick={() => void startGeneration()}
+        disabled={generating || promptDraft.trim() === ""}
+        onclick={start}
       >
         {#if generating}
           <span class="spinner"></span>
