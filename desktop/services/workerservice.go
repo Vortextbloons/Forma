@@ -122,6 +122,14 @@ func (s *WorkerService) Start() {
 
 	nodeBin := s.nodeBin
 	if nodeBin == "" {
+		if exe, err := os.Executable(); err == nil {
+			bundled := filepath.Join(filepath.Dir(exe), "runtime", "node.exe")
+			if fileExists(bundled) {
+				nodeBin = bundled
+			}
+		}
+	}
+	if nodeBin == "" {
 		bin, err := exec.LookPath("node")
 		if err != nil {
 			s.fail(fmt.Sprintf("node not found on PATH (set RIG_NODE_BIN): %v", err), true)
@@ -141,6 +149,12 @@ func (s *WorkerService) Start() {
 
 	cmd := exec.Command(nodeBin, entry, "--project", projectDir, "--log-level", logLevel)
 	cmd.Dir = projectDir
+	if exe, err := os.Executable(); err == nil {
+		chrome := filepath.Join(filepath.Dir(exe), "runtime", "chrome", "chrome.exe")
+		if os.Getenv("FORMA_CHROME_PATH") == "" && fileExists(chrome) {
+			cmd.Env = append(os.Environ(), "FORMA_CHROME_PATH="+chrome)
+		}
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.fail(fmt.Sprintf("worker stdin pipe: %v", err), true)
@@ -368,6 +382,7 @@ func (s *WorkerService) resolveWorkerEntry(projectDir, override string) string {
 	if err == nil {
 		exeDir := filepath.Dir(exe)
 		candidates := []string{
+			filepath.Join(exeDir, "runtime", "src", "worker", "index.ts"),
 			filepath.Join(exeDir, "..", "..", "src", "worker", "index.ts"),
 			filepath.Join(exeDir, "worker", "index.js"),
 			filepath.Join(exeDir, "..", "resources", "worker", "index.js"),

@@ -1,6 +1,6 @@
 {
   "name": "forma",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -19,7 +19,8 @@
     "doctor": "rig doctor",
     "upgrade": "rig upgrade",
     "dev:desktop": "rig dev",
-    "build:desktop": "cd desktop && wails3 build"
+    "build:desktop": "cd desktop && wails3 build",
+    "build:release": "powershell -NoProfile -ExecutionPolicy Bypass -File desktop/scripts/release.ps1"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.10",
@@ -28,7 +29,7 @@
     "pdfjs-dist": "^6.4.299",
     "pptxgenjs": "^4.0.1",
     "puppeteer": "^25.13.0",
-    "rig": "file:../../Misc/Rig/packages/rig",
+    "rig": "file:vendor/rig-0.3.0.tgz",
     "tesseract.js": "^7.0.0",
     "zod": "^3.25.0"
   },

@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.4.0'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ('${{ github.ref_type }}' -ne 'tag' -or '${{ github.ref_name }}' -ne "v$version") {
+            throw "Run this workflow from the v$version tag."
+          }
+      - name: Install build tools
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.8
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build installer
+        shell: pwsh
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./desktop/scripts/release.ps1 -Repository '${{ github.repository }}'
+      - name: Check frontend and updater
+        shell: pwsh
+        run: |
+          npm run check --workspace app
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location desktop
+          go test ./services
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ github.ref_name }}' desktop/bin/release/*-setup.exe --verify-tag --title 'Forma ${{ github.ref_name }}' --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

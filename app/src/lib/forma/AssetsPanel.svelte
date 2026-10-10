@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { Events } from "@wailsio/runtime";
   import Icon from "../components/Icon.svelte";
   import Collapsible from "../components/Collapsible.svelte";
   import ContextTextDialog from "./ContextTextDialog.svelte";
   import { projectStore } from "./projectStore.svelte";
-  import { pickFiles, openUrl } from "../rig/native";
+  import { pickFiles, openUrl, isNative } from "../rig/native";
   import { formatFileSize } from "./types";
   import type { ContextItem } from "./types";
 
@@ -27,6 +29,11 @@
 
   const project = $derived(projectStore.current?.project);
   const sources = $derived(project?.sources ?? []);
+
+  onMount(() => Events.On("rig:files-dropped", (event) => {
+    dropActive = false;
+    void importPaths(event.data.files);
+  }));
 
   async function importPaths(paths: string[]): Promise<void> {
     if (paths.length === 0 || importing) return;
@@ -54,7 +61,6 @@
 
   function onDragOver(event: DragEvent): void {
     if (!acceptsDrop(event)) return;
-    if (event.dataTransfer?.types.includes("Files")) return;
     event.preventDefault();
     event.dataTransfer!.dropEffect = "copy";
     dropActive = true;
@@ -77,9 +83,11 @@
     dropActive = false;
     const transfer = event.dataTransfer;
     if (!transfer || importing) return;
+    const files = Array.from(transfer.files);
+    const url = files.length === 0 ? droppedUrl(transfer) : undefined;
+    if (transfer.types.includes("Files") && await isNative()) return;
     importing = true;
     try {
-      const files = Array.from(transfer.files);
       if (files.length > 0) {
         for (const file of files) {
           const data = toBase64(await file.arrayBuffer());
@@ -87,7 +95,6 @@
         }
         return;
       }
-      const url = droppedUrl(transfer);
       if (url) await projectStore.importAsset({ name: urlFileName(url), url });
     } finally {
       importing = false;
@@ -200,7 +207,7 @@
     {/if}
   </div>
   <p class="muted small">
-    PNG, JPEG, WebP, SVG, PDF, TXT, Markdown — or drag them here, straight from your browser. Files are copied into the project.
+    PNG, JPEG, WebP, SVG, PDF, TXT, Markdown — drag files here from your computer or images from your browser. Files are copied into the project.
   </p>
 
   {#if project && project.context.length > 0}

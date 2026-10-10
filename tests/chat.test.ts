@@ -38,7 +38,10 @@ describe("chat timeline", () => {
   });
 });
 
-async function loadProjectStore(sendCommand: (name: string, params?: Record<string, unknown>) => Promise<unknown>) {
+async function loadProjectStore(
+  sendCommand: (name: string, params?: Record<string, unknown>) => Promise<unknown>,
+  overrides: { workerStatus?: string; waitForReady?: () => Promise<void> } = {},
+) {
   const readyCallbacks: Array<() => void | Promise<void>> = [];
   const notices: Array<{ message: string }> = [];
   const pending = new Set<Promise<unknown>>();
@@ -56,7 +59,7 @@ async function loadProjectStore(sendCommand: (name: string, params?: Record<stri
       onEvent: () => {},
     }),
     openProjectDir: async () => {},
-    waitForReady: async () => {},
+    waitForReady: overrides.waitForReady ?? (async () => {}),
     notificationStore: { push: (notice: { message: string }) => notices.push(notice) },
     sessionStore: {
       activeSessionId: "project-chat",
@@ -67,7 +70,7 @@ async function loadProjectStore(sendCommand: (name: string, params?: Record<stri
     },
     messageStore: {},
     modelStore: { selectedModel: "auto" },
-    workerStore: { status: "ready", readyInfo: undefined },
+    workerStore: { status: overrides.workerStatus ?? "ready", readyInfo: undefined },
     isFormaDomainEvent: () => false,
   };
   const key = `forma-project-test-${crypto.randomUUID()}`;
@@ -150,6 +153,51 @@ describe("project conversation lifecycle", () => {
       expect(harness.notices.filter((notice) => notice.message.startsWith("Could not record the conversation"))).toEqual([]);
       expect(harness.store.current).toBeNull();
       expect(harness.sessionCount).toBe(1);
+    } finally {
+      harness.close();
+    }
+  });
+
+  it("retries loading the library until the worker becomes ready", async () => {
+    const dir = "C:\\Forma-test\\projects\\startup-project";
+    const project = { id: "startup-project", formatVersion: 1, name: "Startup project", settings: {}, context: [], pages: [], conversation: { sessionIds: [] } };
+    let ready = false;
+    let attempts = 0;
+    const harness = await loadProjectStore(async (name) => {
+      if (name === "project.list") {
+        attempts += 1;
+        if (!ready) throw new Error("worker is not running");
+        return { home: "C:\\Forma-test\\projects", projects: [{ dir, project }] };
+      }
+      return {};
+    }, {
+      workerStatus: "connecting",
+      waitForReady: async () => { ready = true; },
+    });
+    try {
+      await harness.store.loadProjects();
+      expect(attempts).toBe(2);
+      expect(harness.store.projects.map((entry: { project: { name: string } }) => entry.project.name)).toEqual(["Startup project"]);
+    } finally {
+      harness.close();
+    }
+  });
+
+  it("reloads the library when the worker becomes ready without an open project", async () => {
+    const dir = "C:\\Forma-test\\projects\\restart-project";
+    const project = { id: "restart-project", formatVersion: 1, name: "Restart project", settings: {}, context: [], pages: [], conversation: { sessionIds: [] } };
+    let attempts = 0;
+    const harness = await loadProjectStore(async (name) => {
+      if (name === "project.list") {
+        attempts += 1;
+        return { home: "C:\\Forma-test\\projects", projects: [{ dir, project }] };
+      }
+      return {};
+    }, { workerStatus: "connecting" });
+    try {
+      await harness.reconnect();
+      expect(attempts).toBe(1);
+      expect(harness.store.projects).toHaveLength(1);
     } finally {
       harness.close();
     }

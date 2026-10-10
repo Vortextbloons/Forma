@@ -7,6 +7,8 @@
   import { projectStore } from "./projectStore.svelte";
   import type { OutputKind, ProjectSettings } from "./types";
 
+  let { onOpenLibrary }: { onOpenLibrary: () => void } = $props();
+
   let name = $state("");
   let prompt = $state("");
   let kind = $state<OutputKind>("slides");
@@ -71,6 +73,9 @@
         {:else}
           Create project <Icon name="chevron-right" size={15} />
         {/if}
+      </button>
+      <button class="btn open-button" type="button" onclick={onOpenLibrary}>
+        <Icon name="folder" size={14} /> Open project
       </button>
       <p class="creation-note muted small">Nothing builds until you ask. Planning is optional.</p>
     </section>

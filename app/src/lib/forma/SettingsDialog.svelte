@@ -5,8 +5,11 @@
   import AssetsPanel from "./AssetsPanel.svelte";
   import DesignPanel from "./DesignPanel.svelte";
   import { workerStore } from "../rig/stores/workerStore.svelte";
+  import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { notificationStore } from "../rig/stores/notificationStore.svelte";
   import { restartWorker } from "../rig/bridge";
+  import { callNative, isNative } from "../rig/native";
+  import { version } from "../../../../package.json";
   import { projectStore } from "./projectStore.svelte";
   import type { SearchProviderId } from "./types";
   import { onMount } from "svelte";
@@ -23,13 +26,58 @@
   let exaKey = $state("");
   let pexelsKey = $state("");
   let saving = $state<SearchProviderId | null>(null);
+  let checkingUpdate = $state(false);
+  let updating = $state(false);
+  let native = $state(false);
+  let latestVersion = $state("");
+  let updateAvailable = $state(false);
+  let updateMessage = $state("");
+
+  const sessionStatus = $derived(sessionStore.statusOf(sessionStore.activeSessionId));
+  const updateBlocked = $derived(
+    projectStore.run !== null || projectStore.exportRun !== null ||
+    sessionStatus === "running" || sessionStatus === "waiting" || sessionStatus === "approval" ||
+    projectStore.saveStatus === "error",
+  );
 
   const credentials = $derived(projectStore.searchCredentials);
 
   onMount(() => {
     tab = initialTab;
     void projectStore.refreshSearchCredentials();
+    void checkUpdate();
   });
+
+  async function checkUpdate(): Promise<void> {
+    native = await isNative();
+    if (!native) return;
+    checkingUpdate = true;
+    updateMessage = "";
+    try {
+      const info = await callNative<{ latestVersion: string; available: boolean }>(
+        "rigdesktop/services.UpdateService.Check",
+      );
+      latestVersion = info.latestVersion;
+      updateAvailable = info.available;
+      updateMessage = info.available ? `Version ${info.latestVersion} is available.` : "Forma is up to date.";
+    } catch (error) {
+      updateMessage = error instanceof Error ? error.message : String(error);
+    } finally {
+      checkingUpdate = false;
+    }
+  }
+
+  async function installUpdate(): Promise<void> {
+    updating = true;
+    updateMessage = "Downloading and verifying the update… Forma will reopen automatically.";
+    try {
+      await projectStore.flushProjectChanges();
+      await callNative("rigdesktop/services.UpdateService.Install");
+    } catch (error) {
+      updateMessage = error instanceof Error ? error.message : String(error);
+      updating = false;
+    }
+  }
 
   async function saveKey(provider: SearchProviderId): Promise<void> {
     const key = provider === "exa" ? exaKey : pexelsKey;
@@ -65,7 +113,7 @@
   }
 
   function onOverlayKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") onclose();
+    if (event.key === "Escape" && !updating) onclose();
   }
 </script>
 
@@ -73,7 +121,7 @@
   class="modal-overlay"
   role="presentation"
   onclick={(event) => {
-    if (event.target === event.currentTarget) onclose();
+    if (event.target === event.currentTarget && !updating) onclose();
   }}
   onkeydown={onOverlayKeydown}
 >
@@ -81,17 +129,18 @@
     class="modal forma-settings"
     role="dialog"
     aria-modal="true"
+    aria-busy={updating}
     aria-label="Settings"
     tabindex="-1"
   >
     <div class="modal-head">
       <span class="modal-title">Settings</span>
-      <button class="icon-btn" type="button" title="Close" aria-label="Close settings" onclick={onclose}>
+      <button class="icon-btn" type="button" title="Close" aria-label="Close settings" disabled={updating} onclick={onclose}>
         <Icon name="x" size={16} />
       </button>
     </div>
     <div class="modal-body">
-      <nav class="settings-nav" aria-label="Settings sections">
+      <nav class="settings-nav" aria-label="Settings sections" inert={updating}>
         {#if projectStore.current}
           <button type="button" class:settings-nav-active={tab === "design"} onclick={() => (tab = "design")}>Design</button>
           <button type="button" class:settings-nav-active={tab === "assets"} onclick={() => (tab = "assets")}>References</button>
@@ -191,10 +240,23 @@
           </p>
         {:else}
           <div class="field">
+            <span class="field-label">Forma</span>
+            <div class="field-row">
+              <span class="badge">Version {version}</span>
+              {#if native}
+                <button class="btn" type="button" disabled={checkingUpdate || updating || updateBlocked} onclick={() => void (updateAvailable ? installUpdate() : checkUpdate())}>
+                  {updating ? "Updating…" : checkingUpdate ? "Checking…" : updateAvailable ? `Update to ${latestVersion}` : "Check for updates"}
+                </button>
+              {/if}
+            </div>
+            <p class="muted small" role="status">{native ? updateMessage : "Updates are available in the desktop app."}</p>
+            {#if updateAvailable && updateBlocked}<p class="muted small">Finish the current task and save your changes before updating.</p>{/if}
+          </div>
+          <div class="field">
             <span class="field-label">Worker</span>
             <div class="field-row">
               <span class="badge badge-{workerStore.status}">{workerStore.status}</span>
-              <button class="btn" type="button" onclick={() => void restartWorker()}>Restart worker</button>
+              <button class="btn" type="button" disabled={updating} onclick={() => void restartWorker()}>Restart worker</button>
             </div>
           </div>
           <div class="field">

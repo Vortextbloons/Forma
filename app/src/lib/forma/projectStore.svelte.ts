@@ -78,13 +78,25 @@ async function stopActiveGeneration(): Promise<void> {
   }
 }
 
+async function fetchLibrary(): Promise<void> {
+  const parsed = parseProjectLibrary(await sendCommand("project.list"));
+  library = parsed.projects;
+  libraryHome = parsed.home;
+}
+
 export async function loadProjects(): Promise<void> {
-  try {
-    const parsed = parseProjectLibrary(await sendCommand("project.list"));
-    library = parsed.projects;
-    libraryHome = parsed.home;
-  } catch {
-    library = [];
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      await fetchLibrary();
+      return;
+    } catch {
+      if (Date.now() >= deadline) {
+        library = [];
+        return;
+      }
+    }
+    await waitForReady(2_000).catch(() => undefined);
   }
 }
 
@@ -994,7 +1006,11 @@ function handleFormaEvent(event: FormaDomainEvent): void {
 }
 
 getBridge().onReady(async () => {
-  if (!opening && current) {
+  if (!current) {
+    await loadProjects();
+    return;
+  }
+  if (!opening) {
     const dir = current.dir;
     await refreshProject();
     if (opening || current?.dir !== dir) return;
@@ -1013,6 +1029,7 @@ getBridge().onEvent((event) => {
 });
 
 export const projectStore = {
+  flushProjectChanges,
   get themes() {
     return themes;
   },

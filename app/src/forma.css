@@ -354,17 +354,9 @@ html[data-theme="light"] .select {
   font-size: 14px;
 }
 
-.start-recent {
-  width: min(1080px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 8px 0 64px;
-}
-
-.section-heading {
-  margin: 0 0 16px;
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
+.open-button {
+  min-height: 42px;
+  font-size: 14px;
 }
 
 .cover-grid {
@@ -1529,8 +1521,7 @@ html[data-theme="light"] .stage-page {
 /* -------------------------------- responsive ------------------------------- */
 
 @media (max-width: 1100px) {
-  .start-hero,
-  .start-recent {
+  .start-hero {
     width: calc(100% - 32px);
   }
 
