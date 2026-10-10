@@ -1,7 +1,7 @@
 {
   "name": "rig-app",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "RigShell - the Svelte 5 UI for a Rig agent workspace (copied into projects by `rig add desktop`).",
   "type": "module",
   "scripts": {
