@@ -58,7 +58,7 @@
   }
 
   function outsideFeedback(event: PointerEvent): void {
-    if (feedbackOpen && event.target instanceof Node && popup && !popup.contains(event.target)) closeFeedback();
+    if (feedbackOpen && event.target instanceof Node && popup && !popup.contains(event.target)) anchor = null;
   }
 
   async function applyFeedback(): Promise<void> {

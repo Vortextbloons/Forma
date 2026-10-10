@@ -532,7 +532,7 @@ export async function sendRefine(
 ): Promise<void> {
   const sessionId = sessionStore.activeSessionId;
   if (!current || run || !sessionId) return;
-  messageStore.addUserMessage(sessionId, message);
+  messageStore.addUserMessage(sessionId, message, target.element ? { text: target.element.text } : undefined);
   await startArtwork(
     "artwork.refine",
     {

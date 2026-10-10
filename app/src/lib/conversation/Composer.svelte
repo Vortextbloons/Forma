@@ -24,6 +24,14 @@
   const mode = $derived(projectStore.current?.project.mode === "plan" ? "plan" : "build");
   const running = $derived(busy || projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionId)));
   const canSend = $derived(sessionId !== null && draft.trim() !== "" && !running);
+  const elementPageLabel = $derived.by(() => {
+    const project = projectStore.current?.project;
+    if (!project || !target.pageId) return "";
+    if (project.settings.output === "poster") return "Poster";
+    const index = project.pages.indexOf(target.pageId);
+    const title = project.pageMeta[target.pageId]?.title;
+    return `Slide ${index + 1}${title ? ` · ${title}` : ""}`;
+  });
   const modelLabel = $derived(
     modelStore.selectedModel === "auto"
       ? "Auto model"
@@ -91,6 +99,18 @@
 </script>
 
 <div class="composer">
+  {#if target.element}
+    <div class="selection-context" aria-live="polite">
+      <div class="selection-context-heading">
+        <Icon name="check" size={14} />
+        <strong>Element selected</strong>
+        <button class="icon-btn" type="button" aria-label="Remove selected element from message" title="Remove selection" onclick={() => projectStore.selectElement(null)}><Icon name="x" size={14} /></button>
+      </div>
+      <p class="selection-context-text" title={target.element.text}>{target.element.text || "Selected shape"}</p>
+      <span class="selection-context-page">{elementPageLabel}</span>
+      <p class="selection-context-hint">Your next message targets this element.</p>
+    </div>
+  {/if}
   {#if projectStore.current}
     <div class="composer-mode-row">
       <div class="segmented segmented-small" role="group" aria-label="Work mode">
@@ -107,7 +127,7 @@
     class="input textarea composer-textarea"
     placeholder={sessionId
       ? projectStore.current
-        ? mode === "plan" ? "Explore an idea or plan a change…" : "Describe what to build or change…"
+        ? target.element ? "Describe a change to this element…" : mode === "plan" ? "Explore an idea or plan a change…" : "Describe what to build or change…"
         : "Describe a task…"
       : "Preparing conversation…"}
     rows="1"
@@ -154,3 +174,49 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .selection-context {
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--border));
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  }
+
+  .selection-context-heading {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .selection-context-heading strong {
+    flex: 1;
+  }
+
+  .selection-context-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    margin: 6px 0 4px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .selection-context-page,
+  .selection-context-hint {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .selection-context-hint {
+    margin: 5px 0 0;
+  }
+</style>

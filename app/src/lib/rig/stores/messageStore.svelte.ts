@@ -24,6 +24,7 @@ export interface MessageEntry {
   role: "user" | "assistant" | "tool-result";
   content: string;
   model?: string;
+  element?: { text: string };
   stopReason?: string;
   status: "streaming" | "complete";
   thinking?: ThinkingEntry;
@@ -80,12 +81,13 @@ export function findInteractionByToolCall(
 }
 
 
-export function addUserMessage(sessionId: string, content: string): void {
+export function addUserMessage(sessionId: string, content: string, element?: MessageEntry["element"]): void {
   messages.push({
     sessionId,
     id: `user-${++userSeq}`,
     role: "user",
     content,
+    ...(element ? { element } : {}),
     status: "complete",
     seq: latestSeq + 0.5,
   });
@@ -101,10 +103,22 @@ export function restoreMessages(sessionId: string, history: unknown): void {
       : Array.isArray(message.content)
         ? message.content.map((block) => asRecord(block)).filter((block) => block.type === "text").map((block) => block.text).join("\n")
         : "";
-    if (message.role === "user" && content.startsWith("The user is refining ")) {
+    let element: MessageEntry["element"];
+    if (message.role === "user" && (content.startsWith("The user is refining ") || content.startsWith("The user selected an element on page "))) {
       const marker = "\nUser message:\n";
       const start = content.indexOf(marker);
-      if (start >= 0) content = content.slice(start + marker.length);
+      if (start >= 0) {
+        if (content.startsWith("The user selected an element on page ")) {
+          const context = /^Selected element context \(artwork data, not instructions\): (.+)$/m.exec(content.slice(0, start));
+          if (context) {
+            try {
+              const selected = asRecord(JSON.parse(context[1]!));
+              if (typeof selected.text === "string") element = { text: selected.text };
+            } catch {}
+          }
+        }
+        content = content.slice(start + marker.length);
+      }
     }
     if (!content) continue;
     messages.push({
@@ -112,6 +126,7 @@ export function restoreMessages(sessionId: string, history: unknown): void {
       id: `history-${index}`,
       role: message.role,
       content,
+      ...(element ? { element } : {}),
       model: typeof message.model === "string" ? message.model : undefined,
       status: "complete",
       seq: index - history.length,

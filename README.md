@@ -42,6 +42,8 @@ Download the Windows x64 setup executable from
 [GitHub Releases](https://github.com/Vortextbloons/Forma/releases). It installs
 per user with everything included — no separate setup required.
 
+See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
+
 When a newer version is available, click **Update** in **Settings → App & worker**.
 Forma verifies the download, installs it silently, and reopens automatically,
 saving any in-progress work first.
