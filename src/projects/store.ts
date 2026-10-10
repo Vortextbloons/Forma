@@ -58,6 +58,23 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".md": "text/markdown",
 };
 
+export function contextAssetFormat(name: string, mime: string): { extension: string; mime: string } {
+  const normalized = mime.split(";")[0]?.trim().toLowerCase() ?? "";
+  for (const [extension, knownMime] of Object.entries(MIME_BY_EXTENSION)) {
+    if (knownMime === normalized) return { extension, mime: knownMime };
+  }
+  const extension = extname(name).toLowerCase();
+  const knownMime = (ACCEPTED_CONTEXT_EXTENSIONS as readonly string[]).includes(extension)
+    ? MIME_BY_EXTENSION[extension]
+    : undefined;
+  if (knownMime !== undefined) {
+    return { extension, mime: knownMime };
+  }
+  throw new RuntimeError(
+    `Unsupported file type "${extension || normalized || name}" (accepted: ${ACCEPTED_CONTEXT_EXTENSIONS.join(", ")})`,
+  );
+}
+
 const locks = new Map<string, Promise<unknown>>();
 
 function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {

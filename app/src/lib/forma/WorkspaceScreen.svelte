@@ -4,6 +4,7 @@
   import ProjectMain from "./ProjectMain.svelte";
   import RightPanel from "./RightPanel.svelte";
   import StatusBar from "./StatusBar.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
   import { projectStore } from "./projectStore.svelte";
 
   let { onOpenSettings, onCloseProject }: { onOpenSettings: () => void; onCloseProject: () => void } = $props();
@@ -12,6 +13,7 @@
   let layout = $state<"full" | "side">("full");
   const effectiveLayout = $derived(windowWidth < 1100 ? "full" : layout);
   let previewOpen = $state(false);
+  let showExport = $state(false);
 
   const pages = $derived(projectStore.current?.project.pages ?? []);
   const isSlides = $derived(projectStore.current?.project.settings.output === "slides");
@@ -23,6 +25,7 @@
   <ProjectHeader
     {onOpenSettings}
     {onCloseProject}
+    onOpenExport={() => (showExport = true)}
     layout={effectiveLayout}
     compact={windowWidth < 1100}
     {previewOpen}
@@ -38,3 +41,7 @@
   </div>
   <StatusBar />
 </div>
+
+{#if showExport}
+  <ExportDialog onclose={() => (showExport = false)} />
+{/if}

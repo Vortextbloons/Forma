@@ -21,6 +21,10 @@
     if (workerStore.status === "connecting" || workerStore.status === "restarting") {
       return { text: "Connecting…", tone: "busy" };
     }
+    if (projectStore.exportRun) {
+      const active = projectStore.exportRun;
+      return { text: `Exporting ${active.format.toUpperCase()}… · ${active.completed}/${active.total} pages`, tone: "busy" };
+    }
     if (run) {
       const label =
         run.kind === "outline"
@@ -63,8 +67,8 @@
   <span class="status-dot {status.tone}" aria-hidden="true"></span>
   <span>{status.text}</span>
 
-  {#if run}
-    <button class="btn btn-ghost btn-sm" type="button" onclick={() => void projectStore.stopGeneration()}>
+  {#if run || projectStore.exportRun}
+    <button class="btn btn-ghost btn-sm" type="button" onclick={() => (run ? void projectStore.stopGeneration() : void projectStore.cancelExport())}>
       Stop
     </button>
   {/if}

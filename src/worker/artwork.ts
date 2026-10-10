@@ -244,7 +244,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
   ].join("\n\n");
   loader.getAppendSystemPrompt = () => [...appendPrompt.call(loader), projectContext];
   session.setActiveToolsByName(options.mode === "plan"
-    ? tools.filter((name) => name !== "submit_page" && name !== "update_page" && name !== "restore_page")
+    ? tools.filter((name) => !["submit_page", "create_page", "write_file", "edit_file", "update_page", "restore_page"].includes(name))
     : tools);
   if (supportsImages) session.agent.state.tools = [...session.agent.state.tools, viewImageTool(options.dir), viewArtworkTool(options.dir)];
   const projectRun: ProjectRun = { mode: options.mode, artworkChanged: false, allowedPageIds: options.allowedPageIds, changedPageIds: new Set(), allowOutline: options.kind !== "artwork" && options.kind !== "design" };

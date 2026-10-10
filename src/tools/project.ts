@@ -61,12 +61,24 @@ const updatePageInput = z.object({
 });
 
 const pageIdInput = z.object({ pageId: z.string() });
+const createPageInput = submitPageInput.omit({ html: true, css: true });
+const writeFileInput = z.object({
+  path: z.string().describe("Page source path from create_page or read_page"),
+  content: z.string(),
+});
+const editFileInput = z.object({
+  path: z.string().describe("Page source path from create_page or read_page"),
+  edits: sourceEdits.describe("Exact unique find/replace edits read from the source file"),
+});
 
 export const projectTools: Array<RigTool<z.ZodTypeAny, unknown>> = [
   readProjectTool(),
   readContextTool(),
   submitOutlineTool(),
   submitPageTool(),
+  createPageTool(),
+  writeFileTool(),
+  editFileTool(),
   updatePageTool(),
   restorePageTool(),
   readPageTool(),
@@ -113,7 +125,7 @@ function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
         },
         pageSize: { width: size.width, height: size.height, unit: size.unit },
         outline: project.outline,
-        pages: pageRefs(project),
+        pages: pageRefs(project).map((page) => ({ ...page, files: sourceFiles(page.id) })),
         context: project.context.map((item) => ({
           id: item.id,
           name: item.name,
@@ -291,7 +303,7 @@ function submitPageTool(): RigTool<typeof submitPageInput, unknown> {
       });
       emit(
         FORMA_EVENTS.pageReady,
-        { pageId, index, total, title: project.pageMeta[pageId]?.title ?? input.title },
+        { pageId, index: index + 1, total, title: project.pageMeta[pageId]?.title ?? input.title },
         ctx,
       );
       return { ok: true, pageId, index: index + 1, total };
@@ -338,13 +350,68 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         FORMA_EVENTS.pageReady,
         {
           pageId,
-          index,
+          index: index + 1,
           total: totalPages(before),
           title: project.pageMeta[pageId]?.title ?? "",
         },
         ctx,
       );
       return { ok: true, pageId, index: index + 1 };
+    },
+  };
+}
+
+function sourceFiles(pageId: string): { html: string; css: string } {
+  return { html: `pages/${pageId}.html`, css: `pages/${pageId}.css` };
+}
+
+function createPageTool(): RigTool<typeof createPageInput, unknown> {
+  return {
+    name: "create_page",
+    description: "Create empty HTML and CSS source files for a new page in outline order. Write artwork into the returned files with write_file. For existing pages, read and edit their files instead.",
+    input: createPageInput,
+    async execute(input, ctx) {
+      const project = await projectOf(ctx);
+      if (project.pages.includes(input.pageId ?? project.pages[input.index - 1] ?? "")) {
+        throw new RuntimeError("This page already exists. Read and edit its source files instead.");
+      }
+      const result = await submitPageTool().execute({ ...input, html: "", css: "" }, ctx) as { pageId: string };
+      return { ...result, files: sourceFiles(result.pageId) };
+    },
+  };
+}
+
+async function sourceFile(path: string, ctx: ToolContext): Promise<{ pageId: string; source: "html" | "css" }> {
+  const project = await projectOf(ctx);
+  for (const pageId of project.pages) {
+    const files = sourceFiles(pageId);
+    for (const source of ["html", "css"] as const) {
+      if (path === files[source]) return { pageId, source };
+    }
+  }
+  throw new RuntimeError("Only registered page HTML and CSS files can be written. Use the paths from create_page or read_page.");
+}
+
+function writeFileTool(): RigTool<typeof writeFileInput, unknown> {
+  return {
+    name: "write_file",
+    description: "Write a page's HTML or CSS source file. Saves the file, updates its preview, and preserves the previous version. Use edit_file for small changes.",
+    input: writeFileInput,
+    async execute(input, ctx) {
+      const { pageId, source } = await sourceFile(input.path, ctx);
+      return updatePageTool().execute({ pageId, [source]: input.content }, ctx);
+    },
+  };
+}
+
+function editFileTool(): RigTool<typeof editFileInput, unknown> {
+  return {
+    name: "edit_file",
+    description: "Edit a page's HTML or CSS file with exact unique replacements, preserving the rest of the source. Read the file first. Saves the file and updates its preview.",
+    input: editFileInput,
+    async execute(input, ctx) {
+      const { pageId, source } = await sourceFile(input.path, ctx);
+      return updatePageTool().execute({ pageId, [`${source}Edits`]: input.edits }, ctx);
     },
   };
 }
@@ -370,6 +437,7 @@ function readPageTool(): RigTool<typeof pageIdInput, unknown> {
         title: meta?.title ?? "",
         assets: meta?.assets ?? [],
         evidence: meta?.evidence ?? {},
+        files: sourceFiles(input.pageId),
         html: source.html,
         css: source.css,
       };
@@ -426,7 +494,7 @@ function restorePageTool(): RigTool<typeof pageIdInput, unknown> {
       if (run) run.artworkChanged = true;
       run?.changedPageIds?.add(pageId);
       const index = project.pages.indexOf(pageId);
-      emit(FORMA_EVENTS.pageReady, { pageId, index, total: totalPages(project), title: project.pageMeta[pageId]?.title ?? "" }, ctx);
+      emit(FORMA_EVENTS.pageReady, { pageId, index: index + 1, total: totalPages(project), title: project.pageMeta[pageId]?.title ?? "" }, ctx);
       return { ok: true, pageId, index: index + 1 };
     },
   };

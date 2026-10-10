@@ -8,6 +8,10 @@ export const FORMA_EVENTS = {
   contextReady: "forma.context.ready",
   validationReady: "forma.validation.ready",
   runSettled: "forma.run.settled",
+  exportProgress: "forma.export.progress",
+  exportCompleted: "forma.export.completed",
+  exportFailed: "forma.export.failed",
+  exportCancelled: "forma.export.cancelled",
 } as const;
 
 export function createFormaEventSink(

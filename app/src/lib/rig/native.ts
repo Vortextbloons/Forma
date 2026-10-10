@@ -55,6 +55,7 @@ const WORKSPACE_OPEN_PATH = "rigdesktop/services.WorkspaceService.OpenPath";
 const WORKSPACE_REVEAL_IN_FOLDER = "rigdesktop/services.WorkspaceService.RevealInFolder";
 const WORKSPACE_PICK_DIRECTORY = "rigdesktop/services.WorkspaceService.PickDirectory";
 const WORKSPACE_PICK_FILES = "rigdesktop/services.WorkspaceService.PickFiles";
+const WORKSPACE_PICK_SAVE_FILE = "rigdesktop/services.WorkspaceService.PickSaveFile";
 
 
 export async function nativeOpenPath(path: string): Promise<void> {
@@ -94,6 +95,21 @@ export async function pickFiles(title = "Add files"): Promise<string[]> {
     .filter((part) => part.length > 0);
 }
 
+export async function pickSaveFile(
+  title = "Save export",
+  defaultFilename = "",
+  pattern = "",
+): Promise<string> {
+  if (await isNative()) {
+    try {
+      return (await callNative<string>(WORKSPACE_PICK_SAVE_FILE, [title, defaultFilename, pattern])) ?? "";
+    } catch {
+      return "";
+    }
+  }
+  if (typeof window === "undefined") return "";
+  return window.prompt("Save as", defaultFilename) ?? "";
+}
 
 export async function openUrl(url: string): Promise<void> {
   try {

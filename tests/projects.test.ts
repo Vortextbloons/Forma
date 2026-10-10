@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
+  contextAssetFormat,
   createProject,
   deleteProject,
   duplicateProject,
@@ -225,6 +226,23 @@ describe("project persistence", () => {
     await writeFile(source, "binary", "utf8");
     await expect(importContextFile(dir, source, "optional")).rejects.toThrow(/unsupported/i);
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("resolves dropped context assets from their mime type or file name", () => {
+    expect(contextAssetFormat("photo.png", "application/octet-stream")).toEqual({
+      extension: ".png",
+      mime: "image/png",
+    });
+    expect(contextAssetFormat("", "image/jpeg; charset=binary")).toEqual({
+      extension: ".jpg",
+      mime: "image/jpeg",
+    });
+    expect(contextAssetFormat("https://example.com/image", "image/webp")).toEqual({
+      extension: ".webp",
+      mime: "image/webp",
+    });
+    expect(contextAssetFormat("facts.md", "")).toEqual({ extension: ".md", mime: "text/markdown" });
+    expect(() => contextAssetFormat("page.html", "text/html")).toThrow(/unsupported/i);
   });
 
   it("repairs session index paths after the project folder moves", async () => {

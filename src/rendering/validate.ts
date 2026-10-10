@@ -1,11 +1,11 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { RuntimeError } from "rig";
 import { loadExtraction } from "../extraction/index.ts";
-import { readPage } from "../projects/pages.ts";
 import { effectiveSize, type EffectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
-import { collectAssetRefs, composePage } from "./compose.ts";
+import { launchBrowser, waitForAssets } from "./browser.ts";
+import { composePage, type ComposedPage } from "./compose.ts";
 
 export type ValidationIssueKind =
   | "missing-asset"
@@ -43,24 +43,8 @@ export async function validateProject(dir: string, project: ProjectFile, expecte
   }
 
   for (const [index, pageId] of project.pages.entries()) {
-    const source = await readPage(dir, pageId).catch(() => undefined);
-    if (!source) {
-      issues.push({ pageId, pageIndex: index, kind: "missing-asset", message: "Page files are missing" });
-      continue;
-    }
-    for (const ref of collectAssetRefs(source.html, source.css)) {
-      if (!(await fileExists(resolve(dir, ref)))) {
-        issues.push({
-          pageId,
-          pageIndex: index,
-          kind: "missing-asset",
-          message: `Referenced asset "${ref}" was not found in the project`,
-          detail: ref,
-        });
-      }
-    }
-    const page = await composePage(dir, pageId, size);
-    composed.set(pageId, page.html);
+    const html = await composeForValidation(dir, pageId, index, size, issues);
+    if (html !== undefined) composed.set(pageId, html);
   }
 
   const rendered = new Map<string, RenderedPage>();
@@ -143,25 +127,9 @@ export async function validateSinglePage(
 ): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
   const size = effectiveSize(project.settings);
-  const source = await readPage(dir, pageId).catch(() => undefined);
   const composed = new Map<string, string>();
-  if (!source) {
-    issues.push({ pageId, pageIndex: project.pages.indexOf(pageId), kind: "missing-asset", message: "Page files are missing" });
-  } else {
-    for (const ref of collectAssetRefs(source.html, source.css)) {
-      if (!(await fileExists(resolve(dir, ref)))) {
-        issues.push({
-          pageId,
-          pageIndex: project.pages.indexOf(pageId),
-          kind: "missing-asset",
-          message: `Referenced asset "${ref}" was not found in the project`,
-          detail: ref,
-        });
-      }
-    }
-    const page = await composePage(dir, pageId, size);
-    composed.set(pageId, page.html);
-  }
+  const html = await composeForValidation(dir, pageId, project.pages.indexOf(pageId), size, issues);
+  if (html !== undefined) composed.set(pageId, html);
   const renderError = await checkLayout(project, size, composed, issues);
   return {
     issues,
@@ -169,6 +137,32 @@ export async function validateSinglePage(
     pages: 1,
     checkedAt: new Date().toISOString(),
   };
+}
+
+async function composeForValidation(
+  dir: string,
+  pageId: string,
+  pageIndex: number,
+  size: EffectiveSize,
+  issues: ValidationIssue[],
+): Promise<string | undefined> {
+  let page: ComposedPage;
+  try {
+    page = await composePage(dir, pageId, size);
+  } catch {
+    issues.push({ pageId, pageIndex, kind: "missing-asset", message: "Page files are missing" });
+    return undefined;
+  }
+  for (const ref of page.missing) {
+    issues.push({
+      pageId,
+      pageIndex,
+      kind: "missing-asset",
+      message: `Referenced asset "${ref}" was not found in the project`,
+      detail: ref,
+    });
+  }
+  return page.html;
 }
 
 export function cssPixelSize(size: EffectiveSize): { width: number; height: number } {
@@ -189,14 +183,9 @@ async function checkLayout(
 ): Promise<string | undefined> {
   if (composed.size === 0) return undefined;
   const viewport = cssPixelSize(size);
-  let browser: Awaited<ReturnType<(typeof import("puppeteer"))["default"]["launch"]>>;
+  let browser: Awaited<ReturnType<typeof launchBrowser>>;
   try {
-    const puppeteer = (await import("puppeteer")).default;
-    browser = await puppeteer.launch({
-      headless: true,
-      ...(process.env.FORMA_CHROME_PATH ? { executablePath: process.env.FORMA_CHROME_PATH } : {}),
-      args: ["--disable-gpu", "--no-first-run", "--hide-scrollbars"],
-    });
+    browser = await launchBrowser();
   } catch (error) {
     return `Layout checks are unavailable: ${error instanceof Error ? error.message : String(error)}`;
   }
@@ -206,19 +195,7 @@ async function checkLayout(
     for (const [pageId, html] of composed) {
       const index = project.pages.indexOf(pageId);
       await page.setContent(html, { waitUntil: "load" });
-      await page.evaluate(async () => {
-        await document.fonts.ready;
-        await Promise.all(
-          [...document.images].map((image) =>
-            image.complete
-              ? undefined
-              : new Promise<void>((resolveImage) => {
-                  image.addEventListener("load", () => resolveImage(), { once: true });
-                  image.addEventListener("error", () => resolveImage(), { once: true });
-                }),
-          ),
-        );
-      });
+      await waitForAssets(page);
       const metrics = await page.evaluate(() => {
         const root =
           document.querySelector<HTMLElement>(".forma-page") ?? document.documentElement;
@@ -310,13 +287,4 @@ async function checkLayout(
     await browser.close().catch(() => undefined);
   }
   return undefined;
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    const info = await stat(path);
-    return info.isFile();
-  } catch {
-    return false;
-  }
 }

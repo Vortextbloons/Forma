@@ -50,13 +50,7 @@
 
 
 
-import type { Component } from "svelte";
-import {
-  registerToolRenderer,
-  registerToolRendererAlias,
-  type ToolRendererComponent,
-  type ToolRendererProps,
-} from "../lib/rig/renderers/registry";
+import { registerToolRenderer, registerToolRendererAlias } from "../lib/rig/renderers/registry";
 
 import GenericToolRenderer from "../lib/rig/renderers/GenericToolRenderer.svelte";
 import ShellRenderer from "../lib/rig/renderers/ShellRenderer.svelte";
@@ -92,9 +86,3 @@ export function registerDefaultRenderers(): void {
 
 
 
-export function registerCustomRenderer(
-  name: string,
-  component: Component<ToolRendererProps> | ToolRendererComponent,
-): void {
-  registerToolRenderer(name, component as ToolRendererComponent);
-}

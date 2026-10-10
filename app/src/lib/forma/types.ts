@@ -9,6 +9,11 @@ import type {
   SourceRecord,
   StylePreset,
 } from "../../../../src/projects/schema.ts";
+import type { ExtractedPage } from "../../../../src/extraction/types.ts";
+import type { StoredExtraction } from "../../../../src/extraction/index.ts";
+import type { ExportFormat, ExportResult } from "../../../../src/rendering/export.ts";
+import type { ValidationIssue, ValidationReport } from "../../../../src/rendering/validate.ts";
+import type { SearchCredentialStatus, SearchProviderId } from "../../../../src/settings/credentials.ts";
 
 export type {
   ContextItem,
@@ -20,44 +25,31 @@ export type {
   ProjectSettings,
   SourceRecord,
   StylePreset,
+  ExtractedPage,
+  ExportFormat,
+  ExportResult,
+  SearchCredentialStatus,
+  SearchProviderId,
+  StoredExtraction,
+  ValidationIssue,
+  ValidationReport,
 };
 
-export interface ValidationIssue {
-  pageId?: string;
-  pageIndex?: number;
-  contextId?: string;
-  kind: "missing-asset" | "overflow" | "clipped-text" | "must-include" | "incomplete";
-  message: string;
-  detail?: string;
+export type ExportScope = "all" | "selected" | "poster";
+
+export interface ExportRunState {
+  runId: string;
+  format: ExportFormat;
+  total: number;
+  completed: number;
+  startedAt: string;
 }
 
-export interface ValidationReport {
-  issues: ValidationIssue[];
-  renderError?: string;
-  pages: number;
-  checkedAt: string;
+export function parseExportFiles(value: unknown): string[] | null {
+  const files = (value as { files?: unknown } | null)?.files;
+  if (!Array.isArray(files) || files.some((file) => typeof file !== "string")) return null;
+  return files as string[];
 }
-
-export interface ExtractedPage {
-  page: number;
-  text: string;
-  source: "text" | "ocr";
-}
-
-export interface StoredExtraction {
-  id: string;
-  name: string;
-  mime: string;
-  kind: "text" | "ocr" | "mixed";
-  pages: ExtractedPage[];
-}
-
-export interface SearchCredentialStatus {
-  configured: boolean;
-  masked?: string;
-}
-
-export type SearchProviderId = "exa" | "pexels";
 
 export interface FormaRunState {
   kind: "outline" | "artwork" | "refine" | "design";
@@ -80,13 +72,6 @@ export interface ProjectLibrary {
   home: string;
   projects: ProjectListEntry[];
 }
-
-export const CONTEXT_ROLE_OPTIONS: readonly ContextRole[] = [
-  "must-include",
-  "style-reference",
-  "content-source",
-  "optional",
-];
 
 export const CONTEXT_ROLE_LABELS: Record<ContextRole, string> = {
   "must-include": "Must Include",

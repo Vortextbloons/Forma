@@ -1,5 +1,6 @@
 <script lang="ts">
   import Collapsible from "../../components/Collapsible.svelte";
+  import CodeBlock from "../../components/CodeBlock.svelte";
   import ToolHeader from "../../components/ToolHeader.svelte";
   import { asRecord, asString } from "../format";
   import { subagentStore } from "../stores/subagentStore.svelte";
@@ -59,7 +60,7 @@
     {/if}
     {#if hasResult}
       <Collapsible title="result" defaultOpen={false}>
-        <pre class="pre">{resultText ?? JSON.stringify(tool.output, null, 2)}</pre>
+        <CodeBlock code={resultText ?? JSON.stringify(tool.output, null, 2)} />
       </Collapsible>
     {/if}
   </div>

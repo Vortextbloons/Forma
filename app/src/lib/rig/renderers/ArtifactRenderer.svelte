@@ -1,7 +1,9 @@
 <script lang="ts">
   import ToolHeader from "../../components/ToolHeader.svelte";
+  import CodeBlock from "../../components/CodeBlock.svelte";
   import Icon from "../../components/Icon.svelte";
   import { asRecord, asString, basename, truncate } from "../format";
+  import { languageForPath } from "../highlight";
   import type { ToolRendererProps } from "./registry";
 
   let { tool }: ToolRendererProps = $props();
@@ -16,6 +18,7 @@
   const content = $derived(
     typeof input.content === "string" ? input.content : typeof input.diff === "string" ? input.diff : "",
   );
+  const language = $derived(type === "diff" ? "diff" : languageForPath(path));
 </script>
 
 {#if tool}
@@ -39,7 +42,7 @@
       {/if}
     </div>
     {#if content !== ""}
-      <pre class="pre" style="max-height:200px">{truncate(content, 1200)}</pre>
+      <CodeBlock code={truncate(content, 1200)} language={language} style="max-height:200px" />
     {/if}
   </div>
 {/if}

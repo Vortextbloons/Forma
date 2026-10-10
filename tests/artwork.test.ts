@@ -419,8 +419,16 @@ describe("forma artwork pipeline", () => {
     const harness = await setup({
       output,
       slideCount: 1,
-      responses: [
-        fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "First page", html: "<div>Built from the brief</div>", css: "", assets: [] })]),
+      responses: (dir) => [
+        fauxAssistantMessage([fauxToolCall("create_page", { index: 1, title: "First page", assets: [] })]),
+        async () => {
+          const project = await openProject(dir);
+          return fauxAssistantMessage([fauxToolCall("write_file", { path: `pages/${project.pages[0]}.html`, content: "<div>Built from the brief</div>" })]);
+        },
+        async () => {
+          const project = await openProject(dir);
+          return fauxAssistantMessage([fauxToolCall("write_file", { path: `pages/${project.pages[0]}.css`, content: "div { color: navy; }" })]);
+        },
         fauxAssistantMessage("Built", { stopReason: "stop" }),
       ],
     });
@@ -491,6 +499,9 @@ describe("forma artwork pipeline", () => {
           expect(context.systemPrompt).toContain("Work mode: plan");
           expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("submit_page");
           expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("update_page");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("create_page");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("write_file");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("edit_file");
           return fauxAssistantMessage("Let's discuss the audience", { stopReason: "stop" });
         },
         (context: ModelContext) => {

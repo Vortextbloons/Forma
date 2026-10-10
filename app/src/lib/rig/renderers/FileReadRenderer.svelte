@@ -1,7 +1,9 @@
 <script lang="ts">
   import Collapsible from "../../components/Collapsible.svelte";
+  import CodeBlock from "../../components/CodeBlock.svelte";
   import ToolHeader from "../../components/ToolHeader.svelte";
   import { asNumber, asRecord, asString, basename, truncate } from "../format";
+  import { languageForPath } from "../highlight";
   import type { ToolRendererProps } from "./registry";
 
   let { tool }: ToolRendererProps = $props();
@@ -48,7 +50,7 @@
     </div>
     {#if content !== ""}
       <Collapsible title="content" defaultOpen={!isLong}>
-        <pre class="pre">{preview()}</pre>
+        <CodeBlock code={preview()} language={languageForPath(path)} />
       </Collapsible>
     {/if}
   </div>

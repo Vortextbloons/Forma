@@ -67,6 +67,7 @@ async function loadProjectStore(sendCommand: (name: string, params?: Record<stri
     },
     messageStore: {},
     modelStore: { selectedModel: "auto" },
+    workerStore: { status: "ready", readyInfo: undefined },
     isFormaDomainEvent: () => false,
   };
   const key = `forma-project-test-${crypto.randomUUID()}`;

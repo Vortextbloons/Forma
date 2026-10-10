@@ -41,6 +41,7 @@ export const ICON_PATHS = {
   clock: ["M12 22a10 10 0 100-20 10 10 0 000 20z", "M12 6v6l4 2"],
   zap: ["M13 2L3 14h9l-1 8 10-12h-9l1-8z"],
   "dots-h": ["M5 12h.01", "M12 12h.01", "M19 12h.01"],
+  download: ["M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

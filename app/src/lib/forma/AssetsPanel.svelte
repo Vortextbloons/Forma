@@ -8,6 +8,7 @@
   import type { ContextItem } from "./types";
 
   let importing = $state(false);
+  let dropActive = $state(false);
   let noteOpen = $state(false);
   let noteDraft = $state("");
   let noteName = $state("");
@@ -27,15 +28,103 @@
   const project = $derived(projectStore.current?.project);
   const sources = $derived(project?.sources ?? []);
 
-  async function add(): Promise<void> {
-    const paths = await pickFiles("Add reference images and documents");
-    if (paths.length === 0) return;
+  async function importPaths(paths: string[]): Promise<void> {
+    if (paths.length === 0 || importing) return;
     importing = true;
     try {
       await projectStore.importContext(paths, "optional");
     } finally {
       importing = false;
     }
+  }
+
+  async function add(): Promise<void> {
+    await importPaths(await pickFiles("Add reference images and documents"));
+  }
+
+  function acceptsDrop(event: DragEvent): boolean {
+    const types = event.dataTransfer?.types;
+    return (
+      types !== undefined &&
+      (types.includes("Files") ||
+        types.includes("text/uri-list") ||
+        types.includes("text/html"))
+    );
+  }
+
+  function onDragOver(event: DragEvent): void {
+    if (!acceptsDrop(event)) return;
+    if (event.dataTransfer?.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer!.dropEffect = "copy";
+    dropActive = true;
+  }
+
+  function onDragLeave(event: DragEvent): void {
+    if (
+      event.relatedTarget instanceof Node &&
+      event.currentTarget instanceof Node &&
+      event.currentTarget.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+    dropActive = false;
+  }
+
+  async function onDrop(event: DragEvent): Promise<void> {
+    if (!acceptsDrop(event)) return;
+    event.preventDefault();
+    dropActive = false;
+    const transfer = event.dataTransfer;
+    if (!transfer || importing) return;
+    importing = true;
+    try {
+      const files = Array.from(transfer.files);
+      if (files.length > 0) {
+        for (const file of files) {
+          const data = toBase64(await file.arrayBuffer());
+          await projectStore.importAsset({ name: file.name, mime: file.type, data });
+        }
+        return;
+      }
+      const url = droppedUrl(transfer);
+      if (url) await projectStore.importAsset({ name: urlFileName(url), url });
+    } finally {
+      importing = false;
+    }
+  }
+
+  function droppedUrl(transfer: DataTransfer): string | undefined {
+    const uri = transfer
+      .getData("text/uri-list")
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => /^https?:\/\//i.test(line));
+    if (uri) return uri;
+    const html = transfer.getData("text/html");
+    const match = html ? /<img[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)')/i.exec(html) : null;
+    const image = match?.[1] ?? match?.[2];
+    if (image && /^https?:\/\//i.test(image)) return image;
+    const text = transfer.getData("text/plain").trim();
+    return /^https?:\/\//i.test(text) ? text : undefined;
+  }
+
+  function urlFileName(url: string): string {
+    try {
+      const name = new URL(url).pathname.split("/").filter(Boolean).pop();
+      return name ? decodeURIComponent(name) : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function toBase64(buffer: ArrayBuffer): string {
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
   }
 
   async function addNote(): Promise<void> {
@@ -63,7 +152,16 @@
   }
 </script>
 
-<div class="assets-panel">
+<div
+  class="assets-panel"
+  class:file-drop-target-active={dropActive}
+  role="region"
+  aria-label="References"
+  data-file-drop-target
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={(event) => void onDrop(event)}
+>
   <h2>References</h2>
   <p class="muted small">Add images the AI can use in your artwork and information to draw from. Forma chooses what fits your brief.</p>
   <div class="assets-actions" bind:this={actionsEl}>
@@ -102,7 +200,7 @@
     {/if}
   </div>
   <p class="muted small">
-    PNG, JPEG, WebP, SVG, PDF, TXT, Markdown. Files are copied into the project.
+    PNG, JPEG, WebP, SVG, PDF, TXT, Markdown — or drag them here, straight from your browser. Files are copied into the project.
   </p>
 
   {#if project && project.context.length > 0}

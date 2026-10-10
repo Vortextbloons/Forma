@@ -61,7 +61,7 @@
     if (projectStore.current) {
       busy = true;
       try {
-        await projectStore.sendChat(text, target, mode);
+        await projectStore.sendRefine(text, target, mode);
       } finally {
         busy = false;
       }

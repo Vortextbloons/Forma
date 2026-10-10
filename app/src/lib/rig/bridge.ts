@@ -367,7 +367,6 @@ class MockBridge extends BaseBridge {
   private seq = 0;
   private sessionSeq = 1;
   private sessions: MockSession[] = [];
-  private demoPlayed = false;
   private projectDir = "/mock/project";
   private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
   private mockSeq = 0;
@@ -752,12 +751,7 @@ class MockBridge extends BaseBridge {
         break;
       case "prompt": {
         const prompt = asString(params.prompt ?? "");
-        if (!this.demoPlayed && sessionId === "mock-1") {
-          this.demoPlayed = true;
-          this.playDemo(id, sessionId, prompt);
-        } else {
-          this.playCannedReply(id, sessionId, prompt);
-        }
+        this.playCannedReply(id, sessionId, prompt);
         break;
       }
       case "project.create": {
@@ -865,6 +859,25 @@ class MockBridge extends BaseBridge {
           asset: "assets/mock-asset",
           mime: "application/octet-stream",
           size: 0,
+          createdAt: new Date().toISOString(),
+        };
+        (project.context as unknown[]).push(item);
+        project.updatedAt = new Date().toISOString();
+        this.settleResult(id, true, { project: { dir, project }, item });
+        break;
+      }
+      case "context.importAsset": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const url = asString(params.url);
+        const item: Record<string, unknown> = {
+          id: `ctx_mock_${++this.seq}`,
+          name: asString(params.name ?? url.split("/").pop() ?? "Imported image"),
+          role: asString(params.role ?? "optional"),
+          asset: "assets/mock-image.png",
+          mime: asString(params.mime ?? "image/png"),
+          size: asString(params.data).length,
+          status: "ready",
           createdAt: new Date().toISOString(),
         };
         (project.context as unknown[]).push(item);
@@ -1067,6 +1080,26 @@ class MockBridge extends BaseBridge {
         this.settleResult(id, true, { report });
         break;
       }
+      case "rendering.export": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        const format = asString(params.format ?? "pdf");
+        const scope = asString(params.scope ?? "all");
+        const destination = asString(params.destination ?? `/mock/exports/export.${format}`);
+        const runId = asString(params.runId ?? `exp_mock_${++this.seq}`);
+        const total = scope === "all" ? (Array.isArray(project.pages) ? project.pages.length : 0) : 1;
+        const extra = { sessionId, projectId: asString(project.id) };
+        this.emit("forma.export.progress", { runId, format, phase: "started", completed: 0, total }, extra);
+        this.later(700, () => {
+          this.emit("forma.export.progress", { runId, format, phase: "page", completed: total, total }, extra);
+          this.emit("forma.export.completed", { runId, format, files: [destination] }, extra);
+          this.settleResult(id, true, { runId, files: [destination] });
+        });
+        break;
+      }
+      case "rendering.cancelExport":
+        this.settleResult(id, true);
+        break;
       default:
         this.settleResult(id, false, undefined, {
           code: "PROTOCOL_ERROR",
@@ -1193,263 +1226,6 @@ class MockBridge extends BaseBridge {
     });
   }
 
-  private playDemo(id: string, sessionId: string, prompt: string): void {
-    const runId = "run-1";
-    const messageId = "msg-run-1";
-    const base = { sessionId, runId };
-    const emit = (type: RigEvent["type"], data: unknown, extra: { toolCallId?: string; subagentRunId?: string } = {}) =>
-      this.emit(type, data, { ...base, ...extra });
-    const s = (ms: number, fn: () => void): void => this.later(ms, fn);
-
-    this.sessions.forEach((x) => {
-      if (x.id === sessionId) {
-        x.status = "running";
-        x.updatedAt = new Date().toISOString();
-      }
-    });
-
-    s(0, () => {
-      emit("session.updated", { status: "running" });
-      emit("run.started", { prompt });
-    });
-    s(150, () => emit("thinking.started", { thinkingId: "th-1", messageId }));
-    ["I need to", " inspect the", " project", " structure", " first."].forEach((chunk, i) =>
-      s(300 + i * 130, () => emit("thinking.delta", { thinkingId: "th-1", delta: chunk })),
-    );
-    s(900, () =>
-      emit("message.started", { message: { id: messageId, role: "assistant", content: "", model: "mock/gemini-2.5-flash" } }),
-    );
-    ["Let me", " take a", " look at", " the project", " structure."].forEach((chunk, i) =>
-      s(1050 + i * 130, () => emit("message.delta", { messageId, delta: chunk })),
-    );
-
-    s(1800, () => emit("tool.started", { toolName: "shell", input: { command: "ls -la", cwd: "/mock/project" } }, { toolCallId: "t-1" }));
-    s(2000, () => emit("tool.progress", { toolName: "shell", message: "running: ls -la" }));
-    s(2400, () =>
-      emit(
-        "tool.completed",
-        {
-          toolName: "shell",
-          output: {
-            exitCode: 0,
-            stdout: "total 32\ndrwxr-xr-x  7 rig rig  224 Aug 13 10:00 .\ndrwxr-xr-x  9 rig rig  288 Aug 13 09:58 ..\ndrwxr-xr-x  2 rig rig   64 Aug 13 10:00 .rig\n-rw-r--r--  1 rig rig  612 Aug 13 10:00 rig.config.ts\ndrwxr-xr-x  6 rig rig  192 Aug 13 10:00 src",
-            stderr: "",
-            durationMs: 32,
-            killed: false,
-          },
-        },
-        { toolCallId: "t-1" },
-      ),
-    );
-    s(2700, () => emit("message.delta", { messageId, delta: " Found the source tree." }));
-
-    s(3000, () => emit("tool.started", { toolName: "read", input: { path: "src/main.ts" } }, { toolCallId: "t-2" }));
-    s(3400, () =>
-      emit(
-        "tool.completed",
-        {
-          toolName: "read",
-          output: {
-            path: "src/main.ts",
-            content: `import { mount } from "svelte";\nimport App from "./App.svelte";\nimport { getBridge } from "./lib/rig/bridge";\n\nmount(App, { target: document.getElementById("app")! });`,
-          },
-        },
-        { toolCallId: "t-2" },
-      ),
-    );
-    s(3600, () => emit("message.delta", { messageId, delta: " The entry point is small." }));
-
-    s(3900, () =>
-      emit(
-        "tool.started",
-        {
-          toolName: "edit",
-          input: {
-            path: "src/main.ts",
-            oldString: 'import { getBridge } from "./lib/rig/bridge";',
-            newString: 'import { getBridge, registerDefaultRenderers } from "./lib/rig/bridge";',
-          },
-        },
-        { toolCallId: "t-3" },
-      ),
-    );
-    s(4300, () => emit("tool.progress", { toolName: "edit", message: "applying patch" }));
-    s(4700, () =>
-      emit(
-        "tool.completed",
-        { toolName: "edit", output: { path: "src/main.ts", changed: true, lines: 12 } },
-        { toolCallId: "t-3" },
-      ),
-    );
-    s(4900, () =>
-      emit(
-        "artifact.emitted",
-        {
-          artifact: {
-            type: "file",
-            id: "a-1",
-            sessionId,
-            title: "main.ts",
-            path: "src/main.ts",
-            mime: "text/typescript",
-            createdAt: new Date().toISOString(),
-          },
-        },
-      ),
-    );
-    s(5100, () =>
-      emit("todo.updated", {
-        todos: [
-          { id: "td-1", title: "Inspect project structure", status: "completed", order: 1 },
-          { id: "td-2", title: "Apply refactor", status: "in_progress", order: 2 },
-          { id: "td-3", title: "Run tests", status: "pending", order: 3 },
-        ],
-      }),
-    );
-
-    s(5400, () =>
-      emit(
-        "subagent.started",
-        { name: "code-reviewer", task: "Review the refactor for edge cases", model: "mock/gemini-2.5-pro", thinkingLevel: "high" },
-        { subagentRunId: "sub-1" },
-      ),
-    );
-    s(5700, () =>
-      emit("subagent.updated", { name: "code-reviewer", status: "running", recentTools: ["read", "grep"] }, { subagentRunId: "sub-1" }),
-    );
-    s(6100, () =>
-      emit("subagent.updated", { name: "code-reviewer", status: "running", recentTools: ["grep", "read", "shell"] }, { subagentRunId: "sub-1" }),
-    );
-    s(6900, () =>
-      emit(
-        "subagent.completed",
-        { name: "code-reviewer", result: { issues: 0, summary: "No blocking issues found" } },
-        { subagentRunId: "sub-1" },
-      ),
-    );
-
-    s(7200, () =>
-      emit("interaction.requested", {
-        interaction: {
-          kind: "question",
-          id: "q-1",
-          sessionId,
-          createdAt: new Date().toISOString(),
-          question: "The refactor touches main.ts. Run the full test suite now?",
-          options: [
-            { label: "Yes, run tests", value: "yes" },
-            { label: "Not now", value: "no" },
-          ],
-          multiple: false,
-          allowCustom: false,
-        },
-      }),
-    );
-    s(8000, () => emit("interaction.resolved", { interactionId: "q-1", kind: "question", result: "yes" }));
-    s(8300, () =>
-      emit("approval.requested", {
-        requestId: "apr-1",
-        toolName: "bash",
-        input: { command: "npm test", timeoutMs: 60000 },
-        reason: "Running the project test suite",
-      }),
-    );
-    s(9000, () => emit("approval.resolved", { requestId: "apr-1", decision: "allow", scope: "once" }));
-    s(9200, () =>
-      emit("tool.started", { toolName: "bash", input: { command: "npm test", timeoutMs: 60000 } }, { toolCallId: "t-4" }),
-    );
-    s(9900, () =>
-      emit(
-        "tool.completed",
-        {
-          toolName: "bash",
-          output: {
-            exitCode: 0,
-            stdout: "PASS  src/lib/rig/stores/sessionStore.svelte.ts\nTests: 1 passed, 1 total",
-            stderr: "",
-            durationMs: 610,
-            killed: false,
-          },
-        },
-        { toolCallId: "t-4" },
-      ),
-    );
-    s(10200, () => emit("message.delta", { messageId, delta: " All tests pass." }));
-
-    s(10500, () =>
-      emit("tool.started", { toolName: "web_search", input: { query: "Svelte 5 runes best practices", provider: "mock" } }, { toolCallId: "t-5" }),
-    );
-    s(11100, () =>
-      emit(
-        "tool.completed",
-        {
-          toolName: "web_search",
-          output: {
-            results: [
-              {
-                title: "Svelte 5 runes — what are they?",
-                url: "https://svelte.dev/docs/svelte/what-are-runes",
-                snippet: "Runes are compiler primitives that give Svelte fine-grained reactivity with $state, $derived and $effect.",
-                source: "svelte.dev",
-                publishedAt: "2025-03-01",
-              },
-              {
-                title: "Universal reactivity in .svelte.ts modules",
-                url: "https://example.com/universal-reactivity",
-                snippet: "Module-level $state objects can be shared across components without the legacy store API.",
-                source: "example.com",
-              },
-            ],
-          },
-        },
-        { toolCallId: "t-5" },
-      ),
-    );
-    s(11400, () =>
-      emit("artifact.emitted", {
-        artifact: {
-          type: "diff",
-          id: "a-2",
-          sessionId,
-          title: "main.ts refactor",
-          path: "src/main.ts",
-          diff: `--- a/src/main.ts
-+++ b/src/main.ts
-@@ -1,5 +1,5 @@
- import { mount } from "svelte";
- import App from "./App.svelte";
--import { getBridge } from "./lib/rig/bridge";
-+import { getBridge, registerDefaultRenderers } from "./lib/rig/bridge";
-
- mount(App, { target: document.getElementById("app")! });`,
-          createdAt: new Date().toISOString(),
-        },
-      }),
-    );
-
-    const finalText =
-      "Done. I inspected the project, applied the refactor to `src/main.ts`, ran the test suite (all green) and had the code reviewer look at the change. The diff artifact is attached on the right.";
-    s(11700, () => emit("message.delta", { messageId, delta: finalText }));
-    s(12300, () =>
-      emit("thinking.completed", {
-        thinkingId: "th-1",
-        content: "I need to inspect the project structure first. Then apply the refactor, verify with tests and a review.",
-      }),
-    );
-    s(12500, () =>
-      emit("message.completed", {
-        message: { id: messageId, role: "assistant", content: finalText, model: "mock/gemini-2.5-flash" },
-      }),
-    );
-    s(13000, () => {
-      emit("run.completed", { result: { ok: true } });
-      this.sessions.forEach((x) => {
-        if (x.id === sessionId) x.status = "idle";
-      });
-      emit("session.updated", { status: "idle" });
-      this.settleResult(id, true, { ok: true });
-    });
-  }
 }
 
 
@@ -1576,13 +1352,4 @@ export function waitForReady(timeoutMs?: number): Promise<WorkerReady> {
 
 export function restartWorker(): Promise<void> {
   return getBridge().restartWorker();
-}
-
-export function stopWorker(): Promise<void> {
-  return getBridge().stopWorker();
-}
-
-
-export function isNativeEnvironment(): boolean {
-  return detectWails();
 }

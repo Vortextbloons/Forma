@@ -1,5 +1,6 @@
 <script lang="ts">
   import Collapsible from "../../components/Collapsible.svelte";
+  import CodeBlock from "../../components/CodeBlock.svelte";
   import ToolHeader from "../../components/ToolHeader.svelte";
   import ToolProgress from "../../tools/ToolProgress.svelte";
   import { asNumber, asRecord, asString } from "../format";
@@ -41,7 +42,7 @@
       {/snippet}
     </ToolHeader>
     <div class="tool-body">
-      <div class="mono" style="word-break:break-word">{command}</div>
+      <CodeBlock code={command} language="bash" />
       {#if cwd}
         <div class="muted mono" style="margin-top:2px">{cwd}</div>
       {/if}
@@ -63,12 +64,12 @@
     </div>
     {#if showStdout}
       <Collapsible title="stdout" defaultOpen={!long}>
-        <pre class="pre">{stdout}</pre>
+        <CodeBlock code={stdout} />
       </Collapsible>
     {/if}
     {#if showStderr}
       <Collapsible title="stderr" defaultOpen={!long && !showStdout}>
-        <pre class="pre">{stderr}</pre>
+        <CodeBlock code={stderr} />
       </Collapsible>
     {/if}
   </div>

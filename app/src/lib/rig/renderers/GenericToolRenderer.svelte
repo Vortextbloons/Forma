@@ -1,5 +1,6 @@
 <script lang="ts">
   import Collapsible from "../../components/Collapsible.svelte";
+  import CodeBlock from "../../components/CodeBlock.svelte";
   import ToolHeader from "../../components/ToolHeader.svelte";
   import ToolProgress from "../../tools/ToolProgress.svelte";
   import { prettyJson } from "../format";
@@ -11,6 +12,7 @@
   const outputText = $derived(
     tool && tool.output !== undefined ? prettyJson(tool.output) : "",
   );
+  const outputLanguage = $derived(typeof tool?.output === "string" ? undefined : "json");
   const hasInput = $derived(tool !== undefined && Object.keys(tool.input).length > 0);
   const hasOutput = $derived(tool?.output !== undefined);
   const isRunning = $derived(tool?.status === "running");
@@ -32,12 +34,12 @@
     </div>
     {#if hasInput}
       <Collapsible title="input" defaultOpen={false}>
-        <pre class="pre">{inputText}</pre>
+        <CodeBlock code={inputText} language="json" />
       </Collapsible>
     {/if}
     {#if hasOutput}
       <Collapsible title="output" defaultOpen={false}>
-        <pre class="pre">{outputText}</pre>
+        <CodeBlock code={outputText} language={outputLanguage} />
       </Collapsible>
     {/if}
   </div>

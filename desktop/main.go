@@ -16,6 +16,7 @@ import (
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	"rigdesktop/services"
 )
@@ -29,7 +30,6 @@ var assets embed.FS
 func main() {
 	worker := services.NewWorkerService()
 	workspace := services.NewWorkspaceService()
-	files := services.NewFileService()
 
 	app := application.New(application.Options{
 		Name:        "Forma",
@@ -37,7 +37,6 @@ func main() {
 		Services: []application.Service{
 			application.NewService(worker),
 			application.NewService(workspace),
-			application.NewService(files),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -88,7 +87,7 @@ func main() {
 		worker.Restart()
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "Forma",
 		Width:            1440,
 		Height:           900,
@@ -96,6 +95,15 @@ func main() {
 		MinHeight:        700,
 		BackgroundColour: application.NewRGB(242, 245, 246),
 		URL:              "/",
+		EnableFileDrop:   true,
+	})
+
+	window.OnWindowEvent(events.Common.WindowFilesDropped, func(event *application.WindowEvent) {
+		files := event.Context().DroppedFiles()
+		if len(files) == 0 {
+			return
+		}
+		app.Event.Emit("rig:files-dropped", map[string]any{"files": files})
 	})
 
 	if err := app.Run(); err != nil {

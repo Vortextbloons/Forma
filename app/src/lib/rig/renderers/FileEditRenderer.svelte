@@ -1,5 +1,6 @@
 <script lang="ts">
   import Collapsible from "../../components/Collapsible.svelte";
+  import CodeBlock from "../../components/CodeBlock.svelte";
   import ToolHeader from "../../components/ToolHeader.svelte";
   import { asRecord, asString, basename, prettyJson, truncate } from "../format";
   import type { ToolRendererProps } from "./registry";
@@ -71,12 +72,12 @@
     </div>
     {#if hasDiff}
       <Collapsible title="diff" defaultOpen={false}>
-        <pre class="pre">{diffText()}</pre>
+        <CodeBlock code={diffText()} language="diff" />
       </Collapsible>
     {/if}
     {#if tool.output !== undefined && !hasDiff}
       <Collapsible title="result" defaultOpen={false}>
-        <pre class="pre">{prettyJson(tool.output)}</pre>
+        <CodeBlock code={prettyJson(tool.output)} language="json" />
       </Collapsible>
     {/if}
   </div>

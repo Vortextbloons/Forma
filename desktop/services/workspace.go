@@ -59,6 +59,22 @@ func (s *WorkspaceService) PickFiles(title string) ([]string, error) {
 	}).PromptForMultipleSelection()
 }
 
+// PickSaveFile shows the native save dialog for an export destination.
+func (s *WorkspaceService) PickSaveFile(title string, defaultFilename string, pattern string) (string, error) {
+	if title == "" {
+		title = "Save export"
+	}
+	options := &application.SaveFileDialogOptions{
+		CanCreateDirectories: true,
+		Title:                title,
+		Filename:             defaultFilename,
+	}
+	if pattern != "" {
+		options.Filters = []application.FileFilter{{DisplayName: "Export", Pattern: pattern}}
+	}
+	return application.Get().Dialog.SaveFileWithOptions(options).PromptForSingleSelection()
+}
+
 // OpenPath opens a file or folder with the OS default application.
 func (s *WorkspaceService) OpenPath(path string) error {
 	switch runtime.GOOS {

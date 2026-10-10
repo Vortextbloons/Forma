@@ -289,59 +289,6 @@ html[data-theme="light"] .select {
   color: var(--muted);
 }
 
-.start-assets {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 4px;
-}
-
-.start-assets > .btn {
-  align-self: flex-start;
-}
-
-.staged-toggle {
-  font-size: 12px;
-}
-
-.staged-list {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 6px);
-  z-index: 40;
-  display: flex;
-  width: min(320px, 100%);
-  max-height: 200px;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
-  margin: 0;
-  padding: 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-2);
-  list-style: none;
-}
-
-.staged-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: var(--surface-2);
-  font-size: 12px;
-}
-
-.staged-name {
-  overflow: hidden;
-  flex: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .connection-card {
   padding: 14px 16px;
   border-radius: 12px;
@@ -1476,6 +1423,11 @@ html[data-theme="light"] .stage-page {
   gap: 12px;
   overflow-y: auto;
   padding: 16px;
+}
+
+.assets-panel.file-drop-target-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
 }
 
 .asset-item {

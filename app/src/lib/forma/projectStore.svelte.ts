@@ -6,12 +6,17 @@ import { modelStore } from "../rig/stores/modelStore.svelte";
 import { workerStore } from "../rig/stores/workerStore.svelte";
 import { isFormaDomainEvent, type FormaDomainEvent, type SessionStatus } from "../rig/types";
 import {
+  parseExportFiles,
   parseProjectLibrary,
   parseProjectSnapshot,
   parseSearchCredentials,
   parseStoredExtraction,
   parseValidationReport,
   type ContextRole,
+  type ExportFormat,
+  type ExportResult,
+  type ExportRunState,
+  type ExportScope,
   type FormaRunState,
   type ProjectFile,
   type ProjectListEntry,
@@ -39,6 +44,9 @@ let selectedPageId = $state<string | null>(null);
 let zoom = $state<number | "fit">("fit");
 let needsImageModel = $state(false);
 let composed = $state<Record<string, { html: string; missing: string[] }>>({});
+let exportRun = $state<ExportRunState | null>(null);
+let exportResult = $state<ExportResult | null>(null);
+let exporting = $state(false);
 let searchCredentials = $state<Record<SearchProviderId, SearchCredentialStatus>>({
   exa: { configured: false },
   pexels: { configured: false },
@@ -50,6 +58,7 @@ let pendingSettings: ProjectSettings | null = null;
 
 const GENERATING_STATUSES: SessionStatus[] = ["running", "waiting", "approval"];
 const composing = new Map<string, Promise<string | null>>();
+const runPageIds = new Set<string>();
 
 function reportError(error: unknown, action: string): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -146,6 +155,8 @@ async function attach(snapshot: ProjectSnapshot): Promise<void> {
   run = null;
   validation = null;
   composed = {};
+  exportRun = null;
+  exportResult = null;
   selectedPageId = snapshot.project.pages[0] ?? null;
   needsImageModel = false;
   await Promise.all([loadProjects(), refreshSearchCredentials(), ensureConversation()]);
@@ -363,6 +374,7 @@ async function startArtwork(
 ): Promise<void> {
   if (!current || run) return;
   const sessionId = sessionStore.activeSessionId;
+  runPageIds.clear();
   run = {
     kind,
     total: expectedPages(),
@@ -448,14 +460,6 @@ export async function sendRefine(
     "refine",
     "Could not apply the refinement",
   );
-}
-
-export async function sendChat(
-  message: string,
-  target: ChatTarget,
-  mode: "plan" | "build" = "build",
-): Promise<void> {
-  await sendRefine(message, target, mode);
 }
 
 export function stageOutline(outline: Parameters<typeof updateOutline>[0]): void {
@@ -589,6 +593,55 @@ export async function validateArtwork(): Promise<void> {
   }
 }
 
+export interface ExportRequest {
+  format: ExportFormat;
+  scope: ExportScope;
+  pageId?: string;
+  destination: string;
+  scale?: number;
+  dpi?: number;
+}
+
+export async function startExport(request: ExportRequest): Promise<ExportResult> {
+  if (!current || exporting) throw new Error("An export is already running.");
+  const snapshot = current;
+  const runId = `exp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  const total = request.scope === "all" ? snapshot.project.pages.length : 1;
+  exporting = true;
+  exportResult = null;
+  lastError = null;
+  exportRun = { runId, format: request.format, total, completed: 0, startedAt: new Date().toISOString() };
+  try {
+    const data = await sendCommand(
+      "rendering.export",
+      { dir: snapshot.dir, runId, ...request },
+      { timeoutMs: 0 },
+    );
+    const result: ExportResult = { format: request.format, files: parseExportFiles(data) ?? [] };
+    if (current?.dir === snapshot.dir) exportResult = result;
+    notificationStore.push({ type: "success", message: "Export finished" });
+    return result;
+  } catch (error) {
+    if ((error as { code?: string }).code !== "CANCELLATION_ERROR") {
+      reportError(error, "Could not export");
+    }
+    throw error;
+  } finally {
+    exporting = false;
+    if (exportRun?.runId === runId) exportRun = null;
+  }
+}
+
+export async function cancelExport(): Promise<void> {
+  const active = exportRun;
+  if (!active) return;
+  try {
+    await sendCommand("rendering.cancelExport", { runId: active.runId }, { timeoutMs: 5_000 });
+  } catch (error) {
+    reportError(error, "Could not stop the export");
+  }
+}
+
 export async function importContext(paths: string[], role: ContextRole): Promise<number> {
   if (!current || paths.length === 0) return 0;
   let imported = 0;
@@ -627,6 +680,30 @@ export async function importNote(text: string, role: ContextRole, name?: string)
   }
 }
 
+export async function importAsset(input: {
+  name?: string;
+  mime?: string;
+  data?: string;
+  url?: string;
+}): Promise<boolean> {
+  if (!current) return false;
+  saveStatus = "saving";
+  try {
+    const data = await sendCommand(
+      "context.importAsset",
+      { dir: current.dir, role: "optional", ...input },
+      { timeoutMs: 0 },
+    );
+    current = parseProjectSnapshot(data);
+    saveStatus = "saved";
+    return true;
+  } catch (error) {
+    saveStatus = "error";
+    reportError(error, `Could not import "${input.name || input.url || "reference"}"`);
+    return false;
+  }
+}
+
 export async function contextText(id: string): Promise<StoredExtraction | null> {
   if (!current) return null;
   try {
@@ -635,22 +712,6 @@ export async function contextText(id: string): Promise<StoredExtraction | null> 
   } catch (error) {
     reportError(error, "Could not load the extracted text");
     return null;
-  }
-}
-
-export async function updateContext(
-  id: string,
-  patch: { name?: string; role?: ContextRole },
-): Promise<void> {
-  if (!current) return;
-  saveStatus = "saving";
-  try {
-    const data = await sendCommand("context.update", { dir: current.dir, id, ...patch });
-    current = parseProjectSnapshot(data);
-    saveStatus = "saved";
-  } catch (error) {
-    saveStatus = "error";
-    reportError(error, "Could not update the context item");
   }
 }
 
@@ -731,6 +792,8 @@ function resetProject(): void {
   run = null;
   validation = null;
   composed = {};
+  exportRun = null;
+  exportResult = null;
   saveStatus = "saved";
   lastError = null;
 }
@@ -778,6 +841,7 @@ function patchPageFromEvent(event: FormaDomainEvent): void {
       },
     },
   };
+  if (!selectedPageId || !pages.includes(selectedPageId)) selectedPageId = pageId;
 }
 
 function patchContextFromEvent(event: FormaDomainEvent): void {
@@ -815,6 +879,7 @@ function handleFormaEvent(event: FormaDomainEvent): void {
       const kind = event.data.kind;
       const total = event.data.total;
       if (kind !== "outline" && kind !== "artwork" && kind !== "refine" && kind !== "design") return;
+      runPageIds.clear();
       run = {
         kind,
         total: typeof total === "number" ? total : 0,
@@ -827,11 +892,12 @@ function handleFormaEvent(event: FormaDomainEvent): void {
       patchPageFromEvent(event);
       const pageId = event.data.pageId;
       if (typeof pageId === "string") {
+        runPageIds.add(pageId);
         const { [pageId]: _removed, ...rest } = composed;
         composed = rest;
       }
       validation = null;
-      if (run) run = { ...run, completed: run.completed + 1 };
+      if (run) run = { ...run, completed: runPageIds.size };
       break;
     }
     case "forma.outline.ready": {
@@ -870,6 +936,15 @@ function handleFormaEvent(event: FormaDomainEvent): void {
       void refreshProject();
       break;
     }
+    case "forma.export.progress": {
+      if (!exportRun) break;
+      const runId = event.data.runId;
+      const completed = event.data.completed;
+      if (runId === exportRun.runId && typeof completed === "number") {
+        exportRun = { ...exportRun, completed };
+      }
+      break;
+    }
     default:
       break;
   }
@@ -887,6 +962,7 @@ getBridge().onReady(async () => {
 
 getBridge().onWorkerExit(() => {
   run = null;
+  exportRun = null;
 });
 
 getBridge().onEvent((event) => {
@@ -930,6 +1006,15 @@ export const projectStore = {
   get composed() {
     return composed;
   },
+  get exportRun() {
+    return exportRun;
+  },
+  get exportResult() {
+    return exportResult;
+  },
+  get exporting() {
+    return exporting;
+  },
   get searchCredentials() {
     return searchCredentials;
   },
@@ -949,7 +1034,6 @@ export const projectStore = {
   plan,
   generate,
   applyDesign,
-  sendChat,
   sendRefine,
   reorderPage,
   duplicatePage,
@@ -958,10 +1042,12 @@ export const projectStore = {
   setZoom,
   composePage,
   validateArtwork,
+  startExport,
+  cancelExport,
   importContext,
+  importAsset,
   importNote,
   contextText,
-  updateContext,
   removeContext,
   refreshSearchCredentials,
   setSearchKey,

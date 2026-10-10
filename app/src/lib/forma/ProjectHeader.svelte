@@ -5,6 +5,7 @@
   let {
     onOpenSettings,
     onCloseProject,
+    onOpenExport,
     compact,
     layout,
     previewOpen,
@@ -13,6 +14,7 @@
   }: {
     onOpenSettings: () => void;
     onCloseProject: () => void;
+    onOpenExport: () => void;
     compact: boolean;
     layout: "full" | "side";
     previewOpen: boolean;
@@ -21,6 +23,7 @@
   } = $props();
 
   const project = $derived(projectStore.current?.project);
+  const busy = $derived(projectStore.run !== null || projectStore.exporting);
   const savedLabel = $derived(
     projectStore.saveStatus === "saving"
       ? "Saving…"
@@ -54,6 +57,15 @@
   </button>
   <button class="btn btn-ghost" type="button" aria-label="Project settings" onclick={onOpenSettings}>
     <Icon name="gear" size={14} /> <span class="project-settings-label">Project settings</span>
+  </button>
+  <button
+    class="btn"
+    type="button"
+    disabled={!project?.pages.length || busy}
+    title={project?.pages.length ? "Export the artwork" : "Generate the artwork before exporting"}
+    onclick={onOpenExport}
+  >
+    <Icon name="download" size={14} /> Export
   </button>
 
 </header>

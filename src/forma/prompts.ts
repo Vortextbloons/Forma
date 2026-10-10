@@ -28,7 +28,7 @@ export function generatePrompt(project: ProjectFile): string {
   if (project.settings.output === "poster") {
     return [
       "Create the poster artwork now.",
-      "Call read_project first, read any context you need, then submit exactly one page with submit_page (index 1).",
+      "Call read_project first, read any context you need, then create exactly one page with create_page (index 1) and write its HTML and CSS source files with write_file. If it already exists, read and edit its files instead.",
       `The page is ${sizeText}; fill it exactly.`,
       "When done, call inspect_page and fix any reported layout problems.",
     ].join("\n");
@@ -37,15 +37,15 @@ export function generatePrompt(project: ProjectFile): string {
   if (outline.length > 0) {
     return [
       `Create the artwork for the approved outline now (${outline.length} pages).`,
-      "Call read_project first, then submit one page per outline entry with submit_page, using the entry's 1-based index and its page id, in outline order.",
-      "Do not add, remove, or reorder entries. Every outline entry must produce exactly one page.",
+      "Call read_project first, then create one page per outline entry with create_page and write its HTML and CSS source files with write_file, using the entry's 1-based index and its page id, in outline order.",
+      "Do not add, remove, or reorder entries. Every outline entry must produce exactly one page. Read and edit existing page files instead of recreating them.",
       `Each page is ${sizeText}; fill it exactly.`,
       "When done, call inspect_page on the pages and fix any reported layout problems.",
     ].join("\n");
   }
   return [
     `Create the artwork now (${project.settings.slideCount} slides).`,
-    "Call read_project first. Then submit one page per slide with submit_page in order, starting at index 1.",
+    "Call read_project first. Then create one page per slide with create_page in order, starting at index 1, and write its HTML and CSS source files with write_file. Read and edit existing page files instead of recreating them.",
     `Each page is ${sizeText}; fill it exactly.`,
     "When done, call inspect_page on the pages and fix any reported layout problems.",
   ].join("\n");
@@ -83,7 +83,7 @@ export function refinePrompt(
   lines.push(
     mode === "plan"
       ? "This is a planning request: do not edit, create, or delete artwork pages. Discuss the request or persist an outline with submit_outline when the user asks to plan or revise it."
-      : "If the message asks for changes, persist them with update_page or submit_page. If it is a question, answer it without editing.",
+      : "If the message asks for changes, edit the existing page source files with edit_file; use create_page and write_file for new pages. Use update_page for title, assets, or evidence metadata. If it is a question, answer it without editing.",
   );
   if (mode === "build") {
     lines.push("After editing a page, call inspect_page and fix any reported layout problems.");
@@ -102,7 +102,7 @@ export function applyDesignPrompt(project: ProjectFile): string {
   return [
     "The user changed the design settings and wants the existing artwork updated to match.",
     `Current settings: style ${settings.style}, density ${settings.density}, output ${settings.output}, page size ${size.width}x${size.height}${size.unit}.`,
-    "Read the pages with read_page, then update them with update_page so they follow the new style and density.",
+    "Read the pages with read_page, then edit their HTML and CSS source files with edit_file so they follow the new style and density.",
     "Keep the content, slide order, and titles. Do not add or remove pages.",
     "Call inspect_page after updating and fix any reported layout problems.",
   ].join("\n");

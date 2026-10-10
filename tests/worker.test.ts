@@ -281,6 +281,18 @@ describe("forma worker", () => {
       const ready = await harness.waitForEvent("forma.context.ready");
       expect(ready.data).toMatchObject({ status: "ready" });
 
+      const dropped = await harness.send("context.importAsset", {
+        dir: projectDir,
+        name: "dropped.png",
+        mime: "image/png",
+        data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+        role: "optional",
+      });
+      expect(dropped.ok, JSON.stringify(dropped)).toBe(true);
+      const droppedItem = (dropped as WorkerResultOk).data as { item: { mime: string; status: string } };
+      expect(droppedItem.item.mime).toBe("image/png");
+      expect(droppedItem.item.status).toBe("ready");
+
       await writePage(projectDir, {
         index: 1,
         title: "One",

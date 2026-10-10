@@ -44,6 +44,7 @@ export const FORMA_COMMAND_NAMES = [
   "project.updateBrief",
   "project.setConversation",
   "context.import",
+  "context.importAsset",
   "context.importNote",
   "context.getText",
   "context.remove",
@@ -62,6 +63,8 @@ export const FORMA_COMMAND_NAMES = [
   "artwork.delete",
   "artwork.compose",
   "rendering.validate",
+  "rendering.export",
+  "rendering.cancelExport",
 ] as const;
 
 export type FormaCommandName = (typeof FORMA_COMMAND_NAMES)[number];

@@ -713,3 +713,68 @@ html[data-theme="light"] .select {
   padding: 7px 12px;
   border-top-color: var(--border);
 }
+
+.hljs {
+  color: inherit;
+  font: inherit;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag {
+  color: var(--accent);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-meta .hljs-string {
+  color: var(--success);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--signal);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--info);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-built_in,
+.hljs-class {
+  color: var(--warning);
+}
+
+.hljs-meta {
+  color: var(--muted);
+}
+
+.hljs-deletion {
+  color: var(--danger);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}

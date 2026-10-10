@@ -1,4 +1,3 @@
-import { RuntimeError } from "rig";
 import type { WorkerToHost } from "rig/ipc";
 
 export interface FormaEventSink {
@@ -31,9 +30,3 @@ export function formaEnv(): FormaEnv | undefined {
   return current;
 }
 
-export function requireFormaEnv(): FormaEnv {
-  if (!current) {
-    throw new RuntimeError("Forma runtime is not initialised");
-  }
-  return current;
-}

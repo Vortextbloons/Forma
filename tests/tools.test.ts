@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createToolHarness } from "rig/testing";
 import { researchTools } from "../src/tools/research.ts";
-import { projectRuns } from "../src/forma/runtime.ts";
+import { projectRuns, setFormaEnv } from "../src/forma/runtime.ts";
 import { scheduleExtraction } from "../src/extraction/index.ts";
 import { writePage, readPage } from "../src/projects/pages.ts";
 import { projectTools } from "../src/tools/project.ts";
@@ -115,6 +115,49 @@ describe("search tool gating", () => {
 });
 
 describe("artwork tools", () => {
+  it("creates editable source files and preserves targeted edits, metadata, and undo", async () => {
+    const dir = await makeProject("source-files");
+    const session = { id: "source-files" };
+    projectRuns.set(session.id, { mode: "build", artworkChanged: false, changedPageIds: new Set() });
+    const run = (name: string, input: unknown) => createToolHarness(projectTools.find((tool) => tool.name === name)!, { cwd: dir, session }).run(input);
+    try {
+      const page = await run("create_page", { index: 1, title: "One" }) as { pageId: string; files: { html: string; css: string } };
+      await run("write_file", { path: page.files.html, content: "<h1>Original</h1>" });
+      await run("write_file", { path: page.files.css, content: "h1 { color: red; }" });
+      await run("edit_file", { path: page.files.html, edits: [{ find: "Original", replace: "Revised" }] });
+      expect(await readFile(join(dir, page.files.html), "utf8")).toBe("<h1>Revised</h1>\n");
+      expect((await readPage(dir, page.pageId)).css).toBe("h1 { color: red; }\n");
+      expect((await openProject(dir)).pageMeta[page.pageId]?.title).toBe("One");
+      expect(projectRuns.get(session.id)?.changedPageIds?.has(page.pageId)).toBe(true);
+      await expect(run("edit_file", { path: page.files.html, edits: [{ find: "missing", replace: "bad" }] })).rejects.toThrow(/exactly once/);
+      await expect(run("write_file", { path: page.files.html, content: "<script>alert(1)</script>" })).rejects.toThrow(/script/);
+      await expect(run("write_file", { path: "project.json", content: "{}" })).rejects.toThrow(/Only registered/);
+      await expect(run("write_file", { path: `../${page.files.html}`, content: "bad" })).rejects.toThrow(/Only registered/);
+      await expect(run("create_page", { index: 1 })).rejects.toThrow(/already exists/);
+      await run("restore_page", { pageId: page.pageId });
+      expect((await readPage(dir, page.pageId)).html).toBe("<h1>Original</h1>\n");
+    } finally { projectRuns.delete(session.id); }
+  });
+
+  it("emits one-based page.ready indexes so live previews keep their order", async () => {
+    const dir = await makeProject("event-index");
+    const events: Array<{ type: string; data: Record<string, unknown> }> = [];
+    setFormaEnv({ projectDir: dir, events: { emit: (type, data) => { events.push({ type, data }); } } });
+    const session = { id: "event-index" };
+    projectRuns.set(session.id, { mode: "build", artworkChanged: false, changedPageIds: new Set() });
+    try {
+      const run = (name: string, input: unknown) => createToolHarness(projectTools.find((tool) => tool.name === name)!, { cwd: dir, session }).run(input);
+      const first = await run("create_page", { index: 1, title: "One" }) as { pageId: string; files: { html: string; css: string } };
+      await run("create_page", { index: 2, title: "Two" });
+      await run("write_file", { path: first.files.html, content: "<h1>One</h1>" });
+      const ready = events.filter((event) => event.type === "forma.page.ready").map((event) => event.data.index);
+      expect(ready).toEqual([1, 2, 1]);
+    } finally {
+      projectRuns.delete(session.id);
+      setFormaEnv(undefined);
+    }
+  });
+
   it("continues truncated text inside the last page without losing characters", async () => {
     const dir = await makeProject("text-continuation");
     const { item } = await importContextNote(dir, "abcdefghij", "content-source", "Long note");
@@ -140,6 +183,9 @@ describe("artwork tools", () => {
       await expect(run("submit_page", { index: 2, html: "<p>wrong</p>" })).rejects.toThrow(/selected page/);
       await expect(run("restore_page", { pageId: second.pageId })).rejects.toThrow(/selected page/);
       await expect(run("submit_outline", { entries: [{ title: "Changed" }] })).rejects.toThrow(/cannot change/);
+      await expect(run("create_page", { index: 3 })).rejects.toThrow(/selected page/);
+      await expect(run("write_file", { path: `pages/${second.pageId}.html`, content: "<p>wrong</p>" })).rejects.toThrow(/selected page/);
+      await expect(run("edit_file", { path: `pages/${second.pageId}.css`, edits: [{ find: "two", replace: "wrong" }] })).rejects.toThrow(/selected page/);
       await run("update_page", { pageId: first.pageId, htmlEdits: [{ find: "one", replace: "blue" }] });
       expect((await readPage(dir, first.pageId)).html).toContain("blue");
       expect((await readPage(dir, second.pageId)).html).toContain("two");
@@ -156,6 +202,10 @@ describe("artwork tools", () => {
       const update = createToolHarness(projectTools.find((tool) => tool.name === "update_page")!, { cwd: dir, session });
       await expect(submit.run({ index: 2, html: "<div>New</div>", css: "", assets: [] })).rejects.toThrow(/Switch to Build/);
       await expect(update.run({ pageId: page.pageId, html: "<div>Changed</div>" })).rejects.toThrow(/Switch to Build/);
+      const run = (name: string, input: unknown) => createToolHarness(projectTools.find((tool) => tool.name === name)!, { cwd: dir, session }).run(input);
+      await expect(run("create_page", { index: 2 })).rejects.toThrow(/Switch to Build/);
+      await expect(run("write_file", { path: `pages/${page.pageId}.html`, content: "<p>changed</p>" })).rejects.toThrow(/Switch to Build/);
+      await expect(run("edit_file", { path: `pages/${page.pageId}.html`, edits: [{ find: "Original", replace: "changed" }] })).rejects.toThrow(/Switch to Build/);
       expect((await openProject(dir)).pages).toEqual([page.pageId]);
       expect((await readPage(dir, page.pageId)).html).toContain("Original artwork");
     } finally {

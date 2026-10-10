@@ -12,10 +12,11 @@ import type { RigEventBus } from "rig/events";
 import type { SerializedIpcError, SessionInfo, WorkerResult } from "rig/ipc";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import type { WorkerAgentHost } from "./host.ts";
 import type { PendingRunRegistry } from "./runs.ts";
 import { createArtworkHandlers } from "./artwork.ts";
+import { createExportHandlers } from "./exports.ts";
 import { scheduleExtraction, loadExtraction } from "../extraction/index.ts";
 import { projectRuns, type FormaEventSink } from "../forma/runtime.ts";
 import {
@@ -26,9 +27,11 @@ import {
   type SearchProviderId,
 } from "../settings/credentials.ts";
 import {
+  contextAssetFormat,
   createProject,
   deleteProject,
   duplicateProject,
+  importContextAsset,
   importContextFile,
   importContextNote,
   listProjects,
@@ -93,6 +96,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
 
   return {
     ...createArtworkHandlers(ctx),
+    ...createExportHandlers(ctx),
 
     async prompt(params) {
       const prompt = asString(params.prompt, "prompt");
@@ -388,6 +392,55 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       return ok({ project: toProjectPayload(project, dir), item });
     },
 
+    async "context.importAsset"(params) {
+      const dir = asString(params.dir, "dir");
+      const role = asString(params.role, "role") as ContextRole;
+      if (!(CONTEXT_ROLES as readonly string[]).includes(role)) {
+        throw new ProtocolError(`Invalid context role "${role}"`);
+      }
+      const url = asOptionalString(params.url);
+      const name = asOptionalString(params.name) ?? "";
+      let mime = asOptionalString(params.mime) ?? "";
+      let data: Uint8Array;
+      let assetName = name;
+      if (url !== undefined) {
+        const parsed = parseRemoteUrl(url);
+        const response = await fetch(parsed, { signal: AbortSignal.timeout(20_000) }).catch(
+          (error: unknown) => {
+            throw new RuntimeError(
+              `Could not download "${url}": ${error instanceof Error ? error.message : String(error)}`,
+            );
+          },
+        );
+        if (!response.ok) {
+          throw new RuntimeError(`Could not download "${url}" (HTTP ${response.status})`);
+        }
+        mime = response.headers.get("content-type") ?? "";
+        data = new Uint8Array(await response.arrayBuffer());
+        if (data.byteLength > 25 * 1024 * 1024) {
+          throw new RuntimeError(`"${url}" is too large (${data.byteLength} bytes)`);
+        }
+        if (!assetName) assetName = decodeUriName(basename(parsed.pathname));
+      } else {
+        data = Buffer.from(asString(params.data, "data"), "base64");
+        if (data.byteLength > 25 * 1024 * 1024) {
+          throw new RuntimeError(`"${assetName || "Asset"}" is too large (${data.byteLength} bytes)`);
+        }
+      }
+      const format = contextAssetFormat(assetName || url || "", mime);
+      const { project, item } = await importContextAsset(dir, {
+        name: assetName,
+        extension: format.extension,
+        mime: format.mime,
+        data,
+        role,
+      });
+      if (item.status === "processing") {
+        void scheduleExtraction(dir, item.id);
+      }
+      return ok({ project: toProjectPayload(project, dir), item });
+    },
+
     async "context.importNote"(params) {
       const dir = asString(params.dir, "dir");
       const text = asString(params.text, "text");
@@ -486,6 +539,27 @@ function asString(value: unknown, name: string): string {
 
 function asOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function parseRemoteUrl(value: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ProtocolError(`Invalid URL "${value}"`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ProtocolError(`Unsupported URL scheme "${parsed.protocol}"`);
+  }
+  return parsed;
+}
+
+function decodeUriName(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function asOptionalArray(value: unknown): unknown[] | undefined {
