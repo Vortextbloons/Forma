@@ -41,6 +41,8 @@ export const FORMA_COMMAND_NAMES = [
   "project.duplicate",
   "project.delete",
   "project.updateSettings",
+  "design.listThemes",
+  "design.saveTheme",
   "project.updateBrief",
   "project.setConversation",
   "context.import",

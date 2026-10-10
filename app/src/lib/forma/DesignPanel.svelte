@@ -1,5 +1,6 @@
 <script lang="ts">
   import DesignSettingsForm from "./DesignSettingsForm.svelte";
+  import DesignProfileForm from "./DesignProfileForm.svelte";
   import PageIcon from "./PageIcon.svelte";
   import { projectStore } from "./projectStore.svelte";
   import { OUTPUT_LABELS } from "./types";
@@ -39,6 +40,11 @@
       pexelsConfigured={credentials.pexels.configured}
       {openSearchSettings}
     />
+    <DesignProfileForm
+      settings={project.settings}
+      onchange={(next) => projectStore.updateSettings(next)}
+      disabled={run !== null}
+    />
     {#if projectStore.needsDesignApply}
       <div class="design-apply">
         <p class="small">Design settings changed since the artwork was made.</p>
@@ -51,8 +57,8 @@
       </div>
     {/if}
     <p class="muted small">
-      Changes are saved automatically. Artwork changes only when you generate,
-      refine, or apply design settings.
+      Changes are saved automatically. Shared palette and typography update pages
+      that use the profile. Apply to artwork to adapt existing layouts and styles.
     </p>
   {/if}
 </div>

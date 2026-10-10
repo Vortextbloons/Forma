@@ -7,6 +7,7 @@ import { pageRefs, readPage, restorePage, updatePage, writePage } from "../proje
 import { openProject, setOutline } from "../projects/store.ts";
 import { effectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
+import { DESIGN_INSTRUCTIONS } from "../projects/design.ts";
 import { validateSinglePage } from "../rendering/validate.ts";
 
 const outlineEntryInput = z.object({
@@ -122,7 +123,9 @@ function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
           slideCount: project.settings.slideCount,
           research: project.settings.research,
           imageSearch: project.settings.imageSearch,
+          designProfile: project.settings.designProfile,
         },
+        ...(project.settings.designProfile ? { designInstructions: DESIGN_INSTRUCTIONS } : {}),
         pageSize: { width: size.width, height: size.height, unit: size.unit },
         outline: project.outline,
         pages: pageRefs(project).map((page) => ({ ...page, files: sourceFiles(page.id) })),

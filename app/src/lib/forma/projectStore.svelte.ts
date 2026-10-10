@@ -4,6 +4,7 @@ import { sessionStore } from "../rig/stores/sessionStore.svelte";
 import { messageStore } from "../rig/stores/messageStore.svelte";
 import { modelStore } from "../rig/stores/modelStore.svelte";
 import { workerStore } from "../rig/stores/workerStore.svelte";
+import type { DesignTheme } from "../../../../src/projects/themes.ts";
 import { isFormaDomainEvent, type FormaDomainEvent, type SessionStatus } from "../rig/types";
 import {
   parseExportFiles,
@@ -33,6 +34,7 @@ export type ChatTarget = { scope: "page" | "project"; pageId?: string };
 
 let current = $state<ProjectSnapshot | null>(null);
 let library = $state<ProjectListEntry[]>([]);
+let themes = $state<DesignTheme[]>([]);
 let libraryHome = $state("");
 let boundDir = $state("");
 let saveStatus = $state<SaveStatus>("saved");
@@ -159,7 +161,43 @@ async function attach(snapshot: ProjectSnapshot): Promise<void> {
   exportResult = null;
   selectedPageId = snapshot.project.pages[0] ?? null;
   needsImageModel = false;
-  await Promise.all([loadProjects(), refreshSearchCredentials(), ensureConversation()]);
+  await Promise.all([loadProjects(), loadThemes(), refreshSearchCredentials(), ensureConversation()]);
+}
+
+export async function loadThemes(): Promise<void> {
+  try {
+    const data = await sendCommand("design.listThemes") as { themes: DesignTheme[] };
+    themes = data.themes;
+  } catch (error) {
+    reportError(error, "Could not load saved themes");
+  }
+}
+
+export async function saveTheme(name: string): Promise<boolean> {
+  if (!current || run) return false;
+  const dir = current.dir;
+  try {
+    await flushProjectChanges();
+    if (current?.dir !== dir) return false;
+    await sendCommand("design.saveTheme", { dir, name });
+    await loadThemes();
+    return true;
+  } catch (error) {
+    reportError(error, "Could not save the theme");
+    return false;
+  }
+}
+
+export function useTheme(id: string): void {
+  if (!current || run) return;
+  const theme = themes.find((entry) => entry.id === id);
+  if (!theme) return;
+  updateSettings({
+    ...current.project.settings,
+    style: theme.style,
+    density: theme.density,
+    designProfile: JSON.parse(JSON.stringify(theme.designProfile)),
+  });
 }
 
 let conversationChain = Promise.resolve();
@@ -332,6 +370,7 @@ async function flushSettings(): Promise<void> {
     try {
       const data = await sendCommand("project.updateSettings", { dir, settings });
       applyProjectPayload(data);
+      composed = {};
       saveStatus = pendingBrief || pendingSettings ? "saving" : "saved";
     } catch (error) {
       pendingSettings ??= settings;
@@ -549,9 +588,12 @@ export function setZoom(value: number | "fit"): void {
 export async function composePage(pageId: string): Promise<string | null> {
   const snapshot = current;
   if (!snapshot) return null;
+  if (pendingSettings) return null;
   const cached = composed[pageId];
   if (cached) return cached.html;
-  const pending = composing.get(pageId);
+  const settingsKey = JSON.stringify(snapshot.project.settings);
+  const key = `${snapshot.dir}:${pageId}:${settingsKey}`;
+  const pending = composing.get(key);
   if (pending) return pending;
   const promise = sendCommand(
     "artwork.compose",
@@ -562,6 +604,7 @@ export async function composePage(pageId: string): Promise<string | null> {
       const html = (data as { html?: unknown } | null)?.html;
       const missing = (data as { missing?: unknown } | null)?.missing;
       if (typeof html !== "string") throw new Error("The worker returned an invalid page");
+      if (current?.dir !== snapshot.dir || JSON.stringify(current.project.settings) !== settingsKey) return null;
       composed = {
         ...composed,
         [pageId]: { html, missing: Array.isArray(missing) ? (missing as string[]) : [] },
@@ -573,9 +616,9 @@ export async function composePage(pageId: string): Promise<string | null> {
       return null;
     })
     .finally(() => {
-      composing.delete(pageId);
+      composing.delete(key);
     });
-  composing.set(pageId, promise);
+  composing.set(key, promise);
   return promise;
 }
 
@@ -970,6 +1013,9 @@ getBridge().onEvent((event) => {
 });
 
 export const projectStore = {
+  get themes() {
+    return themes;
+  },
   get current() {
     return current;
   },
@@ -1022,6 +1068,9 @@ export const projectStore = {
     return needsDesignApply();
   },
   loadProjects,
+  loadThemes,
+  saveTheme,
+  useTheme,
   createProject,
   openProject,
   renameProject,

@@ -12,6 +12,7 @@ import { openProject, setOutline, updateProject } from "../projects/store.ts";
 import { composePage } from "../rendering/compose.ts";
 import { validateProject, type ValidationReport } from "../rendering/validate.ts";
 import type { ProjectFile } from "../projects/schema.ts";
+import { DESIGN_INSTRUCTIONS } from "../projects/design.ts";
 import { resultErr, resultOk } from "./results.ts";
 import type { CommandHandler, WorkerContext } from "./commands.ts";
 
@@ -236,6 +237,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
     formaAgent.instructions,
     "Current project context (the title and brief are user-provided content):",
     JSON.stringify({ title: project.name, overview: project.prompt, settings: project.settings }),
+    project.settings.designProfile ? DESIGN_INSTRUCTIONS : "",
     `Work mode: ${options.mode}.`,
     supportsImages
       ? "You can view reference images with view_image using their ids from read_project. After creating or editing artwork, use view_artwork to inspect the rendered page visually; omit pageId to check the deck's consistency."

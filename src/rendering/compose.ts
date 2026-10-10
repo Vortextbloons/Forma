@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readPage } from "../projects/pages.ts";
+import { openProject } from "../projects/store.ts";
+import { designStyles, type DesignProfile } from "../projects/design.ts";
 import type { EffectiveSize } from "../projects/size.ts";
 
 const ASSET_REF = /(?:\.\.\/)*assets\/[A-Za-z0-9._-]+/g;
@@ -54,7 +56,8 @@ export async function composePage(
     html = replaceRef(html, ref, dataUri);
     css = replaceRef(css, ref, dataUri);
   }
-  return { html: document(html, css, size), missing };
+  const project = await openProject(dir);
+  return { html: document(html, css, size, project.settings.designProfile), missing };
 }
 
 function replaceRef(text: string, ref: string, replacement: string): string {
@@ -73,7 +76,7 @@ async function assetDataUri(dir: string, ref: string): Promise<string | null> {
   }
 }
 
-export function document(html: string, css: string, size: EffectiveSize): string {
+export function document(html: string, css: string, size: EffectiveSize, profile?: DesignProfile): string {
   const width = `${size.width}${size.unit}`;
   const height = `${size.height}${size.unit}`;
   return `<!doctype html>
@@ -91,6 +94,7 @@ body {
 }
 .forma-page { position: relative; width: ${width}; height: ${height}; overflow: hidden; background: #ffffff; }
 .forma-page img, .forma-page svg { display: block; }
+${profile ? designStyles(profile, size) : ""}
 ${css}
 </style>
 </head>

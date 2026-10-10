@@ -246,7 +246,7 @@ describe("forma worker", () => {
   it("handles outline, extraction, compose and validation commands", async () => {
     const root = await mkdtemp(join(tmpdir(), "forma-artwork-ipc-"));
     const projectDir = join(root, "Deck");
-    const harness = new WorkerHarness(root);
+    const harness = new WorkerHarness(root, { FORMA_DATA_DIR: join(root, "data") });
     try {
       await harness.ready;
       const created = await harness.send("project.create", {
@@ -257,6 +257,17 @@ describe("forma worker", () => {
         settings: { output: "slides" },
       });
       expect(created.ok).toBe(true);
+
+      const settings = defaultSettings();
+      settings.designProfile!.colors.accent = "#ca2468";
+      settings.designProfile!.fonts.heading = "Georgia";
+      const design = await harness.send("project.updateSettings", { dir: projectDir, settings });
+      expect(design.ok, JSON.stringify(design)).toBe(true);
+      const saved = await harness.send("design.saveTheme", { dir: projectDir, name: "Studio" });
+      expect(saved.ok, JSON.stringify(saved)).toBe(true);
+      const library = await harness.send("design.listThemes");
+      expect(library.ok, JSON.stringify(library)).toBe(true);
+      expect((library as WorkerResultOk).data).toMatchObject({ themes: [{ name: "Studio", designProfile: settings.designProfile }] });
 
       const updated = await harness.send("artwork.updateOutline", {
         dir: projectDir,
@@ -314,6 +325,7 @@ describe("forma worker", () => {
       const composedData = (composed as WorkerResultOk).data as { html: string };
       expect(composedData.html).toContain("hello");
       expect(composedData.html).toContain(".t{color:#111}");
+      expect(composedData.html).toContain("--forma-accent: #ca2468");
 
       const reordered = await harness.send("artwork.reorder", {
         dir: projectDir,

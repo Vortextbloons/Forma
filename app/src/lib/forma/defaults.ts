@@ -1,4 +1,5 @@
 import type { OutputKind, ProjectSettings } from "./types";
+import { defaultDesignProfile } from "../../../../src/projects/design.ts";
 
 export function defaultProjectSettings(output: OutputKind = "slides"): ProjectSettings {
   return {
@@ -12,5 +13,6 @@ export function defaultProjectSettings(output: OutputKind = "slides"): ProjectSe
     orientation: "portrait",
     research: false,
     imageSearch: false,
+    designProfile: defaultDesignProfile(),
   };
 }

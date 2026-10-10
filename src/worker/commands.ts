@@ -42,6 +42,7 @@ import {
   updateProject,
 } from "../projects/store.ts";
 import { repairSessionIndex } from "../projects/sessions.ts";
+import { listThemes, saveTheme } from "../projects/themes.ts";
 import {
   CONTEXT_ROLES,
   PLAN_MODES,
@@ -97,6 +98,16 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
   return {
     ...createArtworkHandlers(ctx),
     ...createExportHandlers(ctx),
+
+    async "design.listThemes"() {
+      return ok({ themes: await listThemes() });
+    },
+
+    async "design.saveTheme"(params) {
+      const project = await openProject(asString(params.dir, "dir"));
+      const theme = await saveTheme(asString(params.name, "name"), project.settings);
+      return ok({ theme });
+    },
 
     async prompt(params) {
       const prompt = asString(params.prompt, "prompt");

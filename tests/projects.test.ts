@@ -30,6 +30,7 @@ import { resolveProjectsHome } from "../src/projects/home.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
 import { repairSessionIndex } from "../src/projects/sessions.ts";
 import { collectVisualReferences } from "../src/forma/visuals.ts";
+import { listThemes, saveTheme } from "../src/projects/themes.ts";
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "forma-projects-"));
@@ -42,6 +43,40 @@ async function useDataDir(): Promise<string> {
 }
 
 describe("project persistence", () => {
+  it("persists reusable themes independently of project edits and excludes content and page settings", async () => {
+    const root = await tempDir();
+    const previousDataDir = process.env.FORMA_DATA_DIR;
+    process.env.FORMA_DATA_DIR = root;
+    try {
+      expect(await listThemes()).toEqual([]);
+      const settings = defaultSettings();
+      settings.style = "editorial";
+      settings.density = "concise";
+      settings.designProfile!.colors.accent = "#ca2468";
+      settings.designProfile!.fonts.heading = "Georgia";
+      settings.designProfile!.direction = "Strong headlines and spacious layouts";
+      const theme = await saveTheme("Studio", settings);
+      settings.designProfile!.colors.accent = "#112233";
+      const [saved] = await listThemes();
+      expect(saved).toEqual(theme);
+      expect(saved!.designProfile.colors.accent).toBe("#ca2468");
+      expect(saved).not.toHaveProperty("slideCount");
+      expect(saved).not.toHaveProperty("research");
+      const targetSettings = defaultSettings("poster");
+      const target = await createProject({ dir: join(root, "Target"), name: "Target", prompt: "Keep the brief", mode: "plan", settings: { ...targetSettings, style: saved!.style, density: saved!.density, designProfile: saved!.designProfile } });
+      const reopened = await openProject(target.dir);
+      expect(reopened.settings.designProfile).toEqual(theme.designProfile);
+      expect(reopened.settings.output).toBe("poster");
+      expect(reopened.prompt).toBe("Keep the brief");
+      await updateProject(target.dir, (project) => { project.settings.designProfile!.fonts.heading = "Arial"; });
+      expect((await listThemes())[0]!.designProfile.fonts.heading).toBe("Georgia");
+    } finally {
+      if (previousDataDir === undefined) delete process.env.FORMA_DATA_DIR;
+      else process.env.FORMA_DATA_DIR = previousDataDir;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("applies precise edits and restores source and metadata without damaging other content", async () => {
     const root = await tempDir();
     try {

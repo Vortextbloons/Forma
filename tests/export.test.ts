@@ -10,9 +10,10 @@ import { runExport } from "../src/rendering/export.ts";
 import { createExportHandlers } from "../src/worker/exports.ts";
 import { FORMA_EVENTS } from "../src/forma/events.ts";
 import { createProject, openProject, updateProject } from "../src/projects/store.ts";
-import { writePage } from "../src/projects/pages.ts";
+import { readPage, updatePage, writePage } from "../src/projects/pages.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
 import type { WorkerContext } from "../src/worker/commands.ts";
+import { composePage } from "../src/rendering/compose.ts";
 
 let root: string;
 
@@ -67,6 +68,31 @@ async function centerColor(buffer: Buffer): Promise<[number, number, number]> {
 }
 
 describe("forma exports", () => {
+  it("shares profile changes across composed pages and PNG exports without rewriting artwork", async () => {
+    const { dir, pages } = await deck();
+    for (const pageId of pages) {
+      await updatePage(dir, pageId, { html: '<div class="fill"></div>', css: ".fill{position:absolute;inset:0;background:var(--forma-accent)}" });
+    }
+    const source = await readPage(dir, pages[0]!);
+    await updateProject(dir, (project) => {
+      project.settings.designProfile!.colors.accent = "#cc2266";
+      project.settings.designProfile!.fonts.heading = "Georgia";
+    });
+    for (const pageId of pages) {
+      const composed = await composePage(dir, pageId, { width: 1920, height: 1080, unit: "px" });
+      expect(composed.html).toContain('--forma-font-heading: "Georgia", serif');
+      expect(composed.html).toContain("--forma-accent: #cc2266");
+    }
+    const first = await runExport({ dir, project: await openProject(dir), format: "png", pageIds: [pages[0]!], destination: join(root, "theme-before.png") });
+    expect(await centerColor(await readFile(first.files[0]!))).toEqual([204, 34, 102]);
+    await updateProject(dir, (project) => { project.settings.designProfile!.colors.accent = "#2266cc"; });
+    const second = await runExport({ dir, project: await openProject(dir), format: "png", pageIds: [pages[1]!], destination: join(root, "theme-after.png") });
+    expect(await centerColor(await readFile(second.files[0]!))).toEqual([34, 102, 204]);
+    expect(await readPage(dir, pages[0]!)).toEqual(source);
+    const print = await composePage(dir, pages[0]!, { width: 210, height: 297, unit: "mm" });
+    expect(print.html).toContain("--forma-heading-size: 7.875mm");
+  }, 120_000);
+
   it("exports a PDF with one page per slide at the project dimensions", async () => {
     const { dir, pages } = await deck();
     const result = await runExport({

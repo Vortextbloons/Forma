@@ -17,6 +17,8 @@
 
 
 import { Events, getTransport } from "@wailsio/runtime";
+import { defaultDesignProfile, designProfileSchema, designStyles } from "../../../../src/projects/design.ts";
+import type { DesignTheme } from "../../../../src/projects/themes.ts";
 import { asRecord, asString } from "./format";
 import type {
   FormaCommand,
@@ -369,6 +371,7 @@ class MockBridge extends BaseBridge {
   private sessions: MockSession[] = [];
   private projectDir = "/mock/project";
   private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
+  private themes: DesignTheme[] = [];
   private mockSeq = 0;
   private mockSearch: Record<string, { configured: boolean; masked?: string }> = {
     exa: { configured: false },
@@ -830,6 +833,25 @@ class MockBridge extends BaseBridge {
         this.settleResult(id, true, { project: { dir, project } });
         break;
       }
+      case "design.listThemes": {
+        this.settleResult(id, true, { themes: this.themes });
+        break;
+      }
+      case "design.saveTheme": {
+        const project = this.ensureProject(asString(params.dir ?? this.projectDir), {});
+        const settings = asRecord(project.settings);
+        const theme: DesignTheme = {
+          id: crypto.randomUUID(),
+          name: asString(params.name).trim(),
+          style: settings.style as DesignTheme["style"],
+          density: settings.density as DesignTheme["density"],
+          designProfile: designProfileSchema.parse(settings.designProfile ?? defaultDesignProfile()),
+          createdAt: new Date().toISOString(),
+        };
+        this.themes.push(theme);
+        this.settleResult(id, true, { theme });
+        break;
+      }
       case "project.updateBrief": {
         const dir = asString(params.dir ?? this.projectDir);
         const project = this.ensureProject(dir, {});
@@ -1059,6 +1081,8 @@ class MockBridge extends BaseBridge {
           `.forma-page{width:${width}${unit};height:${height}${unit};padding:7%;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;gap:3%}`,
           `h1{font-size:${Math.max(28, Math.round(height / 9))}px;margin:0;color:#24343D}`,
           `p{font-size:${Math.max(14, Math.round(height / 26))}px;color:#61717B;margin:0}`,
+          settings.designProfile ? designStyles(designProfileSchema.parse(settings.designProfile), { width, height, unit: unit as "px" | "mm" | "in" }) : "",
+          settings.designProfile ? "h1{color:var(--forma-accent);font-size:var(--forma-heading-size);font-family:var(--forma-font-heading)}p{color:var(--forma-muted);font-size:var(--forma-body-size);font-family:var(--forma-font-body)}" : "",
           "</style></head><body><div class=\"forma-page\">",
           `<h1>${title.replace(/[<>&]/g, "")}</h1>`,
           `<p>Mock artwork preview · page ${index + 1}</p>`,
