@@ -6,13 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+_No user-facing changes yet._
+
+---
+
+## [0.4.1] - 2026-10-10
+
+### Added
+
+- **Composer selection banner** — when an element is targeted, the input shows the element label, slide/poster context, a short hint, and a control to clear the selection before sending.
+- **Element edits in chat history** — user messages display an “Element edit” header with the selected text so the thread reads clearly after refine.
+- **CHANGELOG.md** — version history for the app; linked from the README and used as the source for GitHub Release notes.
+
+### Changed
+
+- **Message store** — user sends store optional element metadata; reopening a project re-derives element context from saved refine payloads so the timeline matches what you saw when you sent the message.
+- **Release workflow** — tagged builds publish the matching `CHANGELOG.md` section instead of auto-generated release notes.
+
+### Fixed
+
+- **Page preview feedback popover** — clicking outside dismisses the anchor without leaving the feedback panel in a stuck open state.
+- **Refine send path** — element label is attached to the visible user message, not only the worker payload.
+
+---
+
+## [0.4.0] - 2026-10-09
+
 ### Added
 
 - **Click-to-refine in the page preview** — hover highlights an element; click to lock the selection and send targeted refine requests from chat with selector, HTML snippet, and bounds attached to the agent context.
 - **Element selection plumbing** — shared `elementSelectionScript` in the render pipeline and preview iframe messaging (`forma:element-selected`, `forma:selection`) so the UI and worker agree on what is selected.
-- **Editable PowerPoint export** — new `addEditableArtwork` path walks the live DOM and emits shapes, text runs, and images into PPTX instead of a flat screenshot where structure allows.
-- **Chat panel context for selections** — composer shows which element is targeted; refine scope automatically narrows to the selected page and element.
-- **Project schema support** for persisting selection-related metadata used during refine and export flows.
+- **Editable PowerPoint export** — `addEditableArtwork` walks the live DOM and emits shapes, text runs, and images into PPTX instead of a flat screenshot where structure allows.
+- **Chat panel context for selections** — refine scope automatically narrows to the selected page and element; the chat header reflects the active target.
+- **Project schema support** for selection-related metadata used during refine and export flows.
 
 ### Changed
 
@@ -23,7 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Refine requests that included an element context now clear the selection after send so later messages are not stuck on a stale target.
+- Refine requests that included an element context clear the selection after send so later messages are not stuck on a stale target.
 
 ---
 
@@ -103,7 +129,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Desktop services** — file service and worker service bridging the Go host to the embedded runtime.
 - **Build scaffolding** — Windows-focused Wails taskfiles, icons, and dev/build PowerShell scripts.
 
-[Unreleased]: https://github.com/Vortextbloons/Forma/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Vortextbloons/Forma/compare/cfa6cea...HEAD
+[0.4.1]: https://github.com/Vortextbloons/Forma/commit/cfa6cea
+[0.4.0]: https://github.com/Vortextbloons/Forma/commit/05d6795
 [0.3.0]: https://github.com/Vortextbloons/Forma/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Vortextbloons/Forma/commit/18b06cc
 [0.1.0]: https://github.com/Vortextbloons/Forma/commit/a626832
