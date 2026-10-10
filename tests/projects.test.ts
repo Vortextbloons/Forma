@@ -21,6 +21,7 @@ import {
   duplicatePage,
   movePage,
   readPage,
+  restorePage,
   updatePage,
   writePage,
 } from "../src/projects/pages.ts";
@@ -40,6 +41,23 @@ async function useDataDir(): Promise<string> {
 }
 
 describe("project persistence", () => {
+  it("applies precise edits and restores source and metadata without damaging other content", async () => {
+    const root = await tempDir();
+    try {
+      const { dir } = await createProject({ dir: join(root, "Edits"), name: "Edits", prompt: "", mode: "create", settings: defaultSettings() });
+      const { pageId } = await writePage(dir, { index: 1, title: "Original", html: "<h1>Original</h1><p>Keep this</p>", css: "h1{color:red}" });
+      await updatePage(dir, pageId, { title: "Edited", htmlEdits: [{ find: "<h1>Original</h1>", replace: "<h1>Edited</h1>" }], cssEdits: [{ find: "red", replace: "blue" }] });
+      expect(await readPage(dir, pageId)).toEqual({ html: "<h1>Edited</h1><p>Keep this</p>\n", css: "h1{color:blue}\n" });
+      await expect(updatePage(dir, pageId, { htmlEdits: [{ find: "missing", replace: "bad" }] })).rejects.toThrow(/exactly once/);
+      await expect(updatePage(dir, pageId, { html: "<p>overwrite</p>", htmlEdits: [{ find: "overwrite", replace: "bad" }] })).rejects.toThrow(/not both/);
+      await restorePage(dir, pageId);
+      expect((await readPage(dir, pageId)).html).toBe("<h1>Original</h1><p>Keep this</p>\n");
+      expect((await openProject(dir)).pageMeta[pageId]?.title).toBe("Original");
+      await restorePage(dir, pageId);
+      expect((await readPage(dir, pageId)).css).toBe("h1{color:blue}\n");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("creates a project folder with project.json, pages/ and assets/", async () => {
     const root = await tempDir();
     const dir = join(root, "Deck");
@@ -162,10 +180,35 @@ describe("project persistence", () => {
       await importContextFile(dir, imagePath, "optional");
       const { project } = await importContextFile(dir, textPath, "content-source");
       expect(project.context).toHaveLength(2);
-      expect(await collectVisualReferences(dir, project)).toEqual([{ data: png, mediaType: "image/png" }]);
+      const references = await collectVisualReferences(dir, project);
+      expect(references.images).toEqual([{ data: png, mediaType: "image/png" }]);
+      expect(references.labels).toEqual([{ id: project.context[0]!.id, name: project.context[0]!.name, role: "optional", path: project.context[0]!.asset }]);
+      expect(references.skipped).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("prioritizes selected-page references and reports references beyond the attachment limit", async () => {
+    const root = await tempDir();
+    try {
+      const { dir } = await createProject({ dir: join(root, "Many references"), name: "Many references", prompt: "", mode: "create", settings: defaultSettings() });
+      const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
+      for (let index = 0; index < 7; index++) {
+        const path = join(root, `image-${index}.png`);
+        await writeFile(path, index === 6 ? Buffer.concat([png, Buffer.alloc(6 * 1024 * 1024)]) : png);
+        await importContextFile(dir, path, "optional");
+      }
+      const project = await openProject(dir);
+      const selected = project.context[6]!;
+      const { pageId } = await writePage(dir, { index: 1, title: "One", html: `<img src="${selected.asset}">`, css: "", assets: [selected.id] });
+      const references = await collectVisualReferences(dir, await openProject(dir), pageId);
+      expect(references.images).toHaveLength(6);
+      expect(references.labels[0]?.id).toBe(selected.id);
+      expect(references.images[0]?.mediaType).toBe("image/webp");
+      expect(references.skipped).toHaveLength(1);
+      expect(references.skipped[0]?.reason).toContain("view_image");
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it("rejects unsupported context file types", async () => {

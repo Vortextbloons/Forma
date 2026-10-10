@@ -2343,6 +2343,96 @@ html[data-theme="light"] .stage-page {
   line-height: 1.6;
 }
 
+.chat-panel.has-rail {
+  flex-direction: row;
+}
+
+.chat-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.chat-slide-rail {
+  display: flex;
+  order: -1;
+  width: 150px;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 10px;
+  border-right: 1px solid var(--border);
+}
+
+.chat-full .chat-slide-rail {
+  order: 0;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.chat-slide-thumb {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-slide-thumb .page-thumb-frame {
+  border-radius: 8px;
+}
+
+.chat-slide-thumb.active .page-thumb-frame {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-slide-num {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font: 600 10px var(--font-mono);
+}
+
+.chat-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 32px 48px 20px;
+  background: rgb(0 0 0 / 0.72);
+}
+
+.chat-lightbox-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-lightbox-caption {
+  margin: 0;
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+}
+
+.chat-lightbox .chat-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  color: #fff;
+}
+
 .preview-open .forma-right-panel {
   display: none;
 }

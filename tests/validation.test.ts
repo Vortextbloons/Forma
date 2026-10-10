@@ -3,8 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateProject } from "../src/rendering/validate.ts";
-import { createProject, importContextNote, openProject } from "../src/projects/store.ts";
-import { writePage } from "../src/projects/pages.ts";
+import { createProject, importContextAsset, importContextNote, openProject, setOutline } from "../src/projects/store.ts";
+import { updatePage, writePage } from "../src/projects/pages.ts";
+import { scheduleExtraction } from "../src/extraction/index.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
 
 let root: string;
@@ -32,6 +33,28 @@ async function makeProject(name: string): Promise<string> {
 }
 
 describe("artwork validation", () => {
+  it("requires visible required images instead of outline or metadata assignments", async () => {
+    const dir = await makeProject("visible-required-image");
+    const { item } = await importContextAsset(dir, { name: "Required image", extension: ".png", mime: "image/png", data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64"), role: "must-include" });
+    await setOutline(dir, [{ title: "One", points: [], assetIds: [item.id] }]);
+    const { pageId } = await writePage(dir, { index: 1, title: "One", html: "<p>No image</p>", css: "", assets: [item.id] });
+    expect((await validateProject(dir, await openProject(dir))).issues.some((issue) => issue.kind === "must-include")).toBe(true);
+    await updatePage(dir, pageId, { html: `<img src="${item.asset}" style="width:100px;height:100px">` });
+    expect((await validateProject(dir, await openProject(dir))).issues).toEqual([]);
+    await updatePage(dir, pageId, { css: ".forma-page img{display:none}" });
+    expect((await validateProject(dir, await openProject(dir))).issues.some((issue) => issue.kind === "must-include")).toBe(true);
+  }, 60_000);
+
+  it("checks required text evidence against both its source and rendered content", async () => {
+    const dir = await makeProject("required-text-evidence");
+    const { item } = await importContextNote(dir, "Revenue grew by 25 percent.", "must-include", "Required fact");
+    await scheduleExtraction(dir, item.id);
+    const { pageId } = await writePage(dir, { index: 1, title: "One", html: "<p>Revenue grew by 25 percent.</p>", css: "", assets: [item.id], evidence: { [item.id]: "Revenue grew by 25 percent." } });
+    expect((await validateProject(dir, await openProject(dir))).issues).toEqual([]);
+    await updatePage(dir, pageId, { html: "<p>Revenue grew by 50 percent.</p>" });
+    expect((await validateProject(dir, await openProject(dir))).issues.some((issue) => issue.kind === "must-include")).toBe(true);
+  }, 60_000);
+
   it("reports unmet Must Include requirements", async () => {
     const dir = await makeProject("must-include");
     await importContextNote(dir, "Required fact", "must-include", "Required note");

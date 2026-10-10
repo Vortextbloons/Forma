@@ -2,6 +2,7 @@
   import Messages from "../conversation/Messages.svelte";
   import Composer from "../conversation/Composer.svelte";
   import Icon from "../components/Icon.svelte";
+  import PagePreview from "./PagePreview.svelte";
   import { messageStore } from "../rig/stores/messageStore.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { projectStore } from "./projectStore.svelte";
@@ -12,11 +13,14 @@
   const pages = $derived(project?.pages ?? []);
   const selectedId = $derived(projectStore.selectedPageId);
   const isPoster = $derived(project?.settings.output === "poster");
+  const isSlides = $derived(project?.settings.output === "slides");
+  const showRail = $derived(isSlides && pages.length > 0);
 
   let scope = $state<"page" | "project">("project");
   const empty = $derived(messageStore.bySession(sessionId ?? "").length === 0);
   let historyOpen = $state(false);
   let historyEl = $state<HTMLElement | null>(null);
+  let previewPageId = $state<string | null>(null);
   let switching = $state(false);
 
   function onWindowPointerDown(event: PointerEvent): void {
@@ -26,7 +30,15 @@
   }
 
   function onWindowKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") historyOpen = false;
+    if (event.key === "Escape") {
+      historyOpen = false;
+      previewPageId = null;
+    }
+  }
+
+  function titleOf(pageId: string): string {
+    const index = pages.indexOf(pageId);
+    return project?.pageMeta[pageId]?.title || `Slide ${index + 1}`;
   }
 
   const artworkRunning = $derived(projectStore.run !== null);
@@ -66,7 +78,8 @@
   });
 </script>
 
-<div class="chat-panel">
+<div class="chat-panel" class:has-rail={showRail}>
+  <div class="chat-body">
   <div class="chat-header" bind:this={historyEl}>
     <strong>Chat</strong>
     <span class="spacer"></span>
@@ -130,6 +143,46 @@
   {#key sessionId}
     <Composer {target} />
   {/key}
+  </div>
+  {#if showRail}
+    <aside class="chat-slide-rail" aria-label="Slides">
+      {#each pages as pageId, i (pageId)}
+        <button
+          class="chat-slide-thumb"
+          class:active={selectedId === pageId}
+          type="button"
+          aria-label={`Open preview for slide ${i + 1}: ${titleOf(pageId)}`}
+          onclick={() => (previewPageId = pageId)}
+        >
+          <PagePreview {pageId} mode="thumb" />
+          <span class="chat-slide-num">{i + 1}</span>
+        </button>
+      {/each}
+    </aside>
+  {/if}
+  {#if previewPageId}
+    <div
+      class="chat-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Slide preview: ${titleOf(previewPageId)}`}
+      tabindex="-1"
+      onclick={(event) => {
+        if (event.target === event.currentTarget) previewPageId = null;
+      }}
+      onkeydown={(event) => {
+        if (event.key === "Escape") previewPageId = null;
+      }}
+    >
+      <button class="icon-btn chat-lightbox-close" type="button" aria-label="Close preview" onclick={() => (previewPageId = null)}>
+        <Icon name="x" size={16} />
+      </button>
+      <div class="chat-lightbox-stage">
+        <PagePreview pageId={previewPageId} />
+      </div>
+      <p class="chat-lightbox-caption">{titleOf(previewPageId)}</p>
+    </div>
+  {/if}
 </div>
 
 <svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />

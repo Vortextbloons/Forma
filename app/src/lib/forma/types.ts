@@ -25,7 +25,8 @@ export type {
 export interface ValidationIssue {
   pageId?: string;
   pageIndex?: number;
-  kind: "missing-asset" | "overflow" | "clipped-text" | "must-include";
+  contextId?: string;
+  kind: "missing-asset" | "overflow" | "clipped-text" | "must-include" | "incomplete";
   message: string;
   detail?: string;
 }

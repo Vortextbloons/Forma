@@ -30,6 +30,7 @@ interface HarnessOptions {
   responses: ResponseSource;
   mode?: "plan" | "create";
   output?: OutputKind;
+  slideCount?: number;
   outline?: Array<{ title: string; points: string[] }>;
   prepare?: (dir: string) => Promise<void>;
 }
@@ -51,6 +52,7 @@ async function setup(options: HarnessOptions): Promise<Harness> {
     mode: options.mode ?? "plan",
     settings: defaultSettings(options.output ?? "slides"),
   });
+  if (options.slideCount !== undefined) await updateProject(dir, (project) => { project.settings.slideCount = options.slideCount!; });
   if (options.outline) await setOutline(dir, options.outline);
   if (options.prepare) await options.prepare(dir);
 
@@ -106,6 +108,120 @@ async function setup(options: HarnessOptions): Promise<Harness> {
 }
 
 describe("forma artwork pipeline", () => {
+  it("reports unchecked artwork when Chromium is unavailable without launching a repair", async () => {
+    const harness = await setup({
+      slideCount: 1,
+      responses: [
+        fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "One", html: "<p>One</p>" })]),
+        fauxAssistantMessage("Done", { stopReason: "stop" }),
+      ],
+    });
+    const previousPath = process.env.FORMA_CHROME_PATH;
+    process.env.FORMA_CHROME_PATH = join(harness.dir, "missing-chromium.exe");
+    try {
+      const result = await harness.send("artwork.generate", { dir: harness.dir });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect((result.error.details as { reason?: string })?.reason).toBe("artwork-unchecked");
+      const project = await openProject(harness.dir);
+      expect(project.pages).toHaveLength(1);
+      expect(project.artworkRevision).toBe(-1);
+    } finally {
+      if (previousPath === undefined) delete process.env.FORMA_CHROME_PATH;
+      else process.env.FORMA_CHROME_PATH = previousPath;
+      await harness.close();
+    }
+  }, 60_000);
+
+  it("honors cancellation after the model stops and before a completion repair", async () => {
+    const harness = await setup({
+      slideCount: 2,
+      responses: [
+        fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "One", html: "<p>One</p>" })]),
+        fauxAssistantMessage("Done", { stopReason: "stop" }),
+      ],
+    });
+    const unsubscribe = harness.runtime.events.subscribe((event) => {
+      if (event.type === "run.completed") void harness.send("abort", { sessionId: event.sessionId });
+    });
+    try {
+      const result = await harness.send("artwork.generate", { dir: harness.dir });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("CANCELLATION_ERROR");
+      expect((await openProject(harness.dir)).artworkRevision).toBe(-1);
+    } finally { unsubscribe(); await harness.close(); }
+  }, 60_000);
+
+  it("repairs an incomplete deck before marking its artwork current", async () => {
+    const harness = await setup({
+      slideCount: 2,
+      responses: [
+        fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "One", html: "<p>One</p>" })]),
+        fauxAssistantMessage("Done", { stopReason: "stop" }),
+        (context: ModelContext) => {
+          expect(JSON.stringify(context.messages)).toContain("Expected 2 pages, found 1");
+          return fauxAssistantMessage([fauxToolCall("submit_page", { index: 2, title: "Two", html: "<p>Two</p>" })]);
+        },
+        fauxAssistantMessage("Finished both pages", { stopReason: "stop" }),
+      ],
+    });
+    try {
+      const result = await harness.send("artwork.generate", { dir: harness.dir });
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      const project = await openProject(harness.dir);
+      expect(project.pages).toHaveLength(2);
+      expect(project.artworkRevision).toBe(project.settingsRevision);
+    } finally { await harness.close(); }
+  }, 60_000);
+
+  it("keeps an unresolved partial deck without marking it current", async () => {
+    const harness = await setup({
+      slideCount: 2,
+      responses: [
+        fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "One", html: "<p>One</p>" })]),
+        fauxAssistantMessage("Done", { stopReason: "stop" }),
+        fauxAssistantMessage("Done again", { stopReason: "stop" }),
+      ],
+    });
+    try {
+      const result = await harness.send("artwork.generate", { dir: harness.dir });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect((result.error.details as { reason?: string })?.reason).toBe("artwork-incomplete");
+      const project = await openProject(harness.dir);
+      expect(project.pages).toHaveLength(1);
+      expect(project.artworkRevision).toBe(-1);
+    } finally { await harness.close(); }
+  }, 60_000);
+
+  it("provides rendered page and contact-sheet images to a vision model", async () => {
+    let pageId = "";
+    const harness = await setup({
+      prepare: async (dir) => {
+        ({ pageId } = await writePage(dir, { index: 1, title: "Preview", html: "<p>Rendered preview</p>", css: "p{color:red}" }));
+      },
+      responses: [
+        () => fauxAssistantMessage([fauxToolCall("view_artwork", { pageId })]),
+        (context: ModelContext) => {
+          const result = context.messages.find((message: { role: string; toolName?: string }) => message.role === "toolResult" && message.toolName === "view_artwork");
+          expect(Array.isArray(result?.content) && result.content.some((part: { type: string; mimeType?: string; data?: string }) => part.type === "image" && part.mimeType === "image/png" && part.data!.length > 100)).toBe(true);
+          return fauxAssistantMessage([fauxToolCall("view_artwork", {})]);
+        },
+        (context: ModelContext) => {
+          const results = context.messages.filter((message: { role: string; toolName?: string }) => message.role === "toolResult" && message.toolName === "view_artwork");
+          expect(results).toHaveLength(2);
+          expect(Array.isArray(results[1]?.content) && results[1].content.some((part: { type: string }) => part.type === "image")).toBe(true);
+          return fauxAssistantMessage("Reviewed the composition", { stopReason: "stop" });
+        },
+      ],
+    });
+    try {
+      const handle = await harness.runtime.sessions.create({ name: "Preview chat" });
+      const session = handle.piSession as { model: object; agent: { state: { model: object } } };
+      session.agent.state.model = { ...session.model, input: ["text", "image"] };
+      const result = await harness.send("artwork.refine", { dir: harness.dir, sessionId: handle.id, scope: "page", pageId, mode: "plan", message: "Review this slide visually" });
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+    } finally { await harness.close(); }
+  }, 60_000);
+
   it("planning records the outline without creating artwork", async () => {
     const harness = await setup({
       responses: [
@@ -302,6 +418,7 @@ describe("forma artwork pipeline", () => {
   ] as const)("builds %s directly from the brief without an outline via %s", async (output, command) => {
     const harness = await setup({
       output,
+      slideCount: 1,
       responses: [
         fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "First page", html: "<div>Built from the brief</div>", css: "", assets: [] })]),
         fauxAssistantMessage("Built", { stopReason: "stop" }),
@@ -332,6 +449,7 @@ describe("forma artwork pipeline", () => {
       responses: [
         (context: ModelContext) => {
           expect(context.tools?.map((tool: { name: string }) => tool.name)).toContain("view_image");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).toContain("view_artwork");
           expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("submit_page");
           return fauxAssistantMessage([fauxToolCall("view_image", { id: imageId })]);
         },
@@ -342,6 +460,7 @@ describe("forma artwork pipeline", () => {
         },
         (context: ModelContext) => {
           expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("view_image");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("view_artwork");
           return fauxAssistantMessage("I can use the reference information", { stopReason: "stop" });
         },
       ],
@@ -354,6 +473,7 @@ describe("forma artwork pipeline", () => {
       const viewed = await harness.send("artwork.refine", { dir: harness.dir, sessionId: handle.id, scope: "project", mode: "plan", message: "Look at my reference" });
       expect(viewed.ok, JSON.stringify(viewed)).toBe(true);
       expect(session.getActiveToolNames()).not.toContain("view_image");
+      expect(session.getActiveToolNames()).not.toContain("view_artwork");
       session.agent.state.model = textModel;
       const textOnly = await harness.send("artwork.refine", { dir: harness.dir, sessionId: handle.id, scope: "project", mode: "build", message: "What information is available?" });
       expect(textOnly.ok, JSON.stringify(textOnly)).toBe(true);

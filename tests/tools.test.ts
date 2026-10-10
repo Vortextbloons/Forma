@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { createToolHarness } from "rig/testing";
 import { researchTools } from "../src/tools/research.ts";
 import { projectRuns } from "../src/forma/runtime.ts";
+import { scheduleExtraction } from "../src/extraction/index.ts";
 import { writePage, readPage } from "../src/projects/pages.ts";
 import { projectTools } from "../src/tools/project.ts";
-import { createProject, openProject, updateProject } from "../src/projects/store.ts";
+import { createProject, importContextNote, openProject, updateProject } from "../src/projects/store.ts";
 import {
   clearSearchKey,
   credentialsFile,
@@ -114,6 +115,37 @@ describe("search tool gating", () => {
 });
 
 describe("artwork tools", () => {
+  it("continues truncated text inside the last page without losing characters", async () => {
+    const dir = await makeProject("text-continuation");
+    const { item } = await importContextNote(dir, "abcdefghij", "content-source", "Long note");
+    await scheduleExtraction(dir, item.id);
+    const tool = createToolHarness(projectTools.find((tool) => tool.name === "read_context")!, { cwd: dir });
+    const first = await tool.run({ id: item.id, maxChars: 4 }) as { truncated: boolean; pages: Array<{ text: string }>; next: { page: number; offset: number } };
+    expect(first.truncated).toBe(true);
+    expect(first.next).toEqual({ page: 1, offset: 4 });
+    const rest = await tool.run({ id: item.id, ...first.next, maxChars: 10 }) as { text: string; truncated: boolean };
+    expect(first.pages[0]!.text + rest.text).toBe("abcdefghij");
+    expect(rest.truncated).toBe(false);
+  });
+
+  it("enforces page scope for updates, submissions, restores, and outline edits", async () => {
+    const dir = await makeProject("page-scope");
+    const first = await writePage(dir, { index: 1, title: "One", html: "<p>one</p>", css: "" });
+    const second = await writePage(dir, { index: 2, title: "Two", html: "<p>two</p>", css: "" });
+    const session = { id: "page-scope" };
+    projectRuns.set(session.id, { mode: "build", artworkChanged: false, allowedPageIds: [first.pageId] });
+    try {
+      const run = (name: string, input: unknown) => createToolHarness(projectTools.find((tool) => tool.name === name)!, { cwd: dir, session }).run(input);
+      await expect(run("update_page", { pageId: second.pageId, html: "<p>wrong</p>" })).rejects.toThrow(/selected page/);
+      await expect(run("submit_page", { index: 2, html: "<p>wrong</p>" })).rejects.toThrow(/selected page/);
+      await expect(run("restore_page", { pageId: second.pageId })).rejects.toThrow(/selected page/);
+      await expect(run("submit_outline", { entries: [{ title: "Changed" }] })).rejects.toThrow(/cannot change/);
+      await run("update_page", { pageId: first.pageId, htmlEdits: [{ find: "one", replace: "blue" }] });
+      expect((await readPage(dir, first.pageId)).html).toContain("blue");
+      expect((await readPage(dir, second.pageId)).html).toContain("two");
+    } finally { projectRuns.delete(session.id); }
+  });
+
   it("blocks artwork creation and updates during a Plan run", async () => {
     const dir = await makeProject("plan-guard");
     const page = await writePage(dir, { index: 1, title: "Original", html: "<div>Original artwork</div>", css: "" });

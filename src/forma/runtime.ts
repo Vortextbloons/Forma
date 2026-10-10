@@ -12,7 +12,16 @@ export interface FormaEnv {
 
 let current: FormaEnv | undefined;
 
-export const projectRuns = new Map<string, { mode: "plan" | "build"; artworkChanged: boolean }>();
+export interface ProjectRun {
+  mode: "plan" | "build";
+  artworkChanged: boolean;
+  allowedPageIds?: string[];
+  changedPageIds?: Set<string>;
+  allowOutline?: boolean;
+  aborted?: boolean;
+}
+
+export const projectRuns = new Map<string, ProjectRun>();
 
 export function setFormaEnv(next: FormaEnv | undefined): void {
   current = next;

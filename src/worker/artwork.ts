@@ -1,16 +1,16 @@
 import { z } from "zod";
 import formaAgent from "../agent.ts";
-import { ModelError, ProtocolError, RuntimeError, serializeError } from "rig";
+import { CancellationError, ModelError, ProtocolError, RuntimeError, serializeError } from "rig";
 import type { WorkerResult } from "rig/ipc";
 import { FORMA_EVENTS } from "../forma/events.ts";
 import { applyDesignPrompt, generatePrompt, planPrompt, refinePrompt } from "../forma/prompts.ts";
-import { collectVisualReferences, viewImageTool, type PromptImage } from "../forma/visuals.ts";
-import { projectRuns } from "../forma/runtime.ts";
-import { deletePage, duplicatePage, movePage } from "../projects/pages.ts";
+import { collectVisualReferences, viewArtworkTool, viewImageTool, type VisualReferences } from "../forma/visuals.ts";
+import { projectRuns, type ProjectRun } from "../forma/runtime.ts";
+import { deletePage, duplicatePage, movePage, restorePage } from "../projects/pages.ts";
 import { effectiveSize } from "../projects/size.ts";
 import { openProject, setOutline, updateProject } from "../projects/store.ts";
 import { composePage } from "../rendering/compose.ts";
-import { validateProject } from "../rendering/validate.ts";
+import { validateProject, type ValidationReport } from "../rendering/validate.ts";
 import type { ProjectFile } from "../projects/schema.ts";
 import { resultErr, resultOk } from "./results.ts";
 import type { CommandHandler, WorkerContext } from "./commands.ts";
@@ -42,7 +42,7 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         model: asOptionalString(params.model),
         prompt: planPrompt(project),
         mode: "plan",
-        images,
+        references: images,
         imageMode: "required",
       });
       if (!result.ok) return result;
@@ -60,7 +60,7 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         model: asOptionalString(params.model),
         prompt: generatePrompt(project),
         mode: "build",
-        images,
+        references: images,
         imageMode: "required",
       });
       if (!result.ok) return result;
@@ -85,7 +85,7 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
       if (mode !== "plan" && mode !== "build") {
         throw new ProtocolError(`Invalid refinement mode "${mode}"`);
       }
-      const images = await collectVisualReferences(dir, project);
+      const images = await collectVisualReferences(dir, project, scope === "page" ? pageId : undefined);
       const result = await runArtwork(ctx, {
         kind: "refine",
         dir,
@@ -93,7 +93,8 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         model: asOptionalString(params.model),
         prompt: refinePrompt(project, scope, pageId, message, mode),
         mode,
-        images,
+        references: images,
+        allowedPageIds: scope === "page" && pageId ? [pageId] : undefined,
         imageMode: "optional",
       });
       if (!result.ok) return result;
@@ -111,7 +112,7 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         model: asOptionalString(params.model),
         prompt: applyDesignPrompt(project),
         mode: "build",
-        images,
+        references: images,
         imageMode: "optional",
       });
       if (!result.ok) return result;
@@ -152,6 +153,12 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
       return ok({ project: { dir, project } });
     },
 
+    async "artwork.restore"(params) {
+      const dir = asString(params.dir, "dir");
+      const { project, pageId } = await restorePage(dir, asString(params.pageId, "pageId"));
+      return ok({ project: { dir, project }, pageId });
+    },
+
     async "artwork.compose"(params) {
       const dir = asString(params.dir, "dir");
       const pageId = asString(params.pageId, "pageId");
@@ -185,7 +192,8 @@ interface ArtworkRunOptions {
   model?: string;
   prompt: string;
   mode: "plan" | "build";
-  images: PromptImage[];
+  references: VisualReferences;
+  allowedPageIds?: string[];
   imageMode: "required" | "optional";
 }
 
@@ -199,7 +207,7 @@ interface ProjectSession {
 
 async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promise<WorkerResult> {
   const handle = await ctx.getOrCreateSession(options.sessionId);
-  if (ctx.runs.get(handle.id)) {
+  if (ctx.runs.get(handle.id) || projectRuns.has(handle.id)) {
     throw new ProtocolError(
       `Session "${handle.id}" already has a running prompt; abort it first`,
     );
@@ -207,7 +215,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
   if (options.model) await ctx.runtime.models.select(options.model, handle.id);
   const session = handle.piSession as ProjectSession;
   const supportsImages = session.model?.input.includes("image") === true;
-  let images = options.images;
+  let images = options.references.images;
   if (images.length > 0) {
     if (!supportsImages) {
       if (options.imageMode === "required") {
@@ -230,38 +238,83 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
     JSON.stringify({ title: project.name, overview: project.prompt, settings: project.settings }),
     `Work mode: ${options.mode}.`,
     supportsImages
-      ? "You can view reference images with view_image using their ids from read_project."
+      ? "You can view reference images with view_image using their ids from read_project. After creating or editing artwork, use view_artwork to inspect the rendered page visually; omit pageId to check the deck's consistency."
       : "The current model cannot view images. Use reference text and image paths without claiming to have seen them.",
+    supportsImages ? `Attached reference images, in order: ${JSON.stringify(options.references.labels)}\nReferences not attached: ${JSON.stringify(options.references.skipped)}` : "",
   ].join("\n\n");
   loader.getAppendSystemPrompt = () => [...appendPrompt.call(loader), projectContext];
   session.setActiveToolsByName(options.mode === "plan"
-    ? tools.filter((name) => name !== "submit_page" && name !== "update_page")
+    ? tools.filter((name) => name !== "submit_page" && name !== "update_page" && name !== "restore_page")
     : tools);
-  if (supportsImages) session.agent.state.tools = [...session.agent.state.tools, viewImageTool(options.dir)];
-  const run = ctx.runs.start(handle.id);
-  const projectRun = { mode: options.mode, artworkChanged: false };
+  if (supportsImages) session.agent.state.tools = [...session.agent.state.tools, viewImageTool(options.dir), viewArtworkTool(options.dir)];
+  const projectRun: ProjectRun = { mode: options.mode, artworkChanged: false, allowedPageIds: options.allowedPageIds, changedPageIds: new Set(), allowOutline: options.kind !== "artwork" && options.kind !== "design" };
   projectRuns.set(handle.id, projectRun);
   ctx.formaEvents.emit(
     FORMA_EVENTS.progress,
     { kind: options.kind, phase: "started", total },
     handle.id,
   );
+  let result: WorkerResult = resultOk("");
+  let prompt = options.prompt;
   try {
-    await ctx.runtime.prompt(options.prompt, {
-      sessionId: handle.id,
-      ...(images.length > 0 ? { images } : {}),
-    });
-  } catch (error) {
-    run.markAbortedIfAbortError(error);
-    if (!run.settled) {
-      run.settle(resultErr("", serializeError(error)));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (projectRun.aborted) throw new CancellationError();
+      const run = ctx.runs.start(handle.id);
+      try {
+        await ctx.runtime.prompt(prompt, {
+          sessionId: handle.id,
+          ...(attempt === 0 && images.length > 0 ? { images } : {}),
+        });
+      } catch (error) {
+        run.markAbortedIfAbortError(error);
+        if (!run.settled) run.settle(resultErr("", serializeError(error)));
+      }
+      result = await run.result;
+      if (!result.ok || options.mode === "plan" || (!projectRun.artworkChanged && options.kind === "refine")) break;
+      const current = await openProject(options.dir);
+      const fullCheck = options.kind === "artwork" || options.kind === "design" || project.pages.length === 0;
+      let reports: ValidationReport[];
+      if (fullCheck) {
+        const ids = options.kind === "design" ? project.pages : project.outline?.map((entry) => entry.id);
+        const report = await validateProject(options.dir, current, ids, options.kind === "design" ? project.pages.length : total);
+        if (options.kind === "design") {
+          const unchanged = project.pages.filter((id) => !projectRun.changedPageIds?.has(id));
+          if (unchanged.length) report.issues.push({ kind: "incomplete", message: "Design changes have not been applied to all pages.", detail: JSON.stringify(unchanged) });
+        }
+        reports = [report];
+      } else {
+        const affectedContext = new Set([...projectRun.changedPageIds!].flatMap((id) => [
+          ...(project.pageMeta[id]?.assets ?? []), ...(current.pageMeta[id]?.assets ?? []),
+          ...Object.keys(project.pageMeta[id]?.evidence ?? {}), ...Object.keys(current.pageMeta[id]?.evidence ?? {}),
+        ]));
+        const report = await validateProject(options.dir, current);
+        report.issues = report.issues.filter((issue) => issue.pageId ? projectRun.changedPageIds?.has(issue.pageId) : !!issue.contextId && affectedContext.has(issue.contextId));
+        reports = [report];
+      }
+      if (projectRun.aborted) throw new CancellationError();
+      const issues = reports.flatMap((report) => report.issues);
+      const renderError = reports.find((report) => report.renderError)?.renderError;
+      ctx.formaEvents.emit(FORMA_EVENTS.validationReady, { issues, pages: reports.reduce((count, report) => count + report.pages, 0), ...(renderError ? { renderError } : {}) }, handle.id);
+      if (issues.length === 0 && !renderError) {
+        if (projectRun.artworkChanged && (fullCheck || project.artworkRevision === project.settingsRevision || project.pages.every((id) => projectRun.changedPageIds?.has(id)))) {
+          await commitArtwork(options.dir, project.settingsRevision);
+        }
+        break;
+      }
+      const error = new RuntimeError(renderError ? "Artwork was saved, but rendering checks are unavailable." : "Artwork is incomplete or has unresolved validation issues.", {
+        details: { reason: renderError ? "artwork-unchecked" : "artwork-incomplete", issues, renderError },
+      });
+      result = resultErr("", serializeError(error));
+      if (attempt === 1 || renderError) break;
+      prompt = `The artwork is not finished. Fix these validation failures, preserving the approved outline and page scope. Read existing pages before editing; create only missing pages. Do not finish until these failures are resolved:\n${JSON.stringify(issues)}`;
     }
+  } catch (error) {
+    result = resultErr("", serializeError(error));
+  } finally {
+    projectRuns.delete(handle.id);
+    loader.getAppendSystemPrompt = appendPrompt;
+    session.setActiveToolsByName(tools);
   }
-  const result = await run.result;
-  projectRuns.delete(handle.id);
-  loader.getAppendSystemPrompt = appendPrompt;
-  session.setActiveToolsByName(tools);
-  if (result.ok && projectRun.artworkChanged) await commitArtwork(options.dir, project.settingsRevision);
   const error = result.ok === false ? result.error : undefined;
   ctx.formaEvents.emit(
     FORMA_EVENTS.runSettled,

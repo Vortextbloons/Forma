@@ -3,7 +3,7 @@ import { RuntimeError, type RigTool, type ToolContext } from "rig";
 import { loadExtraction } from "../extraction/index.ts";
 import { FORMA_EVENTS } from "../forma/events.ts";
 import { formaEnv, projectRuns } from "../forma/runtime.ts";
-import { pageRefs, readPage, updatePage, writePage } from "../projects/pages.ts";
+import { pageRefs, readPage, restorePage, updatePage, writePage } from "../projects/pages.ts";
 import { openProject, setOutline } from "../projects/store.ts";
 import { effectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
@@ -26,6 +26,7 @@ const readContextInput = z.object({
   id: z.string().optional().describe("Context item id; omit to list all items"),
   page: z.number().int().positive().optional().describe("PDF page number to read"),
   maxChars: z.number().int().positive().max(60_000).optional(),
+  offset: z.number().int().nonnegative().optional().describe("Character offset within a specific page; use nextOffset to continue"),
 });
 
 const submitOutlineInput = z.object({
@@ -43,7 +44,10 @@ const submitPageInput = z.object({
   html: z.string().min(1).describe("Artwork HTML fragment (no <script>)"),
   css: z.string().default("").describe("CSS scoped to this page"),
   assets: z.array(z.string()).default([]).describe("Context item ids used on this page"),
+  evidence: z.record(z.string(), z.string()).optional().describe("For required text sources: context id mapped to an exact excerpt shown in the artwork"),
 });
+
+const sourceEdits = z.array(z.object({ find: z.string().min(1), replace: z.string() })).min(1);
 
 const updatePageInput = z.object({
   pageId: z.string().describe("Page id from read_project"),
@@ -51,6 +55,9 @@ const updatePageInput = z.object({
   html: z.string().optional(),
   css: z.string().optional(),
   assets: z.array(z.string()).optional(),
+  evidence: z.record(z.string(), z.string()).optional(),
+  htmlEdits: sourceEdits.optional().describe("Exact unique find/replace edits to HTML; prefer for small changes"),
+  cssEdits: sourceEdits.optional().describe("Exact unique find/replace edits to CSS; prefer for small changes"),
 });
 
 const pageIdInput = z.object({ pageId: z.string() });
@@ -61,6 +68,7 @@ export const projectTools: Array<RigTool<z.ZodTypeAny, unknown>> = [
   submitOutlineTool(),
   submitPageTool(),
   updatePageTool(),
+  restorePageTool(),
   readPageTool(),
   inspectPageTool(),
 ];
@@ -170,6 +178,9 @@ function readContextTool(): RigTool<typeof readContextInput, unknown> {
         };
       }
       const maxChars = input.maxChars ?? 20_000;
+      if (input.offset !== undefined && input.page === undefined) {
+        throw new RuntimeError("Specify a page when using a character offset.");
+      }
       if (input.page !== undefined) {
         const page = extraction.pages.find((entry) => entry.page === input.page);
         if (!page) {
@@ -183,23 +194,27 @@ function readContextTool(): RigTool<typeof readContextInput, unknown> {
           page: page.page,
           totalPages: extraction.pages.length,
           source: page.source,
-          text: truncate(page.text, maxChars),
+          ...textChunk(page.text, maxChars, input.offset ?? 0),
         };
       }
       let budget = maxChars;
       const pages = [];
       for (const page of extraction.pages) {
         if (budget <= 0) break;
-        const text = truncate(page.text, budget);
+        const chunk = textChunk(page.text, budget);
+        const text = chunk.text;
         budget -= text.length;
-        pages.push({ page: page.page, source: page.source, text });
+        pages.push({ page: page.page, source: page.source, ...chunk });
       }
       return {
         id: item.id,
         name: item.name,
         kind: extraction.kind,
         totalPages: extraction.pages.length,
-        truncated: pages.length < extraction.pages.length,
+        truncated: pages.length < extraction.pages.length || pages.some((page) => page.truncated),
+        next: pages.at(-1)?.truncated
+          ? { page: pages.at(-1)!.page, offset: pages.at(-1)!.nextOffset }
+          : pages.length < extraction.pages.length ? { page: extraction.pages[pages.length]!.page, offset: 0 } : undefined,
         pages,
       };
     },
@@ -215,6 +230,10 @@ function submitOutlineTool(): RigTool<typeof submitOutlineInput, unknown> {
     async execute(input, ctx) {
       const dir = dirOf(ctx);
       const project = await openProject(dir);
+      const run = projectRuns.get(ctx.session.id);
+      if (run?.allowedPageIds || run?.allowOutline === false) {
+        throw new RuntimeError("This run cannot change the project outline. Revise it in a planning run first.");
+      }
       if (project.settings.output === "poster" && input.entries.length !== 1) {
         throw new RuntimeError(
           `This is a poster project; submit_outline expects exactly one composition brief entry (got ${input.entries.length})`,
@@ -251,6 +270,7 @@ function submitPageTool(): RigTool<typeof submitPageInput, unknown> {
       if (run?.mode === "plan") throw new RuntimeError("Switch to Build to create artwork.");
       const dir = dirOf(ctx);
       const before = await openProject(dir);
+      assertPageScope(ctx, input.pageId ?? before.pages[input.index - 1] ?? before.outline?.[input.index - 1]?.id);
       const { project, pageId } = await writePage(dir, {
         pageId: input.pageId,
         index: input.index,
@@ -258,9 +278,11 @@ function submitPageTool(): RigTool<typeof submitPageInput, unknown> {
         html: input.html,
         css: input.css,
         assets: input.assets,
+        evidence: input.evidence,
       });
       const index = project.pages.indexOf(pageId);
       if (run) run.artworkChanged = true;
+      run?.changedPageIds?.add(pageId);
       const total = totalPages(before);
       ctx.progress.report({
         message: `Page ${index + 1}/${total} ready`,
@@ -290,10 +312,14 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         input.title === undefined &&
         input.html === undefined &&
         input.css === undefined &&
-        input.assets === undefined
+        input.assets === undefined &&
+        input.evidence === undefined &&
+        input.htmlEdits === undefined &&
+        input.cssEdits === undefined
       ) {
-        throw new RuntimeError("update_page needs at least one of title, html, css, or assets");
+        throw new RuntimeError("update_page needs a title, source, targeted edit, assets, or evidence change");
       }
+      assertPageScope(ctx, input.pageId);
       const dir = dirOf(ctx);
       const before = await openProject(dir);
       const { project, pageId } = await updatePage(dir, input.pageId, {
@@ -301,8 +327,12 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         html: input.html,
         css: input.css,
         assets: input.assets,
+        evidence: input.evidence,
+        htmlEdits: input.htmlEdits,
+        cssEdits: input.cssEdits,
       });
       if (run) run.artworkChanged = true;
+      run?.changedPageIds?.add(pageId);
       const index = project.pages.indexOf(pageId);
       emit(
         FORMA_EVENTS.pageReady,
@@ -339,6 +369,7 @@ function readPageTool(): RigTool<typeof pageIdInput, unknown> {
         index: project.pages.indexOf(input.pageId) + 1,
         title: meta?.title ?? "",
         assets: meta?.assets ?? [],
+        evidence: meta?.evidence ?? {},
         html: source.html,
         css: source.css,
       };
@@ -370,6 +401,33 @@ function inspectPageTool(): RigTool<typeof pageIdInput, unknown> {
   };
 }
 
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
+function textChunk(text: string, max: number, offset = 0) {
+  const end = Math.min(text.length, offset + max);
+  return { text: text.slice(offset, end), offset, truncated: end < text.length, nextOffset: end < text.length ? end : undefined };
+}
+
+function assertPageScope(ctx: ToolContext, pageId: string | undefined): void {
+  const allowed = projectRuns.get(ctx.session.id)?.allowedPageIds;
+  if (allowed && (!pageId || !allowed.includes(pageId))) {
+    throw new RuntimeError("This refinement can only change the selected page.", { details: { allowedPageIds: allowed } });
+  }
+}
+
+function restorePageTool(): RigTool<typeof pageIdInput, unknown> {
+  return {
+    name: "restore_page",
+    description: "Restore a page's previous source, title, assets, and evidence. The replaced version becomes the next restore point.",
+    input: pageIdInput,
+    async execute(input, ctx) {
+      const run = projectRuns.get(ctx.session.id);
+      if (run?.mode === "plan") throw new RuntimeError("Switch to Build to restore artwork.");
+      assertPageScope(ctx, input.pageId);
+      const { project, pageId } = await restorePage(dirOf(ctx), input.pageId);
+      if (run) run.artworkChanged = true;
+      run?.changedPageIds?.add(pageId);
+      const index = project.pages.indexOf(pageId);
+      emit(FORMA_EVENTS.pageReady, { pageId, index, total: totalPages(project), title: project.pageMeta[pageId]?.title ?? "" }, ctx);
+      return { ok: true, pageId, index: index + 1 };
+    },
+  };
 }

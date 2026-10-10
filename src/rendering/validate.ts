@@ -1,5 +1,7 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { RuntimeError } from "rig";
+import { loadExtraction } from "../extraction/index.ts";
 import { readPage } from "../projects/pages.ts";
 import { effectiveSize, type EffectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
@@ -9,11 +11,13 @@ export type ValidationIssueKind =
   | "missing-asset"
   | "overflow"
   | "clipped-text"
+  | "incomplete"
   | "must-include";
 
 export interface ValidationIssue {
   pageId?: string;
   pageIndex?: number;
+  contextId?: string;
   kind: ValidationIssueKind;
   message: string;
   detail?: string;
@@ -26,24 +30,16 @@ export interface ValidationReport {
   checkedAt: string;
 }
 
-export async function validateProject(dir: string, project: ProjectFile): Promise<ValidationReport> {
+export async function validateProject(dir: string, project: ProjectFile, expectedPageIds?: string[], expectedCount?: number): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
   const size = effectiveSize(project.settings);
   const composed = new Map<string, string>();
 
-  const covered = new Set<string>();
-  for (const entry of project.outline ?? []) {
-    for (const asset of entry.assetIds) covered.add(asset);
+  if (expectedCount !== undefined && project.pages.length !== expectedCount) {
+    issues.push({ kind: "incomplete", message: `Expected ${expectedCount} pages, found ${project.pages.length}.` });
   }
-  for (const id of project.pages) {
-    for (const asset of project.pageMeta[id]?.assets ?? []) covered.add(asset);
-  }
-  for (const item of project.context) {
-    if (item.role !== "must-include" || covered.has(item.id)) continue;
-    issues.push({
-      kind: "must-include",
-      message: `"${item.name}" is marked Must Include but is not assigned to any slide`,
-    });
+  if (expectedPageIds && (project.pages.length !== expectedPageIds.length || project.pages.some((id, index) => id !== expectedPageIds[index]))) {
+    issues.push({ kind: "incomplete", message: "The artwork must match the expected page ids and order.", detail: JSON.stringify({ expectedPageIds, actualPageIds: project.pages }) });
   }
 
   for (const [index, pageId] of project.pages.entries()) {
@@ -67,13 +63,77 @@ export async function validateProject(dir: string, project: ProjectFile): Promis
     composed.set(pageId, page.html);
   }
 
-  const renderError = await checkLayout(project, size, composed, issues);
+  const rendered = new Map<string, RenderedPage>();
+  const renderError = await checkLayout(project, size, composed, issues, rendered);
+  for (const item of project.context) {
+    if (item.role !== "must-include") continue;
+    let included = false;
+    if (item.mime.startsWith("image/")) {
+      const data = await readFile(resolve(dir, item.asset)).catch(() => undefined);
+      const encoded = data?.toString("base64");
+      included = !!encoded && [...rendered.values()].some((page) => page.assetUrls.some((url) => url.includes(encoded)));
+    } else {
+      const extraction = await loadExtraction(dir, item.id);
+      const sourceText = normalizeText(extraction?.pages.map((page) => page.text).join(" ") ?? "");
+      included = [...rendered.entries()].some(([pageId, page]) => {
+        const evidence = normalizeText(project.pageMeta[pageId]?.evidence?.[item.id] ?? "");
+        return !!evidence && sourceText.includes(evidence) && normalizeText(page.text).includes(evidence);
+      });
+    }
+    if (!included) issues.push({
+      kind: "must-include",
+      contextId: item.id,
+      message: item.mime.startsWith("image/")
+        ? `"${item.name}" is marked Must Include but is not visible in the artwork.`
+        : `"${item.name}" is marked Must Include but has no source excerpt visible in the artwork. Supply evidence with its context id and the exact excerpt shown.`,
+    });
+  }
   return {
     issues,
     ...(renderError ? { renderError } : {}),
     pages: project.pages.length,
     checkedAt: new Date().toISOString(),
   };
+}
+
+interface RenderedPage {
+  text: string;
+  assetUrls: string[];
+  screenshot?: Uint8Array;
+}
+
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export async function renderArtworkPreview(dir: string, project: ProjectFile, pageId?: string): Promise<{ data: Buffer; issues: ValidationIssue[] }> {
+  const size = effectiveSize(project.settings);
+  const ids = pageId ? [pageId] : project.pages;
+  const composed = new Map<string, string>();
+  for (const id of ids) composed.set(id, (await composePage(dir, id, size)).html);
+  const issues: ValidationIssue[] = [];
+  const rendered = new Map<string, RenderedPage>();
+  const error = await checkLayout(project, size, composed, issues, rendered, true);
+  if (error) throw new RuntimeError(error);
+  if (pageId) return { data: Buffer.from(rendered.get(pageId)!.screenshot!), issues };
+  const { createCanvas, loadImage } = await import("@napi-rs/canvas");
+  const viewport = cssPixelSize(size);
+  const columns = Math.min(3, ids.length);
+  const width = 480;
+  const height = Math.round(width * viewport.height / viewport.width);
+  const canvas = createCanvas(columns * width, Math.ceil(ids.length / columns) * (height + 30));
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#eeeeee";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.font = '16px "Segoe UI", sans-serif';
+  for (const [index, id] of ids.entries()) {
+    const x = (index % columns) * width;
+    const y = Math.floor(index / columns) * (height + 30);
+    context.drawImage(await loadImage(Buffer.from(rendered.get(id)!.screenshot!)), x, y, width, height);
+    context.fillStyle = "#222222";
+    context.fillText(`${index + 1}: ${id}`, x + 8, y + height + 21);
+  }
+  return { data: await canvas.encode("png"), issues };
 }
 
 export async function validateSinglePage(
@@ -124,6 +184,8 @@ async function checkLayout(
   size: EffectiveSize,
   composed: Map<string, string>,
   issues: ValidationIssue[],
+  rendered?: Map<string, RenderedPage>,
+  capture = false,
 ): Promise<string | undefined> {
   if (composed.size === 0) return undefined;
   const viewport = cssPixelSize(size);
@@ -161,6 +223,26 @@ async function checkLayout(
         const root =
           document.querySelector<HTMLElement>(".forma-page") ?? document.documentElement;
         const rect = root.getBoundingClientRect();
+        function visible(element: Element, bounds = element.getBoundingClientRect()): boolean {
+          if (bounds.width <= 0 || bounds.height <= 0 || bounds.right <= rect.left || bounds.left >= rect.right || bounds.bottom <= rect.top || bounds.top >= rect.bottom) return false;
+          for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+            if (style.overflowX === "hidden" || style.overflowY === "hidden" || style.overflow === "clip") {
+              const clip = parent.getBoundingClientRect();
+              if (bounds.right <= clip.left || bounds.left >= clip.right || bounds.bottom <= clip.top || bounds.top >= clip.bottom) return false;
+            }
+          }
+          return true;
+        }
+        const visibleText: string[] = [];
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          if (node.parentElement && visible(node.parentElement, range.getBoundingClientRect())) visibleText.push(node.textContent ?? "");
+        }
         const clipped: Array<{ selector: string; heightOver: number; widthOver: number }> = [];
         for (const element of root.querySelectorAll<HTMLElement>("*")) {
           const style = getComputedStyle(element);
@@ -185,12 +267,23 @@ async function checkLayout(
           }
         }
         return {
+          text: visibleText.join(" "),
+          assetUrls: [root, ...root.querySelectorAll<HTMLElement>("*")].flatMap((element) => {
+            const style = getComputedStyle(element);
+            if (!visible(element)) return [];
+            return [element instanceof HTMLImageElement && element.naturalWidth > 0 ? element.currentSrc : "", style.backgroundImage, element instanceof SVGImageElement ? element.href.baseVal : ""].filter(Boolean);
+          }),
           overflowX: root.scrollWidth - root.clientWidth,
           overflowY: root.scrollHeight - root.clientHeight,
           viewportWidth: Math.round(rect.width),
           viewportHeight: Math.round(rect.height),
           clipped,
         };
+      });
+      rendered?.set(pageId, {
+        text: metrics.text,
+        assetUrls: metrics.assetUrls,
+        ...(capture ? { screenshot: await page.screenshot({ type: "png" }) } : {}),
       });
       if (metrics.overflowX > 2 || metrics.overflowY > 2) {
         issues.push({
@@ -211,6 +304,8 @@ async function checkLayout(
         });
       }
     }
+  } catch (error) {
+    return `Layout checks failed: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     await browser.close().catch(() => undefined);
   }

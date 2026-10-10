@@ -3,6 +3,7 @@ import { notificationStore } from "../rig/stores/notificationStore.svelte";
 import { sessionStore } from "../rig/stores/sessionStore.svelte";
 import { messageStore } from "../rig/stores/messageStore.svelte";
 import { modelStore } from "../rig/stores/modelStore.svelte";
+import { workerStore } from "../rig/stores/workerStore.svelte";
 import { isFormaDomainEvent, type FormaDomainEvent, type SessionStatus } from "../rig/types";
 import {
   parseProjectLibrary,
@@ -122,8 +123,11 @@ export async function openProject(dir: string): Promise<void> {
   opening = true;
   saveStatus = "saving";
   try {
-    await openProjectDir(dir);
-    await waitForReady(60_000);
+    if (workerStore.status !== "ready" || workerStore.readyInfo?.projectDir !== dir) {
+      const ready = waitForReady(60_000);
+      await openProjectDir(dir);
+      await ready;
+    }
     const data = await sendCommand("project.open", { dir }, { timeoutMs: 60_000 });
     await attach(parseProjectSnapshot(data));
   } catch (error) {
@@ -144,9 +148,7 @@ async function attach(snapshot: ProjectSnapshot): Promise<void> {
   composed = {};
   selectedPageId = snapshot.project.pages[0] ?? null;
   needsImageModel = false;
-  await loadProjects();
-  await refreshSearchCredentials();
-  await ensureConversation();
+  await Promise.all([loadProjects(), refreshSearchCredentials(), ensureConversation()]);
 }
 
 let conversationChain = Promise.resolve();

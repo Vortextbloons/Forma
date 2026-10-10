@@ -17,7 +17,7 @@ import type { WorkerAgentHost } from "./host.ts";
 import type { PendingRunRegistry } from "./runs.ts";
 import { createArtworkHandlers } from "./artwork.ts";
 import { scheduleExtraction, loadExtraction } from "../extraction/index.ts";
-import type { FormaEventSink } from "../forma/runtime.ts";
+import { projectRuns, type FormaEventSink } from "../forma/runtime.ts";
 import {
   SEARCH_PROVIDERS,
   clearSearchKey,
@@ -98,7 +98,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const prompt = asString(params.prompt, "prompt");
       const sessionId = asOptionalString(params.sessionId);
       const handle = await ctx.getOrCreateSession(sessionId);
-      if (ctx.runs.get(handle.id)) {
+      if (ctx.runs.get(handle.id) || projectRuns.has(handle.id)) {
         throw new ProtocolError(
           `Session "${handle.id}" already has a running prompt; abort it first`,
         );
@@ -121,6 +121,8 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     async abort(params) {
       const sessionId = asOptionalString(params.sessionId) ?? ctx.defaultSessionId();
       if (sessionId) {
+        const projectRun = projectRuns.get(sessionId);
+        if (projectRun) projectRun.aborted = true;
         const handle = runtime.sessions.get(sessionId);
         if (handle) {
           const run = ctx.runs.get(sessionId);

@@ -39,6 +39,7 @@ export interface WritePageInput {
   html: string;
   css: string;
   assets?: string[];
+  evidence?: Record<string, string>;
 }
 
 export async function writePage(
@@ -48,6 +49,7 @@ export async function writePage(
   const project = await openProject(dir);
   assertPageSource(input.html, input.css);
   const assets = normalizeAssets(project, input.assets);
+  normalizeAssets(project, Object.keys(input.evidence ?? {}));
   let pageId = input.pageId;
   let index = input.index;
   if (pageId) {
@@ -78,10 +80,19 @@ export async function writePage(
     }
     pageId = project.pages[index - 1] ?? project.outline?.[index - 1]?.id ?? newPageId();
   }
+  if (index > project.pages.length + 1) {
+    throw new RuntimeError(`Pages must be submitted sequentially (next: ${project.pages.length + 1}).`);
+  }
+  const maximum = project.settings.output === "poster" ? 1 : project.outline?.length ?? project.settings.slideCount;
+  if (index > maximum && !project.pages.includes(pageId)) {
+    throw new RuntimeError(`This project expects ${maximum} pages; there is no page ${index}.`);
+  }
+  if (project.pages.includes(pageId)) await savePreviousPage(dir, pageId, project);
   await mkdir(pagesDir(dir), { recursive: true });
   await atomicWriteFile(pageHtmlPath(dir, pageId), ensureTrailingNewline(input.html));
   await atomicWriteFile(pageCssPath(dir, pageId), ensureTrailingNewline(input.css));
   const updated = await updateProject(dir, (current) => {
+    current.artworkRevision = -1;
     const position = current.pages.indexOf(pageId!);
     if (position === -1) {
       current.pages.splice(index - 1, 0, pageId!);
@@ -89,6 +100,7 @@ export async function writePage(
     current.pageMeta[pageId!] = {
       title: input.title.trim(),
       assets,
+      evidence: input.evidence ?? {},
       updatedAt: nowIso(),
     };
   });
@@ -100,6 +112,9 @@ export interface PagePatch {
   html?: string;
   css?: string;
   assets?: string[];
+  evidence?: Record<string, string>;
+  htmlEdits?: Array<{ find: string; replace: string }>;
+  cssEdits?: Array<{ find: string; replace: string }>;
 }
 
 export async function updatePage(
@@ -111,28 +126,57 @@ export async function updatePage(
   if (!project.pages.includes(pageId)) {
     throw new RuntimeError(`Unknown page "${pageId}"`, { details: { pageId } });
   }
-  if (patch.html !== undefined || patch.css !== undefined) {
-    const current = await readPage(dir, pageId);
-    const html = patch.html ?? current.html;
-    const css = patch.css ?? current.css;
-    assertPageSource(html, css);
-    if (patch.html !== undefined) {
-      await atomicWriteFile(pageHtmlPath(dir, pageId), ensureTrailingNewline(patch.html));
-    }
-    if (patch.css !== undefined) {
-      await atomicWriteFile(pageCssPath(dir, pageId), ensureTrailingNewline(patch.css));
-    }
-  }
+  const current = await readPage(dir, pageId);
+  const html = editSource(current.html, patch.html, patch.htmlEdits);
+  const css = editSource(current.css, patch.css, patch.cssEdits);
+  assertPageSource(html, css);
   const assets = patch.assets === undefined ? undefined : normalizeAssets(project, patch.assets);
+  normalizeAssets(project, Object.keys(patch.evidence ?? {}));
+  await savePreviousPage(dir, pageId, project);
+  if (html !== current.html) await atomicWriteFile(pageHtmlPath(dir, pageId), ensureTrailingNewline(html));
+  if (css !== current.css) await atomicWriteFile(pageCssPath(dir, pageId), ensureTrailingNewline(css));
   const updated = await updateProject(dir, (current) => {
+    current.artworkRevision = -1;
     const meta = current.pageMeta[pageId] ?? { title: "", assets: [] };
     current.pageMeta[pageId] = {
       title: patch.title?.trim() ?? meta.title,
       assets: assets ?? meta.assets,
+      evidence: patch.evidence ?? meta.evidence ?? {},
       updatedAt: nowIso(),
     };
   });
   return { project: updated, pageId };
+}
+
+function editSource(source: string, replacement: string | undefined, edits: PagePatch["htmlEdits"]): string {
+  if (replacement !== undefined && edits !== undefined) {
+    throw new RuntimeError("Choose a full replacement or targeted edits for each source, not both.");
+  }
+  let result = replacement ?? source;
+  for (const edit of edits ?? []) {
+    const index = result.indexOf(edit.find);
+    if (!edit.find || index === -1 || result.indexOf(edit.find, index + 1) !== -1) {
+      throw new RuntimeError("Each targeted edit must match exactly once. Read the page and use a unique find string.");
+    }
+    result = result.slice(0, index) + edit.replace + result.slice(index + edit.find.length);
+  }
+  return result;
+}
+
+async function savePreviousPage(dir: string, pageId: string, project: ProjectFile): Promise<void> {
+  const source = await readPage(dir, pageId);
+  const historyDir = join(pagesDir(dir), ".history");
+  await mkdir(historyDir, { recursive: true });
+  await atomicWriteFile(join(historyDir, `${pageId}.json`), JSON.stringify({ ...source, meta: project.pageMeta[pageId] ?? { title: "", assets: [] } }));
+}
+
+export async function restorePage(dir: string, pageId: string): Promise<{ project: ProjectFile; pageId: string }> {
+  const project = await openProject(dir);
+  if (!project.pages.includes(pageId)) throw new RuntimeError(`Unknown page "${pageId}"`);
+  const previous = await readFile(join(pagesDir(dir), ".history", `${pageId}.json`), "utf8")
+    .catch(() => { throw new RuntimeError(`No previous version is available for page "${pageId}"`); });
+  const { html, css, meta } = JSON.parse(previous) as PageSource & { meta: PageMeta };
+  return updatePage(dir, pageId, { html, css, title: meta.title, assets: meta.assets, evidence: meta.evidence ?? {} });
 }
 
 export async function readPage(dir: string, pageId: string): Promise<PageSource> {
@@ -185,6 +229,7 @@ export async function duplicatePage(
     current.pageMeta[copyId] = {
       title: `${sourceMeta.title || "Slide"} copy`,
       assets: [...sourceMeta.assets],
+      evidence: sourceMeta.evidence,
       updatedAt: nowIso(),
     };
   });

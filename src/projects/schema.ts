@@ -113,6 +113,7 @@ export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 export const pageMetaSchema = z.object({
   title: z.string().default(""),
   assets: z.array(z.string()).default([]),
+  evidence: z.record(z.string(), z.string()).optional(),
   updatedAt: z.string().optional(),
 });
 

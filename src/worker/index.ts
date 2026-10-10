@@ -147,6 +147,7 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
   const config = resolveRigConfig({
     ...defaultRigConfig(),
     workspace: "shared",
+    capabilities: { question: true, todo: true },
     logLevel,
   });
 

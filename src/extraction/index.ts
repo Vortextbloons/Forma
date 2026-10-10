@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { extractPdf } from "./pdf.ts";
 import { normalizeText, type ExtractionResult } from "./types.ts";
 import { FORMA_EVENTS } from "../forma/events.ts";
 import { formaEnv } from "../forma/runtime.ts";
@@ -20,6 +19,7 @@ export async function extractContext(
 ): Promise<ExtractionResult | null> {
   const assetPath = resolve(dir, item.asset);
   if (item.mime === "application/pdf") {
+    const { extractPdf } = await import("./pdf.ts");
     return extractPdf(assetPath);
   }
   if (item.mime === "text/plain" || item.mime === "text/markdown") {

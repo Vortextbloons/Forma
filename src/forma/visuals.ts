@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { RuntimeError } from "rig";
 import { openProject } from "../projects/store.ts";
-import type { ProjectFile } from "../projects/schema.ts";
+import type { ContextItem, ProjectFile } from "../projects/schema.ts";
+import { renderArtworkPreview } from "../rendering/validate.ts";
 
 const ATTACHABLE = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_IMAGES = 6;
@@ -11,6 +12,23 @@ const MAX_BYTES = 6 * 1024 * 1024;
 export interface PromptImage {
   data: string;
   mediaType: string;
+}
+
+export interface VisualReferences {
+  images: PromptImage[];
+  labels: Array<{ id: string; name: string; role: string; path: string }>;
+  skipped: Array<{ id: string; name: string; reason: string }>;
+}
+
+async function referenceImage(dir: string, item: ContextItem, signal?: AbortSignal): Promise<PromptImage> {
+  const data = await readFile(resolve(dir, item.asset), { signal });
+  if (data.byteLength <= MAX_BYTES) return { data: data.toString("base64"), mediaType: item.mime };
+  const { createCanvas, loadImage } = await import("@napi-rs/canvas");
+  const image = await loadImage(data);
+  const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
+  const canvas = createCanvas(Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  return { data: (await canvas.encode("webp", 85)).toString("base64"), mediaType: "image/webp" };
 }
 
 export function viewImageTool(dir: string) {
@@ -30,12 +48,11 @@ export function viewImageTool(dir: string) {
       if (!item || !ATTACHABLE.has(item.mime)) {
         throw new RuntimeError("Choose a PNG, JPEG, or WebP reference image from read_project.");
       }
-      const data = await readFile(resolve(dir, item.asset), { signal });
-      if (data.byteLength > MAX_BYTES) throw new RuntimeError("This reference image exceeds the 6 MB viewing limit.");
+      const image = await referenceImage(dir, item, signal);
       return {
         content: [
-          { type: "text" as const, text: `${item.name} (${item.asset})` },
-          { type: "image" as const, data: data.toString("base64"), mimeType: item.mime },
+          { type: "text" as const, text: `${item.id}: ${item.name} [${item.role}] (${item.asset})` },
+          { type: "image" as const, data: image.data, mimeType: image.mediaType },
         ],
         details: { id: item.id, path: item.asset },
       };
@@ -46,17 +63,54 @@ export function viewImageTool(dir: string) {
 export async function collectVisualReferences(
   dir: string,
   project: ProjectFile,
-): Promise<PromptImage[]> {
-  const items = project.context.filter((item) => ATTACHABLE.has(item.mime));
-  const images: PromptImage[] = [];
-  for (const item of items.slice(0, MAX_IMAGES)) {
-    try {
-      const data = await readFile(resolve(dir, item.asset));
-      if (data.byteLength > MAX_BYTES) continue;
-      images.push({ data: data.toString("base64"), mediaType: item.mime });
-    } catch {
+  pageId?: string,
+): Promise<VisualReferences> {
+  const assigned = new Set([
+    ...(project.pageMeta[pageId ?? ""]?.assets ?? []),
+    ...(project.outline?.filter((entry) => !pageId || entry.id === pageId).flatMap((entry) => entry.assetIds) ?? []),
+  ]);
+  const items = project.context.filter((item) => ATTACHABLE.has(item.mime))
+    .sort((a, b) => Number(assigned.has(b.id)) - Number(assigned.has(a.id)) || Number(b.role === "must-include") - Number(a.role === "must-include"));
+  const result: VisualReferences = { images: [], labels: [], skipped: [] };
+  for (const item of items) {
+    if (result.images.length >= MAX_IMAGES) {
+      result.skipped.push({ id: item.id, name: item.name, reason: "Attachment limit; available through view_image" });
       continue;
     }
+    try {
+      result.images.push(await referenceImage(dir, item));
+      result.labels.push({ id: item.id, name: item.name, role: item.role, path: item.asset });
+    } catch (error) {
+      result.skipped.push({ id: item.id, name: item.name, reason: error instanceof Error ? error.message : String(error) });
+    }
   }
-  return images;
+  return result;
+}
+
+export function viewArtworkTool(dir: string) {
+  return {
+    name: "view_artwork",
+    label: "View rendered artwork",
+    description: "View a rendered page and its layout diagnostics. Omit pageId for a labeled deck contact sheet. Use after creating or refining artwork to judge visual quality.",
+    parameters: {
+      type: "object",
+      properties: { pageId: { type: "string", description: "Page id from read_project; omit to view the deck" } },
+      additionalProperties: false,
+    },
+    async execute(_toolCallId: string, { pageId }: { pageId?: string }, signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const project = await openProject(dir);
+      if (pageId && !project.pages.includes(pageId)) throw new RuntimeError(`Unknown page "${pageId}"`);
+      if (!project.pages.length) throw new RuntimeError("There is no artwork to preview yet.");
+      const preview = await renderArtworkPreview(dir, project, pageId);
+      signal?.throwIfAborted();
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify({ pageId, pages: project.pages, issues: preview.issues }) },
+          { type: "image" as const, data: preview.data.toString("base64"), mimeType: "image/png" },
+        ],
+        details: { pageId, issues: preview.issues },
+      };
+    },
+  };
 }
