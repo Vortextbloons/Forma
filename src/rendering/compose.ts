@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readPage } from "../projects/pages.ts";
 import { openProject } from "../projects/store.ts";
@@ -26,6 +26,15 @@ export interface ComposedPage {
 export interface ComposeOptions {
   inlineAssets?: boolean;
 }
+
+interface AssetUriEntry {
+  mtimeMs: number;
+  size: number;
+  promise: Promise<string | null>;
+}
+
+const ASSET_URI_LIMIT = 16;
+const assetUris = new Map<string, AssetUriEntry>();
 
 export function collectAssetRefs(html: string, css: string): string[] {
   const refs = new Set<string>();
@@ -65,8 +74,30 @@ function replaceRef(text: string, ref: string, replacement: string): string {
 }
 
 async function assetDataUri(dir: string, ref: string): Promise<string | null> {
+  const file = resolve(dir, ref);
+  const info = await stat(file).catch(() => undefined);
+  if (!info) return null;
+  const cached = assetUris.get(file);
+  if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) {
+    return cached.promise;
+  }
+  const entry: AssetUriEntry = {
+    mtimeMs: info.mtimeMs,
+    size: info.size,
+    promise: encodeAssetDataUri(file, ref),
+  };
+  if (assetUris.size >= ASSET_URI_LIMIT) {
+    const oldest = assetUris.keys().next().value;
+    if (oldest !== undefined) assetUris.delete(oldest);
+  }
+  assetUris.set(file, entry);
+  const uri = await entry.promise;
+  if (uri === null) assetUris.delete(file);
+  return uri;
+}
+
+async function encodeAssetDataUri(file: string, ref: string): Promise<string | null> {
   try {
-    const file = resolve(dir, ref);
     const data = await readFile(file);
     const extension = ref.slice(ref.lastIndexOf(".")).toLowerCase();
     const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";

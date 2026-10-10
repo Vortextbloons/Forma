@@ -53,6 +53,7 @@ export const FORMA_COMMAND_NAMES = [
   "context.update",
   "provider.setApiKey",
   "settings.getSearch",
+  "settings.setSearchDefaults",
   "settings.setSearchKey",
   "settings.clearSearchKey",
   "artwork.plan",

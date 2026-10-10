@@ -68,6 +68,7 @@ html[data-theme="light"] {
 html,
 body {
   background: var(--bg);
+  font-family: var(--font-ui);
 }
 
 .select {
@@ -675,6 +676,70 @@ html[data-theme="light"] .mini-slide {
 .mini-balance .m-title {
   width: 48%;
   height: 11%;
+}
+
+.mini-slide:has(.sample-title) {
+  container-type: inline-size;
+  min-width: 0;
+  gap: 5%;
+  text-align: left;
+  color: #243c3b;
+  background: #e6eee6;
+}
+
+.sample-title {
+  z-index: 1;
+  width: 90%;
+  font: 700 clamp(13px, 21cqi, 24px)/1.1 var(--font-display);
+  letter-spacing: -.04em;
+}
+
+.sample-art {
+  position: absolute;
+  right: -8%;
+  bottom: -28%;
+  width: 55%;
+  aspect-ratio: 1;
+  border: 10px solid #719a86;
+  border-radius: 50%;
+}
+
+.mini-bold:has(.sample-title) {
+  color: #282945;
+  background: #ffc1af;
+}
+
+.mini-bold .sample-title {
+  text-transform: uppercase;
+}
+
+.mini-bold .sample-art {
+  right: -12%;
+  bottom: -40%;
+  width: 70%;
+  border-color: #6354bb;
+  border-radius: 25%;
+  transform: rotate(-25deg);
+}
+
+.mini-editorial:has(.sample-title) {
+  color: #f6ecda;
+  background: #303d65;
+}
+
+.mini-editorial .sample-title {
+  width: 85%;
+  font-family: Georgia, serif;
+  font-weight: 400;
+}
+
+.mini-editorial .sample-art {
+  right: 10%;
+  bottom: 15%;
+  width: 20%;
+  border: 0;
+  border-radius: 0;
+  background: #f1c866;
 }
 
 .mini-bold .m-rule {
@@ -1336,8 +1401,8 @@ html[data-theme="light"] .stage-page {
 
 .model-menu-list {
   position: absolute;
-  right: 100%;
-  bottom: -11px;
+  top: 0;
+  left: 100%;
   width: 190px;
   max-height: 340px;
 }
@@ -2162,8 +2227,33 @@ html[data-theme="light"] .stage-page {
 }
 
 .creation-brief .start-brief {
-  min-height: 180px;
+  min-height: 148px;
   margin: 0;
+}
+
+.creation-options {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.creation-options > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.creation-options > summary .small {
+  display: block;
+  margin-top: 5px;
+  font-weight: 400;
+}
+
+.creation-options > .design-settings {
+  padding-top: 18px;
+}
+
+.creation-controls .mini-slide:has(.sample-title) {
+  aspect-ratio: 4 / 3;
 }
 
 .new-project .create-button {

@@ -7,6 +7,8 @@ import { pageRefs, readPage, restorePage, updatePage, writePage } from "../proje
 import { openProject, setOutline } from "../projects/store.ts";
 import { effectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
+import { resolveSearchSettings } from "../settings/search.ts";
+import { getSearchDefaults } from "../settings/credentials.ts";
 import { DESIGN_INSTRUCTIONS } from "../projects/design.ts";
 import { validateSinglePage } from "../rendering/validate.ts";
 
@@ -121,8 +123,7 @@ function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
           style: project.settings.style,
           density: project.settings.density,
           slideCount: project.settings.slideCount,
-          research: project.settings.research,
-          imageSearch: project.settings.imageSearch,
+          ...resolveSearchSettings(project.settings, await getSearchDefaults()),
           designProfile: project.settings.designProfile,
         },
         ...(project.settings.designProfile ? { designInstructions: DESIGN_INSTRUCTIONS } : {}),

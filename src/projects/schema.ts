@@ -56,8 +56,8 @@ export const projectSettingsSchema = z.object({
   posterKind: z.enum(["digital", "print"]).default("digital"),
   posterSize: posterSizeSchema.default({}),
   orientation: z.enum(["portrait", "landscape"]).default("portrait"),
-  research: z.boolean().default(false),
-  imageSearch: z.boolean().default(false),
+  research: z.boolean().nullable().default(null),
+  imageSearch: z.boolean().nullable().default(null),
   designProfile: designProfileSchema.optional(),
 });
 

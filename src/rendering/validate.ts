@@ -56,7 +56,7 @@ export async function validateProject(dir: string, project: ProjectFile, expecte
     if (item.mime.startsWith("image/")) {
       const data = await readFile(resolve(dir, item.asset)).catch(() => undefined);
       const encoded = data?.toString("base64");
-      included = !!encoded && [...rendered.values()].some((page) => page.assetUrls.some((url) => url.includes(encoded)));
+      included = !!encoded && [...rendered.values()].some((page) => page.assetUrls.some((url) => url.endsWith(encoded)));
     } else {
       const extraction = await loadExtraction(dir, item.id);
       const sourceText = normalizeText(extraction?.pages.map((page) => page.text).join(" ") ?? "");

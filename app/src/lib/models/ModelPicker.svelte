@@ -54,12 +54,54 @@
   );
 
   let searchEl: HTMLInputElement | undefined = $state();
+  let rowsEl: HTMLDivElement | undefined = $state();
   let leaveTimer: number | undefined;
 
   $effect(() => {
-    if (hoveredRow) searchEl?.focus();
+    if (hoveredRow) searchEl?.focus({ preventScroll: true });
     return () => window.clearTimeout(leaveTimer);
   });
+
+  function anchorList(
+    node: HTMLElement,
+    param: { row: "provider" | "model" | null; query: string },
+  ): { update: (param: { row: "provider" | "model" | null; query: string }) => void; destroy: () => void } {
+    const place = (): void => {
+      const row = rowsEl?.children[param.row === "provider" ? 0 : 1];
+      const picker = node.parentElement;
+      if (!(row instanceof HTMLElement) || !picker) return;
+      const margin = 12;
+      const gap = 8;
+      node.style.maxHeight = `${Math.min(340, Math.max(160, window.innerHeight - margin * 2))}px`;
+      const pickerRect = picker.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      const width = node.offsetWidth;
+      const height = node.offsetHeight;
+      const right = pickerRect.right + gap;
+      const left = pickerRect.left - gap - width;
+      const fitsRight = right + width <= window.innerWidth - margin;
+      const fitsLeft = left >= margin;
+      const x = fitsRight || !fitsLeft ? right : left;
+      const y = Math.min(Math.max(rowRect.top, margin), window.innerHeight - height - margin);
+      node.style.left = `${Math.min(Math.max(x, margin), window.innerWidth - width - margin) - pickerRect.left}px`;
+      node.style.top = `${y - pickerRect.top}px`;
+      node.style.right = "auto";
+      node.style.bottom = "auto";
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return {
+      update(next) {
+        param = next;
+        place();
+      },
+      destroy() {
+        window.removeEventListener("resize", place);
+        window.removeEventListener("scroll", place, true);
+      },
+    };
+  }
 
   function clearSearch(): void {
     query = "";
@@ -104,7 +146,7 @@
   onpointerleave={scheduleClear}
   onpointerenter={cancelClear}
 >
-  <div class="model-picker-rows">
+  <div class="model-picker-rows" bind:this={rowsEl}>
     <div
       class="model-menu-row"
       role="button"
@@ -135,6 +177,7 @@
       class="model-pane model-menu-list"
       role="listbox"
       aria-label={hoveredRow === "model" ? "Models" : "Providers"}
+      use:anchorList={{ row: hoveredRow, query }}
     >
       <input
         class="model-menu-search"

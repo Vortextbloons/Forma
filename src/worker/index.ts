@@ -1,32 +1,42 @@
 #!/usr/bin/env node
 
 import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { CancellationError, createLogger, createRuntime } from "rig";
+import {
+  CancellationError,
+  createLogger,
+  createRuntime,
+  ProtocolError,
+  RuntimeError,
+  serializeError,
+} from "rig";
 import { defaultRigConfig, resolveRigConfig } from "rig/config";
 import { RigEventBus } from "rig/events";
 import { parseIpcLine } from "rig/ipc";
 import { createSessionsFacade } from "rig/sessions";
-import type { SessionsFacadeOptions } from "rig/sessions";
 import formaAgent from "../agent.ts";
 import { WorkerWriter } from "./io.ts";
 import { WorkerAgentHost } from "./host.ts";
 import { PendingRunRegistry } from "./runs.ts";
 import { createFormaEventSink } from "../forma/events.ts";
-import { setFormaEnv } from "../forma/runtime.ts";
+import { projectRuns, setFormaEnv } from "../forma/runtime.ts";
 import { closeOcrWorker } from "../extraction/ocr.ts";
 import { closeBrowser } from "../rendering/browser.ts";
 import {
   buildDispatcher,
   dispatchCommand,
   isCommandFrame,
+  type CommandFrame,
+  type CommandHandler,
   type RuntimeInstance,
   type SessionHandle,
+  type WorkerContext,
 } from "./commands.ts";
-import { resultOk } from "./results.ts";
+import { resultErr, resultOk } from "./results.ts";
 import { repairSessionIndex } from "../projects/sessions.ts";
+import { PROJECT_FILE } from "../projects/schema.ts";
 
 interface WorkerArgs {
   project: string;
@@ -120,10 +130,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    await repairSessionIndex(project).catch((error: unknown) => {
-      logger.warn(`[worker] session index repair failed: ${String(error)}`);
-    });
-    await run(project, logLevel, { logger, writer, rigVersion });
+    await run(project, logLevel, { logger, writer });
   } catch (error) {
     logger.error("[worker] fatal init failure:", error);
     writer.write({ v: 1, type: "error", message: String(error), fatal: true });
@@ -135,15 +142,24 @@ async function main(): Promise<void> {
 interface BootDeps {
   logger: ReturnType<typeof createLogger>;
   writer: WorkerWriter;
-  rigVersion: string;
+}
+
+type CreateRuntimeOptions = Parameters<typeof createRuntime>[0];
+type SharedModelRuntime = NonNullable<CreateRuntimeOptions["modelRuntime"]>;
+
+interface Workspace {
+  projectDir: string;
+  projectId: string;
+  agentName: string;
+  capabilities: Awaited<ReturnType<RuntimeInstance["capabilities"]>>;
+  runtime: RuntimeInstance;
+  dispatcher: Record<string, CommandHandler>;
+  host: WorkerAgentHost;
+  runs: PendingRunRegistry;
 }
 
 async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: BootDeps): Promise<void> {
-  const { logger, writer, rigVersion } = deps;
-
-  const bus = new RigEventBus({ projectId: await resolveProjectId(projectDir) });
-  const host = new WorkerAgentHost({ bus, logger });
-  const runs = new PendingRunRegistry();
+  const { logger, writer } = deps;
 
   const config = resolveRigConfig({
     ...defaultRigConfig(),
@@ -152,84 +168,109 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
     logLevel,
   });
 
-  const runtime: RuntimeInstance = await createRuntime({
-    cwd: projectDir,
-    model: "auto",
-    host,
-    bus,
-    logger,
-    config,
-    agent: formaAgent,
-    modelRefresh: true,
-  });
+  let active: Workspace | undefined;
+  let switching: Promise<void> | undefined;
+  let sharedModelRuntime: SharedModelRuntime | undefined;
 
-  const sessionsOptions: SessionsFacadeOptions = { cwd: runtime.projectDir, host };
-  await runtime.attachSessionsFactory((sessionsDeps) =>
-    createSessionsFacade(sessionsDeps, sessionsOptions),
-  );
+  const activate = async (dir: string): Promise<void> => {
+    const target = resolve(dir);
+    const previous = active;
 
-  const capabilities = await runtime.capabilities();
+    await repairSessionIndex(target).catch((error: unknown) => {
+      logger.warn(`[worker] session index repair failed: ${String(error)}`);
+    });
 
-  const formaEvents = createFormaEventSink((message) => writer.write(message), runtime.projectId);
-  setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents });
+    const bus = new RigEventBus({ projectId: await resolveProjectId(target) });
+    const host = new WorkerAgentHost({ bus, logger });
+    const runs = new PendingRunRegistry();
 
-  bus.subscribe((event) => {
-    writer.write({ v: 1, type: "event", event });
-    runs.settleFromEvent(event);
-  });
+    const runtime: RuntimeInstance = await createRuntime({
+      cwd: target,
+      model: "auto",
+      host,
+      bus,
+      logger,
+      config,
+      agent: formaAgent,
+      ...(sharedModelRuntime ? { modelRuntime: sharedModelRuntime } : { modelRefresh: true }),
+    });
+    sharedModelRuntime ??= (runtime.pi as { modelRuntime: SharedModelRuntime }).modelRuntime;
 
-  const getOrCreateSession = async (sessionId?: string): Promise<SessionHandle> => {
-    if (sessionId) {
-      const existing = runtime.sessions.get(sessionId);
-      if (!existing) {
-        throw new Error(`Unknown session "${sessionId}"`);
+    await runtime.attachSessionsFactory((sessionsDeps) =>
+      createSessionsFacade(sessionsDeps, { cwd: runtime.projectDir, host }),
+    );
+
+    const capabilities = await runtime.capabilities();
+
+    const formaEvents = createFormaEventSink((message) => writer.write(message), runtime.projectId);
+    setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents });
+
+    if (previous) {
+      previous.host.rejectAll(new CancellationError("Project switched"));
+      previous.runs.rejectAll(new CancellationError("Project switched"));
+      projectRuns.clear();
+      try {
+        await previous.runtime.close();
+      } catch (error) {
+        logger.error(`[worker] runtime close failed: ${String(error)}`);
       }
-      return existing;
     }
-    return runtime.session ?? (await runtime.sessions.create({ name: "Default" }));
+
+    bus.subscribe((event) => {
+      writer.write({ v: 1, type: "event", event });
+      runs.settleFromEvent(event);
+    });
+
+    const getOrCreateSession = async (sessionId?: string): Promise<SessionHandle> => {
+      if (sessionId) {
+        const existing = runtime.sessions.get(sessionId);
+        if (!existing) {
+          throw new Error(`Unknown session "${sessionId}"`);
+        }
+        return existing;
+      }
+      return runtime.session ?? (await runtime.sessions.create({ name: "Default" }));
+    };
+
+    const ctx: WorkerContext = {
+      runtime,
+      host,
+      bus,
+      logger,
+      selectedModel: "auto",
+      runs,
+      formaEvents,
+      getOrCreateSession,
+      defaultSessionId: () => runtime.session?.id,
+    };
+
+    active = {
+      projectDir: runtime.projectDir,
+      projectId: runtime.projectId,
+      agentName: runtime.agent.name,
+      capabilities,
+      runtime,
+      dispatcher: buildDispatcher(ctx),
+      host,
+      runs,
+    };
+
+    writeReady(writer, active);
   };
 
-  const dispatcher = buildDispatcher({
-    runtime,
-    host,
-    bus,
-    logger,
-    selectedModel: "auto",
-    runs,
-    formaEvents,
-    getOrCreateSession,
-    defaultSessionId: () => runtime.session?.id,
-  });
-
-  writer.write({
-    v: 1,
-    type: "ready",
-    projectId: runtime.projectId,
-    projectDir: runtime.projectDir,
-    agentName: runtime.agent.name,
-    capabilities: {
-      git: capabilities.git,
-      worktrees: capabilities.worktrees,
-      desktop: capabilities.desktop,
-      web: capabilities.web,
-      mcp: capabilities.mcp,
-      subagents: capabilities.subagents,
-      models: capabilities.models.length,
-      providers: capabilities.providers,
-    },
-  });
+  await activate(projectDir);
 
   let shuttingDown = false;
   const shutdown = async (): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info("[worker] shutting down");
-    host.rejectAll(new CancellationError("Worker is shutting down"));
-    runs.rejectAll(new CancellationError("Worker is shutting down"));
+    active?.host.rejectAll(new CancellationError("Worker is shutting down"));
+    active?.runs.rejectAll(new CancellationError("Worker is shutting down"));
     await closeBrowser().catch(() => undefined);
     await closeOcrWorker().catch(() => undefined);
     try {
-      await runtime.close();
+      await active?.runtime.close();
     } catch (error) {
       logger.error(`[worker] runtime close failed: ${String(error)}`);
     }
@@ -243,46 +284,104 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   rl.on("close", () => void shutdown());
   rl.on("line", (line) => {
-    void handleLine(line, { writer, dispatcher, shutdown });
+    void (async () => {
+      while (switching) await switching;
+      const command = parseCommandFrame(line, writer);
+      if (!command) return;
+      if (command.name === "shutdown") {
+        writer.write(resultOk(command.id));
+        await shutdown();
+        return;
+      }
+      if (command.name === "workspace.switch") {
+        const dir = asDir(command.params);
+        if (!dir) {
+          writer.write(
+            resultErr(
+              command.id,
+              serializeError(
+                new ProtocolError(`Missing or invalid parameter "dir" (expected non-empty string)`),
+              ),
+            ),
+          );
+          return;
+        }
+        let settleSwitch!: () => void;
+        switching = new Promise<void>((settle) => (settleSwitch = settle));
+        try {
+          const target = resolve(dir);
+          const projectFile = await stat(join(target, PROJECT_FILE)).catch(() => undefined);
+          if (!projectFile) {
+            throw new RuntimeError(`No project found in "${target}"`, {
+              details: { dir: target, reason: "project-not-found" },
+            });
+          }
+          await activate(target);
+          writer.write(resultOk(command.id));
+        } catch (error) {
+          writer.write(resultErr(command.id, serializeError(error)));
+        } finally {
+          settleSwitch();
+          switching = undefined;
+        }
+        return;
+      }
+      const dispatcher = active?.dispatcher;
+      if (!dispatcher) return;
+      writer.write(await dispatchCommand(dispatcher, command));
+    })();
   });
 }
 
-interface LoopDeps {
-  writer: WorkerWriter;
-  dispatcher: ReturnType<typeof buildDispatcher>;
-  shutdown: () => Promise<void>;
+function writeReady(writer: WorkerWriter, workspace: Workspace): void {
+  writer.write({
+    v: 1,
+    type: "ready",
+    projectId: workspace.projectId,
+    projectDir: workspace.projectDir,
+    agentName: workspace.agentName,
+    capabilities: {
+      git: workspace.capabilities.git,
+      worktrees: workspace.capabilities.worktrees,
+      desktop: workspace.capabilities.desktop,
+      web: workspace.capabilities.web,
+      mcp: workspace.capabilities.mcp,
+      subagents: workspace.capabilities.subagents,
+      models: workspace.capabilities.models.length,
+      providers: workspace.capabilities.providers,
+    },
+  });
 }
 
-async function handleLine(line: string, deps: LoopDeps): Promise<void> {
+function asDir(params: Record<string, unknown> | undefined): string | undefined {
+  const dir = params?.dir;
+  return typeof dir === "string" && dir.length > 0 ? dir : undefined;
+}
+
+function parseCommandFrame(line: string, writer: WorkerWriter): CommandFrame | undefined {
   let frame: unknown;
   try {
     frame = parseIpcLine(line);
   } catch (error) {
-    deps.writer.write({
+    writer.write({
       v: 1,
       type: "error",
       message: `Malformed JSON line: ${String(error)}`,
       fatal: false,
     });
-    return;
+    return undefined;
   }
-  if (frame === null) return;
+  if (frame === null) return undefined;
   if (!isCommandFrame(frame)) {
-    deps.writer.write({
+    writer.write({
       v: 1,
       type: "error",
       message: "Received a non-command frame; ignoring",
       fatal: false,
     });
-    return;
+    return undefined;
   }
-  const command = frame;
-  if (command.name === "shutdown") {
-    deps.writer.write(resultOk(command.id));
-    await deps.shutdown();
-    return;
-  }
-  deps.writer.write(await dispatchCommand(deps.dispatcher, command));
+  return frame;
 }
 
 void main();

@@ -8,15 +8,11 @@
   let {
   settings,
   onchange,
-  exaConfigured = true,
-  pexelsConfigured = true,
-  openSearchSettings,
+  compact = false,
 }: {
   settings: ProjectSettings;
   onchange: (next: ProjectSettings) => void;
-  exaConfigured?: boolean;
-  pexelsConfigured?: boolean;
-  openSearchSettings?: () => void;
+  compact?: boolean;
 } = $props();
 
   let moreOptions = $state(false);
@@ -95,7 +91,7 @@
   }
 </script>
 
-<div class="design-settings">
+{#snippet dimensions()}
   {#if settings.output === "slides"}
     <div class="field">
       <span class="field-label">Slide count</span>
@@ -341,30 +337,9 @@
     </div>
   {/if}
 
-  <div class="field">
-    <span class="field-label">Style</span>
-    <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
-      {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
-        <button
-          type="button"
-          class="preset-tile"
-          class:active={settings.style === value}
-          aria-pressed={settings.style === value}
-          onclick={() => emit({ style: value as ProjectSettings["style"] })}
-        >
-          <span class="mini-slide mini-{value}">
-            <i class="m-rule"></i>
-            <i class="m-title"></i>
-            <i class="m-line"></i>
-            <i class="m-line m-short"></i>
-            <i class="m-accent"></i>
-          </span>
-          <span class="tile-label">{label}</span>
-        </button>
-      {/each}
-    </div>
-  </div>
+{/snippet}
 
+{#snippet options()}
   <div class="field">
     <span class="field-label">Density</span>
     <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
@@ -397,25 +372,6 @@
     </div>
   </div>
 
-  <div class="field">
-    <span class="field-label">Sources</span>
-    <label class="toggle-row" class:disabled={!exaConfigured}>
-      <input
-        type="checkbox"
-        checked={settings.research}
-        disabled={!exaConfigured}
-        onchange={(event) => emit({ research: (event.currentTarget as HTMLInputElement).checked })}
-      />
-      <span>Research the web for supporting facts</span>
-    </label>
-    {#if !exaConfigured}
-      <p class="muted small">
-        Add an Exa API key in
-        <button class="link-btn" type="button" onclick={openSearchSettings}>Settings</button>
-        to enable research.
-      </p>
-    {/if}
-  </div>
   <div class="settings-disclosure" bind:this={disclosureEl}>
     <button
       class="disclosure-toggle"
@@ -426,34 +382,43 @@
       More options
       <Icon name={moreOptions ? "chevron-down" : "chevron-right"} size={13} />
     </button>
-    {#if moreOptions}
-      <div class="more-options-popover" role="dialog" aria-label="More options">
-        <label class="toggle-row" class:disabled={!pexelsConfigured}>
-          <input
-            type="checkbox"
-            checked={settings.imageSearch}
-            disabled={!pexelsConfigured}
-            onchange={(event) => emit({ imageSearch: (event.currentTarget as HTMLInputElement).checked })}
-          />
-          <span>Find photos with image search</span>
-        </label>
-        {#if !pexelsConfigured}
-          <p class="muted small">
-            Add a Pexels API key in
-            <button
-              class="link-btn"
-              type="button"
-              onclick={() => {
-                moreOptions = false;
-                openSearchSettings?.();
-              }}
-            >Settings</button>
-            to enable image search.
-          </p>
-        {/if}
-      </div>
-    {/if}
   </div>
+{/snippet}
+
+<div class="design-settings">
+  {@render dimensions()}
+  <div class="field">
+    <span class="field-label">Style</span>
+    <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
+      {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
+        <button
+          type="button"
+          class="preset-tile"
+          class:active={settings.style === value}
+          aria-pressed={settings.style === value}
+          onclick={() => emit({ style: value as ProjectSettings["style"] })}
+        >
+          <span class="mini-slide mini-{value}" aria-hidden="true">
+            <span class="sample-title">{value === "balance" ? "Room to grow." : value === "bold" ? "Make waves." : "A new perspective."}</span>
+            <span class="sample-art"></span>
+          </span>
+          <span class="tile-label">{label}</span>
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  {#if compact}
+    <details class="creation-options">
+      <summary>
+        <span>Density</span>
+        <span class="muted small">{DENSITY_LABELS[settings.density]} density</span>
+      </summary>
+      <div class="design-settings">{@render options()}</div>
+    </details>
+  {:else}
+    {@render options()}
+  {/if}
 </div>
 
 <svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />

@@ -12,6 +12,7 @@
   import { version } from "../../../../package.json";
   import { projectStore } from "./projectStore.svelte";
   import type { SearchProviderId } from "./types";
+  import type { SearchDefaults } from "../../../../src/settings/search.ts";
   import { onMount } from "svelte";
 
   let {
@@ -26,6 +27,7 @@
   let exaKey = $state("");
   let pexelsKey = $state("");
   let saving = $state<SearchProviderId | null>(null);
+  let savingDefaults = $state(false);
   let checkingUpdate = $state(false);
   let updating = $state(false);
   let native = $state(false);
@@ -41,6 +43,10 @@
   );
 
   const credentials = $derived(projectStore.searchCredentials);
+  const searchOptions: Array<{ key: keyof SearchDefaults; label: string }> = [
+    { key: "research", label: "Web search" },
+    { key: "imageSearch", label: "Image finder" },
+  ];
 
   onMount(() => {
     tab = initialTab;
@@ -112,6 +118,23 @@
     }
   }
 
+  async function saveDefault(key: keyof SearchDefaults, enabled: boolean): Promise<void> {
+    savingDefaults = true;
+    try {
+      await projectStore.setSearchDefaults({ ...projectStore.searchDefaults, [key]: enabled });
+    } catch (error) {
+      notificationStore.push({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      savingDefaults = false;
+    }
+  }
+
+  function setProjectSearch(key: keyof SearchDefaults, value: string): void {
+    const project = projectStore.current?.project;
+    if (!project) return;
+    projectStore.updateSettings({ ...project.settings, [key]: value === "default" ? null : value === "on" });
+  }
+
   function onOverlayKeydown(event: KeyboardEvent): void {
     if (event.key === "Escape" && !updating) onclose();
   }
@@ -154,7 +177,7 @@
           type="button"
           class:settings-nav-active={tab === "search"}
           onclick={() => (tab = "search")}
-        >Search credentials</button>
+        >Web &amp; images</button>
         <button
           type="button"
           class:settings-nav-active={tab === "project"}
@@ -178,9 +201,45 @@
           </div>
         {:else if tab === "search"}
           <div class="field">
-            <span class="field-label">Exa — research</span>
+            <span class="field-label">Global defaults</span>
+            <p class="muted small">Used by projects that follow the global default.</p>
+            {#each searchOptions as option (option.key)}
+              <label class="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={projectStore.searchDefaults[option.key]}
+                  disabled={savingDefaults}
+                  onchange={(event) => void saveDefault(option.key, event.currentTarget.checked)}
+                />
+                <span>{option.label}</span>
+              </label>
+            {/each}
+          </div>
+          {#if projectStore.current}
+            <div class="field">
+              <span class="field-label">This project · {projectStore.current.project.name}</span>
+              <p class="muted small">Override either default for this project. Changes are saved automatically.</p>
+              {#each searchOptions as option (option.key)}
+                <label class="field">
+                  <span class="field-label">{option.label}</span>
+                  <select
+                    class="input"
+                    value={projectStore.current.project.settings[option.key] === null ? "default" : projectStore.current.project.settings[option.key] ? "on" : "off"}
+                    disabled={projectStore.run !== null}
+                    onchange={(event) => setProjectSearch(option.key, event.currentTarget.value)}
+                  >
+                    <option value="default">Use global default ({projectStore.searchDefaults[option.key] ? "on" : "off"})</option>
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                  </select>
+                </label>
+              {/each}
+            </div>
+          {/if}
+          <div class="field">
+            <span class="field-label">Exa — web search</span>
             <p class="muted small">
-              Used by the research tools when Research is enabled for a project.
+              Add an API key to use web search.
               {#if credentials.exa.configured}
                 <span class="badge">Configured · {credentials.exa.masked}</span>
               {:else}
@@ -207,9 +266,9 @@
             </div>
           </div>
           <div class="field">
-            <span class="field-label">Pexels — image search</span>
+            <span class="field-label">Pexels — image finder</span>
             <p class="muted small">
-              Used by photo search when Image search is enabled for a project.
+              Add an API key to find photos.
               {#if credentials.pexels.configured}
                 <span class="badge">Configured · {credentials.pexels.masked}</span>
               {:else}

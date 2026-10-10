@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createLogger, createRuntime } from "rig";
@@ -47,6 +48,7 @@ class WorkerHarness {
   #readyResolve!: (ready: WorkerReady) => void;
   #readyReject!: (error: Error) => void;
   readonly stderr: string[] = [];
+  readonly readyFrames: WorkerReady[] = [];
   readonly events: Array<{ type: string; data?: unknown }> = [];
   #eventWaiters: Array<{
     type: string;
@@ -81,6 +83,7 @@ class WorkerHarness {
       const message = JSON.parse(line) as Record<string, unknown>;
       if (message.type === "ready") {
         clearTimeout(readyTimer);
+        this.readyFrames.push(message as unknown as WorkerReady);
         this.#readyResolve(message as unknown as WorkerReady);
       } else if (message.type === "result") {
         const result = message as unknown as WorkerResult;
@@ -486,10 +489,58 @@ describe("forma worker", () => {
     }
   }, 180_000);
 
+  it("switches workspaces in place and binds sessions to the new project", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-switch-"));
+    const a = join(root, "A");
+    const b = join(root, "B");
+    await createProject({ dir: a, name: "A", prompt: "", mode: "plan", settings: defaultSettings("slides") });
+    await createProject({ dir: b, name: "B", prompt: "", mode: "plan", settings: defaultSettings("slides") });
+    const harness = new WorkerHarness(root);
+    try {
+      await harness.ready;
+
+      const switched = await harness.send("workspace.switch", { dir: b });
+      expect(switched.ok, JSON.stringify(switched)).toBe(true);
+      expect(harness.readyFrames.at(-1)?.projectDir).toBe(b);
+
+      const session = await harness.send("newSession", { name: "B chat" });
+      expect(session.ok, JSON.stringify(session)).toBe(true);
+      const index = JSON.parse(
+        await readFile(join(b, ".rig", "state", "sessions.json"), "utf8"),
+      ) as { sessions: Record<string, unknown> };
+      expect(Object.keys(index.sessions)).toHaveLength(1);
+      expect(existsSync(join(a, ".rig", "state", "sessions.json"))).toBe(false);
+
+      const back = await harness.send("workspace.switch", { dir: a });
+      expect(back.ok, JSON.stringify(back)).toBe(true);
+      expect(harness.readyFrames.at(-1)?.projectDir).toBe(a);
+      const reopened = await harness.send("project.open", { dir: a });
+      expect(reopened.ok, JSON.stringify(reopened)).toBe(true);
+
+      const missing = await harness.send("workspace.switch", { dir: join(root, "Nope") });
+      expect(missing.ok).toBe(false);
+    } finally {
+      if (harness.child.exitCode === null) harness.child.kill();
+      await new Promise<void>((resolveExit) => {
+        if (harness.child.exitCode !== null) return resolveExit();
+        harness.child.on("close", () => resolveExit());
+      });
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 90_000);
+
   it("saves and removes API keys through the credential store", async () => {    const root = await mkdtemp(join(tmpdir(), "forma-keys-"));
     const agentDir = join(root, "agent");
-    const harness = await CommandHarness.open(root, { PI_CODING_AGENT_DIR: agentDir });
+    const harness = await CommandHarness.open(root, { PI_CODING_AGENT_DIR: agentDir, FORMA_DATA_DIR: join(root, "data") });
     try {
+      const defaults = { research: true, imageSearch: false };
+      const savedDefaults = await harness.send("settings.setSearchDefaults", { defaults });
+      expect(savedDefaults.ok, JSON.stringify(savedDefaults)).toBe(true);
+      const searchSettings = await harness.send("settings.getSearch");
+      expect(searchSettings.ok, JSON.stringify(searchSettings)).toBe(true);
+      expect((searchSettings as WorkerResultOk).data).toMatchObject({ defaults });
+      const invalidDefaults = await harness.send("settings.setSearchDefaults", { defaults: { research: "yes" } });
+      expect(invalidDefaults.ok).toBe(false);
       const listed = await harness.send("listProviders");
       expect(listed.ok).toBe(true);
       const providers = (listed as WorkerResultOk).data as {

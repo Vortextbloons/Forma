@@ -1,7 +1,10 @@
 <script lang="ts">
   import { tick } from "svelte";
   import Icon from "../components/Icon.svelte";
+  import ModelPicker from "../models/ModelPicker.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
+  import { modelStore } from "../rig/stores/modelStore.svelte";
+  import { providerStore } from "../rig/stores/providerStore.svelte";
   import { projectStore } from "./projectStore.svelte";
   import { effectiveSize } from "../../../../src/projects/size.ts";
   import { elementSelectionScript } from "../../../../src/rendering/selection.ts";
@@ -22,16 +25,37 @@
   let popup = $state<HTMLDivElement>();
   let commentInput = $state<HTMLTextAreaElement>();
   let comment = $state("");
+  let modelMenuOpen = $state(false);
+  let modelWrap: HTMLDivElement | undefined = $state();
   let anchor = $state<{ x: number; y: number; bottom: number; selector: string } | null>(null);
   let windowWidth = $state(0);
   let windowHeight = $state(0);
   let popupWidth = $state(360);
   let popupHeight = $state(190);
   const selected = $derived(projectStore.selectedElement);
+  const modelLabel = $derived(
+    modelStore.selectedModel === "auto"
+      ? "Auto model"
+      : (modelStore.selectedInfo()?.name ?? modelStore.selectedModel),
+  );
+  const providerLabel = $derived.by(() => {
+    if (modelStore.selectedModel === "auto") return "Auto";
+    const provider = modelStore.selectedInfo()?.provider;
+    if (!provider) return "Provider";
+    return providerStore.providers.find((p) => p.id === provider)?.name ?? provider;
+  });
   const feedbackOpen = $derived(mode === "main" && anchor !== null && selected?.pageId === pageId && selected.selector === anchor.selector);
   const running = $derived(projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionStore.activeSessionId)));
   const popupLeft = $derived(anchor ? Math.max(12, Math.min(anchor.x, windowWidth - popupWidth - 12)) : 12);
-  const popupTop = $derived(anchor ? Math.max(12, Math.min(anchor.bottom + 10 + popupHeight <= windowHeight - 12 ? anchor.bottom + 10 : anchor.y - popupHeight - 10, windowHeight - popupHeight - 12)) : 12);
+  const popupTop = $derived.by(() => {
+    if (!anchor) return 12;
+    const below = anchor.bottom + 10;
+    const above = anchor.y - popupHeight - 10;
+    const spaceBelow = windowHeight - 12 - below;
+    const spaceAbove = anchor.y - 10 - 12;
+    const top = spaceBelow >= popupHeight || spaceBelow >= spaceAbove ? below : above;
+    return Math.max(12, Math.min(top, windowHeight - popupHeight - 12));
+  });
   const selectableHtml = $derived(html ? html.replace("</body>", `${elementSelectionScript(pageId)}</body>`) : "");
 
   async function selectElement(event: MessageEvent): Promise<void> {
@@ -46,6 +70,7 @@
     projectStore.selectElement({ pageId, selector: data.selector, html: data.html, text: data.text });
     anchor = { x: frameRect.x + bounds.x * frameScale, y: frameRect.y + bounds.y * frameScale, bottom: frameRect.y + (bounds.y + bounds.height) * frameScale, selector: data.selector };
     comment = "";
+    modelMenuOpen = false;
     await tick();
     commentInput?.focus();
   }
@@ -53,6 +78,7 @@
   function closeFeedback(): void {
     if (!feedbackOpen) return;
     anchor = null;
+    modelMenuOpen = false;
     projectStore.selectElement(null);
     frame?.focus();
   }
@@ -68,6 +94,7 @@
     const request = projectStore.sendRefine(message, { scope: "page", pageId: element.pageId, element }, "build");
     anchor = null;
     comment = "";
+    modelMenuOpen = false;
     projectStore.selectElement(null);
     onsubmit?.();
     await request;
@@ -90,6 +117,15 @@
   }
 
   $effect(syncSelection);
+
+  $effect(() => {
+    if (!modelMenuOpen) return;
+    const close = (event: PointerEvent): void => {
+      if (modelWrap && !modelWrap.contains(event.target as Node)) modelMenuOpen = false;
+    };
+    window.addEventListener("pointerdown", close, true);
+    return () => window.removeEventListener("pointerdown", close, true);
+  });
 
   $effect(() => {
     void projectStore.composePage(pageId);
@@ -175,6 +211,29 @@
     </div>
     <p class="feedback-element" title={selected?.text}>{selected?.text || "Selected shape"}</p>
     <textarea bind:this={commentInput} bind:value={comment} aria-label="Describe your change" placeholder="Make it green…" rows="3" disabled={running}></textarea>
+    <div class="feedback-toolbar">
+      <div class="composer-menu-wrap" bind:this={modelWrap}>
+        <button
+          class="composer-model"
+          type="button"
+          aria-expanded={modelMenuOpen}
+          aria-haspopup="true"
+          onclick={() => (modelMenuOpen = !modelMenuOpen)}
+        >
+          <Icon name="zap" size={13} />
+          <span class="composer-model-stack">
+            <span class="composer-model-provider">{providerLabel}</span>
+            <span class="composer-model-name">{modelLabel}</span>
+          </span>
+          <Icon name="chevron-down" size={12} />
+        </button>
+        {#if modelMenuOpen}
+          <div class="composer-menu" role="menu" aria-label="Model settings">
+            <ModelPicker onselect={() => (modelMenuOpen = false)} />
+          </div>
+        {/if}
+      </div>
+    </div>
     <div class="feedback-actions">
       <span>{running ? "AI is working…" : "Enter to send · Shift+Enter for a new line"}</span>
       <button class="btn btn-accent" type="submit" disabled={!comment.trim() || running || !sessionStore.activeSessionId}>Apply change</button>
@@ -188,8 +247,6 @@
     position: fixed;
     z-index: 1000;
     width: min(360px, calc(100vw - 24px));
-    max-height: calc(100vh - 24px);
-    overflow-y: auto;
     padding: 14px;
     border: 1px solid var(--border-strong);
     border-radius: 12px;
@@ -236,6 +293,10 @@
   textarea:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  .feedback-toolbar {
+    margin-top: 8px;
   }
 
   .feedback-actions {

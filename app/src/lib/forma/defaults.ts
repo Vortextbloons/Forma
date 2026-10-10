@@ -11,8 +11,8 @@ export function defaultProjectSettings(output: OutputKind = "slides"): ProjectSe
     posterKind: "digital",
     posterSize: { preset: "1080x1350", width: 1080, height: 1350, unit: "px" },
     orientation: "portrait",
-    research: false,
-    imageSearch: false,
+    research: null,
+    imageSearch: null,
     designProfile: defaultDesignProfile(),
   };
 }

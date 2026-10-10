@@ -10,11 +10,7 @@
   const project = $derived(projectStore.current?.project);
   const size = $derived(project ? effectiveSize(project.settings) : null);
   const run = $derived(projectStore.run);
-  const credentials = $derived(projectStore.searchCredentials);
 
-  function openSearchSettings(): void {
-    window.dispatchEvent(new CustomEvent("forma:open-search-settings"));
-  }
 </script>
 
 <div class="design-panel">
@@ -36,9 +32,6 @@
     <DesignSettingsForm
       settings={project.settings}
       onchange={(next) => projectStore.updateSettings(next)}
-      exaConfigured={credentials.exa.configured}
-      pexelsConfigured={credentials.pexels.configured}
-      {openSearchSettings}
     />
     <DesignProfileForm
       settings={project.settings}

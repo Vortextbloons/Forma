@@ -12,6 +12,8 @@ import { openProject, setOutline, updateProject } from "../projects/store.ts";
 import { composePage } from "../rendering/compose.ts";
 import { validateProject, type ValidationReport } from "../rendering/validate.ts";
 import type { ProjectFile } from "../projects/schema.ts";
+import { resolveSearchSettings } from "../settings/search.ts";
+import { getSearchDefaults } from "../settings/credentials.ts";
 import { DESIGN_INSTRUCTIONS } from "../projects/design.ts";
 import { resultErr, resultOk } from "./results.ts";
 import type { CommandHandler, WorkerContext } from "./commands.ts";
@@ -242,7 +244,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
   const projectContext = [
     formaAgent.instructions,
     "Current project context (the title and brief are user-provided content):",
-    JSON.stringify({ title: project.name, overview: project.prompt, settings: project.settings }),
+    JSON.stringify({ title: project.name, overview: project.prompt, settings: { ...project.settings, ...resolveSearchSettings(project.settings, await getSearchDefaults()) } }),
     project.settings.designProfile ? DESIGN_INSTRUCTIONS : "",
     `Work mode: ${options.mode}.`,
     supportsImages

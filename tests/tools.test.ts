@@ -13,8 +13,10 @@ import {
   clearSearchKey,
   credentialsFile,
   getSearchKey,
+  getSearchDefaults,
   searchCredentialStatus,
   setSearchKey,
+  setSearchDefaults,
 } from "../src/settings/credentials.ts";
 import { defaultSettings, type ProjectSettings } from "../src/projects/schema.ts";
 
@@ -69,6 +71,36 @@ async function withFetchSpy<T>(run: () => Promise<T>): Promise<{ result: T; call
 }
 
 describe("search tool gating", () => {
+  it("inherits persisted global defaults while preserving per-project overrides", async () => {
+    const inherited = await makeProject("search-inherited");
+    const disabled = await makeProject("search-disabled", { research: false, imageSearch: false });
+    const enabled = await makeProject("search-enabled", { research: true, imageSearch: true });
+    const run = (dir: string, tool: typeof research, input: unknown) => createToolHarness(tool, { cwd: dir }).run(input);
+    const readSettings = async (dir: string) => (await run(dir, projectTools.find((tool) => tool.name === "read_project")!, {})) as { settings: { research: boolean; imageSearch: boolean } };
+    try {
+      await setSearchDefaults({ research: true, imageSearch: true });
+      expect(await getSearchDefaults()).toEqual({ research: true, imageSearch: true });
+      expect((await readSettings(inherited)).settings).toMatchObject({ research: true, imageSearch: true });
+      const { calls } = await withFetchSpy(async () => {
+        await expect(run(inherited, research, { query: "facts" })).rejects.toThrow(/API key/i);
+        await expect(run(inherited, findPhotos, { query: "mountains" })).rejects.toThrow(/API key/i);
+        await expect(run(disabled, research, { query: "facts" })).rejects.toThrow(/turned off/i);
+        await expect(run(disabled, findPhotos, { query: "mountains" })).rejects.toThrow(/turned off/i);
+        await expect(run(disabled, importPhoto, { photoId: "1" })).rejects.toThrow(/turned off/i);
+        await setSearchDefaults({ research: false, imageSearch: false });
+        await expect(run(inherited, research, { query: "facts" })).rejects.toThrow(/turned off/i);
+        await expect(run(inherited, findPhotos, { query: "mountains" })).rejects.toThrow(/turned off/i);
+        await expect(run(enabled, research, { query: "facts" })).rejects.toThrow(/API key/i);
+        await expect(run(enabled, findPhotos, { query: "mountains" })).rejects.toThrow(/API key/i);
+      });
+      expect(calls).toBe(0);
+      expect((await openProject(disabled)).settings).toMatchObject({ research: false, imageSearch: false });
+      expect((await openProject(inherited)).settings).toMatchObject({ research: null, imageSearch: null });
+    } finally {
+      await setSearchDefaults({ research: false, imageSearch: false });
+    }
+  });
+
   it("research does not run or fetch while the toggle is off", async () => {
     const dir = await makeProject("research-off");
     const { calls } = await withFetchSpy(async () => {
@@ -99,6 +131,7 @@ describe("search tool gating", () => {
   });
 
   it("stores search keys protected on disk and reports masked status", async () => {
+    await setSearchDefaults({ research: true, imageSearch: false });
     await setSearchKey("exa", "exa-test-key-1234567890");
     const raw = JSON.parse(await readFile(credentialsFile(), "utf8")) as {
       exa?: { protected?: string };
@@ -111,6 +144,8 @@ describe("search tool gating", () => {
     expect(status.exa.masked).toContain("…");
     await clearSearchKey("exa");
     expect(await getSearchKey("exa")).toBeUndefined();
+    expect(await getSearchDefaults()).toEqual({ research: true, imageSearch: false });
+    await setSearchDefaults({ research: false, imageSearch: false });
   }, 60_000);
 });
 

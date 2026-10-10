@@ -76,8 +76,16 @@ export function contextAssetFormat(name: string, mime: string): { extension: str
   );
 }
 
-const locks = new Map<string, Promise<unknown>>();
+interface ProjectCacheEntry {
+  mtimeMs: number;
+  size: number;
+  project: ProjectFile;
+}
 
+const PROJECT_CACHE_LIMIT = 16;
+const projectCache = new Map<string, ProjectCacheEntry>();
+
+const locks = new Map<string, Promise<unknown>>();
 function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const previous = locks.get(key) ?? Promise.resolve();
   const next = previous.then(fn, fn);
@@ -208,9 +216,9 @@ export async function deleteProject(dir: string): Promise<string> {
 
 export async function openProject(dir: string): Promise<ProjectFile> {
   const file = projectFilePath(dir);
-  let raw: string;
+  let info: Awaited<ReturnType<typeof stat>>;
   try {
-    raw = await readFile(file, "utf8");
+    info = await stat(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new RuntimeError(`No project found in "${resolve(dir)}"`, {
@@ -219,6 +227,11 @@ export async function openProject(dir: string): Promise<ProjectFile> {
     }
     throw error;
   }
+  const cached = projectCache.get(file);
+  if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) {
+    return structuredClone(cached.project);
+  }
+  const raw = await readFile(file, "utf8");
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -227,7 +240,13 @@ export async function openProject(dir: string): Promise<ProjectFile> {
       details: { file },
     });
   }
-  return parseProjectFile(parsed, file);
+  const project = parseProjectFile(parsed, file);
+  if (projectCache.size >= PROJECT_CACHE_LIMIT) {
+    const oldest = projectCache.keys().next().value;
+    if (oldest !== undefined) projectCache.delete(oldest);
+  }
+  projectCache.set(file, { mtimeMs: info.mtimeMs, size: info.size, project });
+  return structuredClone(project);
 }
 
 export async function updateProject(
@@ -472,7 +491,18 @@ async function removeAssetFile(dir: string, assetRel: string): Promise<void> {
 }
 
 async function writeProjectFile(dir: string, project: ProjectFile): Promise<void> {
-  await atomicWriteFile(projectFilePath(dir), `${JSON.stringify(project, null, 2)}\n`);
+  const file = projectFilePath(dir);
+  await atomicWriteFile(file, `${JSON.stringify(project, null, 2)}\n`);
+  try {
+    const info = await stat(file);
+    if (projectCache.size >= PROJECT_CACHE_LIMIT) {
+      const oldest = projectCache.keys().next().value;
+      if (oldest !== undefined) projectCache.delete(oldest);
+    }
+    projectCache.set(file, { mtimeMs: info.mtimeMs, size: info.size, project });
+  } catch {
+    projectCache.delete(file);
+  }
 }
 
 async function exists(path: string): Promise<boolean> {

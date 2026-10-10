@@ -1,3 +1,4 @@
+import { searchDefaultsSchema } from "../settings/search.ts";
 import {
   CancellationError,
   ModelError,
@@ -22,6 +23,8 @@ import { projectRuns, type FormaEventSink } from "../forma/runtime.ts";
 import {
   SEARCH_PROVIDERS,
   clearSearchKey,
+  getSearchDefaults,
+  setSearchDefaults,
   searchCredentialStatus,
   setSearchKey,
   type SearchProviderId,
@@ -93,7 +96,7 @@ export function isCommandFrame(frame: unknown): frame is CommandFrame {
 }
 
 export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandler> {
-  const { runtime, host, logger } = ctx;
+  const { host, logger } = ctx;
   const ok = (data?: unknown): WorkerResult => resultOk("", data);
 
   return {
@@ -121,7 +124,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       }
       const run = ctx.runs.start(handle.id);
       try {
-        await runtime.prompt(prompt, {
+        await ctx.runtime.prompt(prompt, {
           sessionId: handle.id,
           images: asOptionalArray(params.images) as Array<{ data: string; mediaType: string }>,
         });
@@ -139,7 +142,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       if (sessionId) {
         const projectRun = projectRuns.get(sessionId);
         if (projectRun) projectRun.aborted = true;
-        const handle = runtime.sessions.get(sessionId);
+        const handle = ctx.runtime.sessions.get(sessionId);
         if (handle) {
           const run = ctx.runs.get(sessionId);
           run?.markAborted();
@@ -157,7 +160,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     },
 
     async newSession(params) {
-      const handle = await runtime.sessions.create({
+      const handle = await ctx.runtime.sessions.create({
         name: asOptionalString(params.name),
         parentSessionId: asOptionalString(params.parentSessionId),
         model: asOptionalString(params.model),
@@ -167,20 +170,20 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
 
     async resumeSession(params) {
       const sessionId = asString(params.sessionId, "sessionId");
-      const handle = await runtime.sessions.resume(sessionId);
+      const handle = await ctx.runtime.sessions.resume(sessionId);
       const piSession = handle.piSession as { messages: unknown[] };
       return ok({ session: toSessionInfo(handle, host), messages: piSession.messages });
     },
 
     async closeSession(params) {
       const sessionId = asString(params.sessionId, "sessionId");
-      await runtime.sessions.close(sessionId);
+      await ctx.runtime.sessions.close(sessionId);
       return ok();
     },
 
     async listSessions() {
-      const sessions: SessionInfo[] = runtime.sessions.list().map((snapshot) => {
-        const handle = runtime.sessions.get(snapshot.id);
+      const sessions: SessionInfo[] = ctx.runtime.sessions.list().map((snapshot) => {
+        const handle = ctx.runtime.sessions.get(snapshot.id);
         return handle ? toSessionInfo(handle, host) : snapshotToInfo(snapshot, host);
       });
       return ok({ sessions });
@@ -188,7 +191,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
 
     async getSession(params) {
       const sessionId = asString(params.sessionId, "sessionId");
-      const handle = runtime.sessions.get(sessionId);
+      const handle = ctx.runtime.sessions.get(sessionId);
       if (!handle) {
         throw new ProtocolError(`Unknown session "${sessionId}"`);
       }
@@ -196,24 +199,24 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     },
 
     async listModels() {
-      const models = (await runtime.models.list()).map((model) => toModelPayload(runtime, model));
+      const models = (await ctx.runtime.models.list()).map((model) => toModelPayload(ctx.runtime, model));
       return ok({ models });
     },
 
     async listAvailableModels() {
-      const models = (await runtime.models.available()).map((model) => toModelPayload(runtime, model));
+      const models = (await ctx.runtime.models.available()).map((model) => toModelPayload(ctx.runtime, model));
       return ok({ models });
     },
 
     async selectModel(params) {
       const ref = asString(params.ref, "ref");
       const sessionId = asOptionalString(params.sessionId);
-      const model = await runtime.models.select(ref, sessionId);
+      const model = await ctx.runtime.models.select(ref, sessionId);
       ctx.selectedModel = ref;
       return ok({
-        model: toModelPayload(runtime, model),
+        model: toModelPayload(ctx.runtime, model),
         thinkingLevel: sessionId
-          ? (runtime.sessions.get(sessionId)?.piSession as { thinkingLevel?: string } | undefined)?.thinkingLevel
+          ? (ctx.runtime.sessions.get(sessionId)?.piSession as { thinkingLevel?: string } | undefined)?.thinkingLevel
           : undefined,
       });
     },
@@ -221,7 +224,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     async setThinkingLevel(params) {
       const level = asString(params.level, "level") as SessionInfo["thinkingLevel"];
       const sessionId = asOptionalString(params.sessionId) ?? ctx.defaultSessionId();
-      const handle = sessionId ? runtime.sessions.get(sessionId) : undefined;
+      const handle = sessionId ? ctx.runtime.sessions.get(sessionId) : undefined;
       const piSession = handle?.piSession as
         | { setThinkingLevel?: (level: string) => Promise<void> | void; thinkingLevel?: string }
         | undefined;
@@ -235,26 +238,26 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     },
 
     async listProviders() {
-      const providers = await runtime.providers.list();
-      return ok({ providers: providers.map((provider) => toProviderPayload(runtime, provider)) });
+      const providers = await ctx.runtime.providers.list();
+      return ok({ providers: providers.map((provider) => toProviderPayload(ctx.runtime, provider)) });
     },
 
     async providerStatus(params) {
       const providerId = asString(params.providerId, "providerId");
-      const provider = await runtime.providers.status(providerId);
-      return ok({ provider: toProviderPayload(runtime, provider) });
+      const provider = await ctx.runtime.providers.status(providerId);
+      return ok({ provider: toProviderPayload(ctx.runtime, provider) });
     },
 
     async providerLogin(params) {
       const providerId = asString(params.providerId, "providerId");
-      await loginWithAuthEvents(runtime, host, logger, providerId);
+      await loginWithAuthEvents(ctx.runtime, host, logger, providerId);
       return ok();
     },
 
     async "provider.setApiKey"(params) {
       const providerId = asString(params.providerId, "providerId");
       const key = asString(params.key, "key");
-      const modelRuntime = piModelRuntime(runtime);
+      const modelRuntime = piModelRuntime(ctx.runtime);
       const provider = modelRuntime.getProvider(providerId);
       if (!provider) {
         throw new ModelError(`Unknown provider "${providerId}"`);
@@ -276,13 +279,13 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
           details: { providerId },
         });
       }
-      const status = await runtime.providers.status(providerId);
-      return ok({ provider: toProviderPayload(runtime, status) });
+      const status = await ctx.runtime.providers.status(providerId);
+      return ok({ provider: toProviderPayload(ctx.runtime, status) });
     },
 
     async providerLogout(params) {
       const providerId = asString(params.providerId, "providerId");
-      await runtime.providers.logout(providerId);
+      await ctx.runtime.providers.logout(providerId);
       return ok();
     },
 
@@ -510,7 +513,14 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
 
     async "settings.getSearch"() {
       const credentials = await searchCredentialStatus();
-      return ok({ credentials });
+      return ok({ credentials, defaults: await getSearchDefaults() });
+    },
+
+    async "settings.setSearchDefaults"(params) {
+      const parsed = searchDefaultsSchema.safeParse(params.defaults);
+      if (!parsed.success) throw new ProtocolError("Invalid search defaults");
+      await setSearchDefaults(parsed.data);
+      return ok({ defaults: parsed.data });
     },
 
     async "settings.setSearchKey"(params) {

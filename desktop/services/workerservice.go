@@ -195,6 +195,35 @@ func (s *WorkerService) SetProjectDir(dir string) {
 	s.mu.Unlock()
 }
 
+// SwitchProject rebinds the worker to a new project root. A ready worker
+// switches in place via a workspace.switch command (which emits a fresh
+// "rig:ready"); a worker that is still booting is restarted so it comes up
+// bound to the new project.
+func (s *WorkerService) SwitchProject(dir string) {
+	s.SetProjectDir(dir)
+	s.mu.Lock()
+	cmd := s.cmd
+	ready := s.ready.Load()
+	s.mu.Unlock()
+	switch {
+	case cmd == nil:
+		s.Start()
+	case !ready:
+		s.Restart()
+	default:
+		frame := map[string]any{
+			"v":      ipcVersion,
+			"type":   "command",
+			"id":     "host-switch",
+			"name":   "workspace.switch",
+			"params": map[string]any{"dir": dir},
+		}
+		if err := s.writeJSON(frame); err != nil {
+			s.logInfo(fmt.Sprintf("workspace switch write failed (worker will rebind on restart): %v", err))
+		}
+	}
+}
+
 // Stop asks the worker to shut down gracefully, then kills it after a grace
 // period. Safe to call repeatedly.
 func (s *WorkerService) Stop() {

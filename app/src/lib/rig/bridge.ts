@@ -373,6 +373,7 @@ class MockBridge extends BaseBridge {
   private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
   private themes: DesignTheme[] = [];
   private mockSeq = 0;
+  private mockSearchDefaults = { research: false, imageSearch: false };
   private mockSearch: Record<string, { configured: boolean; masked?: string }> = {
     exa: { configured: false },
     pexels: { configured: false },
@@ -538,8 +539,8 @@ class MockBridge extends BaseBridge {
       posterKind: "digital",
       posterSize: { preset: "1080x1350", width: 1080, height: 1350, unit: "px" },
       orientation: "portrait",
-      research: false,
-      imageSearch: false,
+      research: null,
+      imageSearch: null,
     };
   }
 
@@ -989,7 +990,11 @@ class MockBridge extends BaseBridge {
         break;
       }
       case "settings.getSearch":
-        this.settleResult(id, true, { credentials: { ...this.mockSearch } });
+        this.settleResult(id, true, { credentials: { ...this.mockSearch }, defaults: { ...this.mockSearchDefaults } });
+        break;
+      case "settings.setSearchDefaults":
+        this.mockSearchDefaults = params.defaults as typeof this.mockSearchDefaults;
+        this.settleResult(id, true, { defaults: { ...this.mockSearchDefaults } });
         break;
       case "settings.setSearchKey": {
         const provider = asString(params.provider ?? "");

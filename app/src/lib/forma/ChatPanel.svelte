@@ -14,8 +14,7 @@
   const selectedId = $derived(projectStore.selectedPageId);
   const selectedElement = $derived(projectStore.selectedElement);
   const isPoster = $derived(project?.settings.output === "poster");
-  const isSlides = $derived(project?.settings.output === "slides");
-  const showRail = $derived(isSlides && pages.length > 0);
+  const showRail = $derived(pages.length > 0);
 
   const scope = $derived(projectStore.refineScope);
   const empty = $derived(messageStore.bySession(sessionId ?? "").length === 0);
@@ -39,7 +38,7 @@
 
   function titleOf(pageId: string): string {
     const index = pages.indexOf(pageId);
-    return project?.pageMeta[pageId]?.title || `Slide ${index + 1}`;
+    return project?.pageMeta[pageId]?.title || (isPoster ? "Poster" : `Slide ${index + 1}`);
   }
 
   const artworkRunning = $derived(projectStore.run !== null);
@@ -156,17 +155,17 @@
   {/key}
   </div>
   {#if showRail}
-    <aside class="chat-slide-rail" aria-label="Slides">
+    <aside class="chat-slide-rail" aria-label={isPoster ? "Poster" : "Slides"}>
       {#each pages as pageId, i (pageId)}
         <button
           class="chat-slide-thumb"
           class:active={selectedId === pageId}
           type="button"
-          aria-label={`Open preview for slide ${i + 1}: ${titleOf(pageId)}`}
+          aria-label={isPoster ? `Open preview for the poster: ${titleOf(pageId)}` : `Open preview for slide ${i + 1}: ${titleOf(pageId)}`}
           onclick={() => (previewPageId = pageId)}
         >
           <PagePreview {pageId} mode="thumb" />
-          <span class="chat-slide-num">{i + 1}</span>
+          {#if !isPoster}<span class="chat-slide-num">{i + 1}</span>{/if}
         </button>
       {/each}
     </aside>
@@ -176,7 +175,7 @@
       class="chat-lightbox"
       role="dialog"
       aria-modal="true"
-      aria-label={`Slide preview: ${titleOf(previewPageId)}`}
+      aria-label={`${isPoster ? "Poster" : "Slide"} preview: ${titleOf(previewPageId)}`}
       tabindex="-1"
       onclick={(event) => {
         if (event.target === event.currentTarget) previewPageId = null;

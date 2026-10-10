@@ -109,11 +109,9 @@
       </div>
 
       <DesignSettingsForm
+        compact
         {settings}
         onchange={(next) => (settings = next)}
-        exaConfigured={projectStore.searchCredentials.exa.configured}
-        pexelsConfigured={projectStore.searchCredentials.pexels.configured}
-        openSearchSettings={() => window.dispatchEvent(new CustomEvent("forma:open-search-settings"))}
       />
 
     </section>

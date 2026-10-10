@@ -72,7 +72,8 @@ func main() {
 	})
 
 	// Frontend opens a project: rebind the worker to the project folder so
-	// agent sessions live inside the project.
+	// agent sessions live inside the project. A ready worker switches
+	// workspaces in place; otherwise the worker (re)starts into the dir.
 	app.Event.On("rig:open-project", func(event *application.CustomEvent) {
 		var payload struct {
 			Dir string `json:"dir"`
@@ -84,8 +85,7 @@ func main() {
 		if payload.Dir == "" {
 			return
 		}
-		worker.SetProjectDir(payload.Dir)
-		worker.Restart()
+		worker.SwitchProject(payload.Dir)
 	})
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{

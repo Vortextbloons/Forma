@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { atomicWriteFile } from "../projects/atomic.ts";
 import { resolveDataDir } from "../projects/home.ts";
+import { searchDefaultsSchema, type SearchDefaults } from "./search.ts";
 import { protectSecret, unprotectSecret } from "./dpapi.ts";
 
 export const SEARCH_PROVIDERS = ["exa", "pexels"] as const;
@@ -12,7 +13,7 @@ interface StoredSecret {
   updatedAt: string;
 }
 
-type StoredFile = Partial<Record<SearchProviderId, StoredSecret>>;
+type StoredFile = Partial<Record<SearchProviderId, StoredSecret>> & { defaults?: SearchDefaults };
 
 export interface SearchCredentialStatus {
   configured: boolean;
@@ -71,6 +72,16 @@ export async function setSearchKey(provider: SearchProviderId, key: string): Pro
 export async function clearSearchKey(provider: SearchProviderId): Promise<void> {
   const stored = await loadStored();
   delete stored[provider];
+  await writeStored(stored);
+}
+
+export async function getSearchDefaults(): Promise<SearchDefaults> {
+  return searchDefaultsSchema.parse((await loadStored()).defaults ?? {});
+}
+
+export async function setSearchDefaults(defaults: SearchDefaults): Promise<void> {
+  const stored = await loadStored();
+  stored.defaults = defaults;
   await writeStored(stored);
 }
 

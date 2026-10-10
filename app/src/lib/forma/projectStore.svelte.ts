@@ -6,6 +6,7 @@ import { modelStore } from "../rig/stores/modelStore.svelte";
 import { workerStore } from "../rig/stores/workerStore.svelte";
 import type { DesignTheme } from "../../../../src/projects/themes.ts";
 import type { SelectedElement } from "../../../../src/forma/prompts.ts";
+import { searchDefaultsSchema, type SearchDefaults } from "../../../../src/settings/search.ts";
 import { isFormaDomainEvent, type FormaDomainEvent, type SessionStatus } from "../rig/types";
 import {
   parseExportFiles,
@@ -57,6 +58,7 @@ let searchCredentials = $state<Record<SearchProviderId, SearchCredentialStatus>>
   exa: { configured: false },
   pexels: { configured: false },
 });
+let searchDefaults = $state<SearchDefaults>({ research: false, imageSearch: false });
 
 let opening = false;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -129,7 +131,10 @@ export async function createProject(input: CreateProjectInput): Promise<void> {
     );
     const createdSnapshot = parseProjectSnapshot(created);
     await openProjectDir(createdSnapshot.dir);
-    await waitForReady(60_000);
+    const ready = await waitForReady(60_000);
+    if (ready.projectDir !== createdSnapshot.dir) {
+      throw new Error(`The worker is bound to "${ready.projectDir}" instead of "${createdSnapshot.dir}"`);
+    }
     const data = await sendCommand(
       "project.open",
       { dir: createdSnapshot.dir },
@@ -153,7 +158,10 @@ export async function openProject(dir: string): Promise<void> {
     if (workerStore.status !== "ready" || workerStore.readyInfo?.projectDir !== dir) {
       const ready = waitForReady(60_000);
       await openProjectDir(dir);
-      await ready;
+      const info = await ready;
+      if (info.projectDir !== dir) {
+        throw new Error(`The worker is bound to "${info.projectDir}" instead of "${dir}"`);
+      }
     }
     const data = await sendCommand("project.open", { dir }, { timeoutMs: 60_000 });
     await attach(parseProjectSnapshot(data));
@@ -833,11 +841,18 @@ export async function removeContext(id: string): Promise<void> {
 
 export async function refreshSearchCredentials(): Promise<void> {
   try {
-    const parsed = parseSearchCredentials(await sendCommand("settings.getSearch"));
+    const data = await sendCommand("settings.getSearch") as { defaults: unknown };
+    const parsed = parseSearchCredentials(data);
     if (parsed) searchCredentials = parsed;
+    searchDefaults = searchDefaultsSchema.parse(data.defaults);
   } catch {
     // keep the previous status
   }
+}
+
+export async function setSearchDefaults(defaults: SearchDefaults): Promise<void> {
+  const data = await sendCommand("settings.setSearchDefaults", { defaults }) as { defaults: unknown };
+  searchDefaults = searchDefaultsSchema.parse(data.defaults);
 }
 
 export async function setSearchKey(provider: SearchProviderId, key: string): Promise<void> {
@@ -1137,6 +1152,9 @@ export const projectStore = {
   get searchCredentials() {
     return searchCredentials;
   },
+  get searchDefaults() {
+    return searchDefaults;
+  },
   get needsDesignApply() {
     return needsDesignApply();
   },
@@ -1175,6 +1193,7 @@ export const projectStore = {
   contextText,
   removeContext,
   refreshSearchCredentials,
+  setSearchDefaults,
   setSearchKey,
   clearSearchKey,
   refreshProject,

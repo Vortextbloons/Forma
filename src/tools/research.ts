@@ -2,8 +2,9 @@ import { z } from "zod";
 import { RuntimeError, type RigTool, type ToolContext } from "rig";
 import { createSearchProvider, web } from "rig/tools/web";
 import { addSource, importContextAsset, openProject } from "../projects/store.ts";
-import { getSearchKey } from "../settings/credentials.ts";
+import { getSearchDefaults, getSearchKey } from "../settings/credentials.ts";
 import type { ProjectFile } from "../projects/schema.ts";
+import { resolveSearchSettings } from "../settings/search.ts";
 
 const researchInput = z.object({
   query: z.string().min(1).describe("What to research"),
@@ -39,9 +40,9 @@ function dirOf(ctx: ToolContext): string {
 
 async function requireResearch(ctx: ToolContext): Promise<ProjectFile> {
   const project = await openProject(dirOf(ctx));
-  if (!project.settings.research) {
+  if (!resolveSearchSettings(project.settings, await getSearchDefaults()).research) {
     throw new RuntimeError(
-      "Research is turned off for this project. Enable it in the Design tab before using research tools.",
+      "Web search is turned off for this project. Enable it in Settings under Web & images before using research tools.",
     );
   }
   return project;
@@ -49,9 +50,9 @@ async function requireResearch(ctx: ToolContext): Promise<ProjectFile> {
 
 async function requireImageSearch(ctx: ToolContext): Promise<ProjectFile> {
   const project = await openProject(dirOf(ctx));
-  if (!project.settings.imageSearch) {
+  if (!resolveSearchSettings(project.settings, await getSearchDefaults()).imageSearch) {
     throw new RuntimeError(
-      "Image search is turned off for this project. Enable it in the Design tab before finding photos.",
+      "Image finder is turned off for this project. Enable it in Settings under Web & images before finding photos.",
     );
   }
   return project;
@@ -61,7 +62,7 @@ async function requireKey(provider: "exa" | "pexels", label: string): Promise<st
   const key = await getSearchKey(provider);
   if (!key) {
     throw new RuntimeError(
-      `${label} needs an API key. Add one in Settings under Search credentials.`,
+      `${label} needs an API key. Add one in Settings under Web & images.`,
     );
   }
   return key;
