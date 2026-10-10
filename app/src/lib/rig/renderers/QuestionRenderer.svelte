@@ -1,6 +1,7 @@
 <script lang="ts">
   import { asBoolean, asRecord, asString } from "../format";
   import { sendCommand } from "../bridge";
+  import { openUrl } from "../native";
   import { messageStore } from "../stores/messageStore.svelte";
   import type { QuestionInteraction, QuestionOption } from "../types";
   import type { ToolRendererProps } from "./registry";
@@ -58,6 +59,10 @@
   const answerText = $derived(
     answered ? renderAnswer(interaction?.result ?? linked?.result ?? tool?.output) : undefined,
   );
+
+  const secret = $derived((active as { secret?: boolean } | undefined)?.secret === true);
+  const authUrl = $derived((active as { authUrl?: string } | undefined)?.authUrl);
+  const authInfo = $derived((active as { authInfo?: string } | undefined)?.authInfo);
 
   let selected = $state<string[]>([]);
   let customText = $state("");
@@ -151,6 +156,8 @@
           <div class="question-custom">
             <input
               class="input"
+              type={secret ? "password" : "text"}
+              autocomplete="off"
               placeholder={active.placeholder ?? "Type your own answer…"}
               bind:value={customText}
               onkeydown={(e) => {
@@ -166,6 +173,19 @@
           </button>
         </div>
       {:else}
+        {#if authUrl || authInfo}
+          <div class="auth-assist">
+            {#if authInfo}<span class="muted small">{authInfo}</span>{/if}
+            {#if authUrl}
+              <button class="btn btn-sm" type="button" onclick={() => void openUrl(authUrl)}>
+                Open sign-in page
+              </button>
+              <button class="btn btn-sm btn-ghost" type="button" onclick={() => submit("")}>
+                Cancel sign-in
+              </button>
+            {/if}
+          </div>
+        {/if}
         <div class="question-options">
           {#each active.options ?? [] as option (option.value)}
             <button class="question-option" type="button" onclick={() => toggleOption(option)}>
@@ -177,6 +197,8 @@
           <div class="question-custom">
             <input
               class="input"
+              type={secret ? "password" : "text"}
+              autocomplete="off"
               placeholder={active.placeholder ?? "Type your answer…"}
               bind:value={customText}
               onkeydown={(e) => {

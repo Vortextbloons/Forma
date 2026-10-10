@@ -9,7 +9,11 @@
   let { onOpenSettings, onCloseProject }: { onOpenSettings: () => void; onCloseProject: () => void } = $props();
 
   let drawerOpen = $state(false);
+  let selectedPage = $state(0);
+
+  const pages = $derived(projectStore.current?.project.pages ?? []);
   const isSlides = $derived(projectStore.current?.project.settings.output === "slides");
+  const page = $derived(pages.length > 0 ? Math.min(selectedPage, pages.length - 1) : null);
 </script>
 
 <div class="forma-workspace">
@@ -20,10 +24,10 @@
     onToggleDrawer={() => (drawerOpen = !drawerOpen)}
   />
   <div class="workspace-body">
-    {#if isSlides}
-      <ThumbnailRail />
+    {#if isSlides && pages.length > 0}
+      <ThumbnailRail selected={page ?? 0} onSelect={(index) => (selectedPage = index)} />
     {/if}
-    <ProjectMain />
+    <ProjectMain {page} />
     <RightPanel {drawerOpen} onCloseDrawer={() => (drawerOpen = false)} />
   </div>
   <StatusBar />

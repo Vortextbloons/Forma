@@ -368,6 +368,44 @@ class MockBridge extends BaseBridge {
   private projectDir = "/mock/project";
   private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
   private mockSeq = 0;
+  private mockProviders = [
+    {
+      id: "openai",
+      name: "OpenAI",
+      configured: false,
+      authStatus: "unauthenticated",
+      canSetApiKey: true,
+      canOAuth: false,
+      apiKeyLabel: "OpenAI API key",
+    },
+    {
+      id: "anthropic",
+      name: "Anthropic",
+      configured: false,
+      authStatus: "unauthenticated",
+      canSetApiKey: true,
+      canOAuth: true,
+      oauthLabel: "Sign in with Claude",
+    },
+    {
+      id: "openrouter",
+      name: "OpenRouter",
+      configured: false,
+      authStatus: "unauthenticated",
+      canSetApiKey: true,
+      canOAuth: true,
+      oauthLabel: "Sign in with OpenRouter",
+    },
+    {
+      id: "google",
+      name: "Google",
+      configured: false,
+      authStatus: "unauthenticated",
+      canSetApiKey: true,
+      canOAuth: true,
+      oauthLabel: "Sign in with Google",
+    },
+  ];
 
   constructor() {
     super(true);
@@ -584,23 +622,72 @@ class MockBridge extends BaseBridge {
         break;
       case "listProviders":
         this.settleResult(id, true, {
-          providers: [
-            { id: "mock", name: "Mock provider", configured: true, authStatus: "ready" },
-            { id: "openrouter", name: "OpenRouter", configured: false, authStatus: "unconfigured" },
-          ],
+          providers: this.mockProviders.map((provider) => ({ ...provider })),
         });
         break;
       case "providerStatus": {
-        const provider = (typeof params.providerId === "string" && params.providerId === "openrouter")
-          ? { id: "openrouter", name: "OpenRouter", configured: false, authStatus: "unconfigured" }
-          : { id: "mock", name: "Mock provider", configured: true, authStatus: "ready" };
-        this.settleResult(id, true, { provider });
+        const provider = this.mockProviders.find(
+          (item) => item.id === asString(params.providerId ?? ""),
+        );
+        if (provider) {
+          this.settleResult(id, true, { provider: { ...provider } });
+        } else {
+          this.settleResult(id, false, undefined, {
+            code: "MODEL_ERROR",
+            message: `Unknown provider "${asString(params.providerId ?? "")}" (mock)`,
+          });
+        }
         break;
       }
-      case "providerLogin":
-      case "providerLogout":
+      case "provider.setApiKey": {
+        const provider = this.mockProviders.find(
+          (item) => item.id === asString(params.providerId ?? ""),
+        );
+        const key = asString(params.key ?? "");
+        if (!provider || !provider.canSetApiKey) {
+          this.settleResult(id, false, undefined, {
+            code: "MODEL_ERROR",
+            message: `Provider "${asString(params.providerId ?? "")}" does not accept an API key (mock)`,
+          });
+        } else if (key.length < 8) {
+          this.settleResult(id, false, undefined, {
+            code: "MODEL_ERROR",
+            message: "That API key looks too short",
+          });
+        } else {
+          provider.configured = true;
+          provider.authStatus = "authenticated";
+          this.settleResult(id, true, { provider: { ...provider } });
+        }
+        break;
+      }
+      case "providerLogin": {
+        const provider = this.mockProviders.find(
+          (item) => item.id === asString(params.providerId ?? ""),
+        );
+        if (!provider?.canOAuth) {
+          this.settleResult(id, false, undefined, {
+            code: "MODEL_ERROR",
+            message: `Provider "${asString(params.providerId ?? "")}" does not support sign-in (mock)`,
+          });
+        } else {
+          provider.configured = true;
+          provider.authStatus = "authenticated";
+          this.settleResult(id, true);
+        }
+        break;
+      }
+      case "providerLogout": {
+        const provider = this.mockProviders.find(
+          (item) => item.id === asString(params.providerId ?? ""),
+        );
+        if (provider) {
+          provider.configured = false;
+          provider.authStatus = "unauthenticated";
+        }
         this.settleResult(id, true);
         break;
+      }
       case "resolveInteraction": {
         const interactionId = asString(params.interactionId ?? "");
         const kind = asString(params.kind ?? "");
@@ -729,6 +816,16 @@ class MockBridge extends BaseBridge {
           ...asRecord(project.settings),
           ...asRecord(params.settings),
         };
+        project.updatedAt = new Date().toISOString();
+        this.settleResult(id, true, { project: { dir, project } });
+        break;
+      }
+      case "project.updateBrief": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const project = this.ensureProject(dir, {});
+        if (typeof params.name === "string" && params.name) project.name = params.name;
+        if (typeof params.prompt === "string") project.prompt = params.prompt;
+        if (params.mode === "plan" || params.mode === "create") project.mode = params.mode;
         project.updatedAt = new Date().toISOString();
         this.settleResult(id, true, { project: { dir, project } });
         break;

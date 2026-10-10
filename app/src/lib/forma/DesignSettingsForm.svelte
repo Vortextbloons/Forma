@@ -72,28 +72,56 @@
 <div class="design-settings">
   <div class="field">
     <span class="field-label">Style</span>
-    <div class="segmented" role="group" aria-label="Style">
+    <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
       {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
         <button
           type="button"
+          class="preset-tile"
           class:active={settings.style === value}
           aria-pressed={settings.style === value}
           onclick={() => emit({ style: value as ProjectSettings["style"] })}
-        >{label}</button>
+        >
+          <span class="mini-slide mini-{value}">
+            <i class="m-rule"></i>
+            <i class="m-title"></i>
+            <i class="m-line"></i>
+            <i class="m-line m-short"></i>
+            <i class="m-accent"></i>
+          </span>
+          <span class="tile-label">{label}</span>
+        </button>
       {/each}
     </div>
   </div>
 
   <div class="field">
     <span class="field-label">Density</span>
-    <div class="segmented" role="group" aria-label="Density">
+    <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
       {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
         <button
           type="button"
+          class="preset-tile"
           class:active={settings.density === value}
           aria-pressed={settings.density === value}
           onclick={() => emit({ density: value as ProjectSettings["density"] })}
-        >{label}</button>
+        >
+          <span class="mini-slide mini-density-{value}">
+            <i class="m-title"></i>
+            <i class="m-line"></i>
+            <i class="m-line"></i>
+            {#if value !== "concise"}
+              <i class="m-line"></i>
+              <i class="m-line m-short"></i>
+            {/if}
+            {#if value === "detailed"}
+              <i class="m-line"></i>
+              <i class="m-line"></i>
+              <i class="m-line m-short"></i>
+              <i class="m-grid"></i>
+            {/if}
+          </span>
+          <span class="tile-label">{label}</span>
+        </button>
       {/each}
     </div>
   </div>
@@ -116,34 +144,34 @@
 
     <div class="field">
       <span class="field-label">Slide size</span>
-      <div class="size-options">
+      <div class="tile-grid" role="group" aria-label="Slide size">
         <button
           type="button"
-          class="size-option"
+          class="size-tile"
           class:active={settings.slideSize.preset === "16:9"}
           onclick={() => selectSlidePreset("16:9")}
         >
-          <PageIcon width={1920} height={1080} size={16} />
+          <PageIcon width={1920} height={1080} size={30} />
           <span>16:9</span>
           <em>1920 × 1080</em>
         </button>
         <button
           type="button"
-          class="size-option"
+          class="size-tile"
           class:active={settings.slideSize.preset === "4:3"}
           onclick={() => selectSlidePreset("4:3")}
         >
-          <PageIcon width={1440} height={1080} size={16} />
+          <PageIcon width={1440} height={1080} size={30} />
           <span>4:3</span>
           <em>1440 × 1080</em>
         </button>
         <button
           type="button"
-          class="size-option"
+          class="size-tile"
           class:active={settings.slideSize.preset === "custom"}
           onclick={() => selectSlidePreset("custom")}
         >
-          <PageIcon width={settings.slideSize.width} height={settings.slideSize.height} size={16} />
+          <PageIcon width={settings.slideSize.width} height={settings.slideSize.height} size={30} />
           <span>Custom</span>
           <em>pixels</em>
         </button>
@@ -201,34 +229,34 @@
     {#if settings.posterKind === "digital"}
       <div class="field">
         <span class="field-label">Poster size</span>
-        <div class="size-options">
+        <div class="tile-grid" role="group" aria-label="Poster size">
           <button
             type="button"
-            class="size-option"
+            class="size-tile"
             class:active={settings.posterSize.preset === "1080x1350"}
             onclick={() => selectDigitalPreset("1080x1350")}
           >
-            <PageIcon width={1080} height={1350} size={16} />
+            <PageIcon width={1080} height={1350} size={30} />
             <span>Portrait</span>
             <em>1080 × 1350</em>
           </button>
           <button
             type="button"
-            class="size-option"
+            class="size-tile"
             class:active={settings.posterSize.preset === "square"}
             onclick={() => selectDigitalPreset("square")}
           >
-            <PageIcon width={1080} height={1080} size={16} />
+            <PageIcon width={1080} height={1080} size={30} />
             <span>Square</span>
             <em>1080 × 1080</em>
           </button>
           <button
             type="button"
-            class="size-option"
+            class="size-tile"
             class:active={settings.posterSize.preset === "custom"}
             onclick={() => selectDigitalPreset("custom")}
           >
-            <PageIcon width={settings.posterSize.width} height={settings.posterSize.height} size={16} />
+            <PageIcon width={settings.posterSize.width} height={settings.posterSize.height} size={30} />
             <span>Custom</span>
             <em>pixels</em>
           </button>
@@ -237,26 +265,28 @@
     {:else}
       <div class="field">
         <span class="field-label">Print size</span>
-        <div class="size-options">
+        <div class="tile-grid" role="group" aria-label="Print size">
           {#each PRINT_OPTIONS as option (option.value)}
             <button
               type="button"
-              class="size-option"
+              class="size-tile"
               class:active={settings.posterSize.preset === option.value}
               onclick={() => selectPrintPreset(option.value)}
             >
-              <PageIcon width={option.width} height={option.height} size={16} />
+              <PageIcon width={option.width} height={option.height} size={30} />
               <span>{option.label}</span>
+              <em>{option.width} × {option.height}</em>
             </button>
           {/each}
           <button
             type="button"
-            class="size-option"
+            class="size-tile"
             class:active={settings.posterSize.preset === "custom"}
             onclick={() => selectPrintPreset("custom")}
           >
-            <PageIcon width={settings.posterSize.width} height={settings.posterSize.height} size={16} />
+            <PageIcon width={settings.posterSize.width} height={settings.posterSize.height} size={30} />
             <span>Custom</span>
+            <em>{settings.posterSize.unit}</em>
           </button>
         </div>
       </div>

@@ -1,6 +1,8 @@
 <script lang="ts">
   import DesignSettingsForm from "./DesignSettingsForm.svelte";
   import Icon from "../components/Icon.svelte";
+  import PageIcon from "./PageIcon.svelte";
+  import ConnectionCard from "./ConnectionCard.svelte";
   import { defaultProjectSettings } from "./defaults";
   import { projectStore } from "./projectStore.svelte";
   import { pickFiles } from "../rig/native";
@@ -61,54 +63,77 @@
 </script>
 
 <form class="new-project" onsubmit={(event) => { event.preventDefault(); void submit(); }}>
-  <h2 class="panel-title">New project</h2>
+  <h1 class="start-prompt">What are we making?</h1>
+
+  <textarea
+    class="textarea start-brief"
+    rows="3"
+    placeholder="A 10-slide review of our Q3 results for the leadership team, or a poster for Saturday's show…"
+    bind:value={prompt}
+  ></textarea>
 
   <div class="field">
-    <label class="field-label" for="project-prompt">What do you want to create?</label>
-    <textarea
-      id="project-prompt"
-      class="textarea prompt-input"
-      rows="4"
-      placeholder="A 10-slide review of our Q3 results for the leadership team…"
-      bind:value={prompt}
-    ></textarea>
-  </div>
-
-  <div class="field-row">
-    <div class="field">
-      <span class="field-label">Output</span>
-      <div class="segmented" role="group" aria-label="Output">
-        <button type="button" class:active={kind === "slides"} aria-pressed={kind === "slides"} onclick={() => setKind("slides")}>
-          <Icon name="panel-bottom" size={13} /> Slides
-        </button>
-        <button type="button" class:active={kind === "poster"} aria-pressed={kind === "poster"} onclick={() => setKind("poster")}>
-          <Icon name="file" size={13} /> Poster
-        </button>
-      </div>
-    </div>
-    <div class="field">
-      <span class="field-label">Start with</span>
-      <div class="segmented" role="group" aria-label="Start mode">
-        <button type="button" class:active={mode === "plan"} aria-pressed={mode === "plan"} onclick={() => (mode = "plan")}>
-          Plan
-        </button>
-        <button type="button" class:active={mode === "create"} aria-pressed={mode === "create"} onclick={() => (mode = "create")}>
-          Create
-        </button>
-      </div>
+    <span class="field-label">Format</span>
+    <div class="format-tiles" role="group" aria-label="Output format">
+      <button
+        type="button"
+        class="format-tile"
+        class:active={kind === "slides"}
+        aria-pressed={kind === "slides"}
+        onclick={() => setKind("slides")}
+      >
+        <span class="format-shape"><PageIcon width={1920} height={1080} size={40} /></span>
+        <span class="format-name">Slides</span>
+        <em>16:9 · 1920 × 1080</em>
+      </button>
+      <button
+        type="button"
+        class="format-tile"
+        class:active={kind === "poster"}
+        aria-pressed={kind === "poster"}
+        onclick={() => setKind("poster")}
+      >
+        <span class="format-shape"><PageIcon width={1080} height={1350} size={40} /></span>
+        <span class="format-name">Poster</span>
+        <em>Portrait · 1080 × 1350</em>
+      </button>
     </div>
   </div>
 
-  <p class="mode-hint">
-    {mode === "plan"
-      ? "Forma proposes an outline first. Edit it, then generate."
-      : "Forma creates the artwork directly from your brief."}
-  </p>
+  <div class="mode-choices" role="radiogroup" aria-label="How to start">
+    <button
+      type="button"
+      class="mode-choice"
+      class:active={mode === "plan"}
+      role="radio"
+      aria-checked={mode === "plan"}
+      onclick={() => (mode = "plan")}
+    >
+      <span class="mode-dot" aria-hidden="true"></span>
+      <span class="mode-text">
+        <strong>Plan first</strong>
+        <span>Forma proposes an outline. Edit it, then generate.</span>
+      </span>
+    </button>
+    <button
+      type="button"
+      class="mode-choice"
+      class:active={mode === "create"}
+      role="radio"
+      aria-checked={mode === "create"}
+      onclick={() => (mode = "create")}
+    >
+      <span class="mode-dot" aria-hidden="true"></span>
+      <span class="mode-text">
+        <strong>Create directly</strong>
+        <span>Forma makes the artwork straight from the brief.</span>
+      </span>
+    </button>
+  </div>
 
-  <div class="field">
-    <span class="field-label">Assets</span>
-    <button class="btn" type="button" onclick={() => void addAssets()}>
-      <Icon name="plus" size={13} /> Add files
+  <div class="start-assets">
+    <button class="btn btn-ghost" type="button" onclick={() => void addAssets()}>
+      <Icon name="plus" size={14} /> Attach files
     </button>
     {#if staged.length > 0}
       <ul class="staged-list">
@@ -125,10 +150,12 @@
     {/if}
   </div>
 
+  <ConnectionCard />
+
   <details class="settings-disclosure" bind:open={showSettings}>
     <summary>
       <Icon name={showSettings ? "chevron-down" : "chevron-right"} size={13} />
-      Design settings
+      Style &amp; density
     </summary>
     <DesignSettingsForm {settings} onchange={(next) => (settings = next)} />
   </details>

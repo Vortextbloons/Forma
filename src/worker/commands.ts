@@ -1,5 +1,6 @@
 import {
   CancellationError,
+  ModelError,
   ProtocolError,
   serializeError,
   createLogger,
@@ -8,6 +9,7 @@ import {
 } from "rig";
 import type { RigEventBus } from "rig/events";
 import type { SerializedIpcError, SessionInfo, WorkerResult } from "rig/ipc";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { dirname, resolve } from "node:path";
 import type { WorkerAgentHost } from "./host.ts";
@@ -73,7 +75,7 @@ export function isCommandFrame(frame: unknown): frame is CommandFrame {
 }
 
 export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandler> {
-  const { runtime, host } = ctx;
+  const { runtime, host, logger } = ctx;
   const ok = (data?: unknown): WorkerResult => resultOk("", data);
 
   return {
@@ -194,19 +196,48 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
 
     async listProviders() {
       const providers = await runtime.providers.list();
-      return ok({ providers: providers.map(toProviderPayload) });
+      return ok({ providers: providers.map((provider) => toProviderPayload(runtime, provider)) });
     },
 
     async providerStatus(params) {
       const providerId = asString(params.providerId, "providerId");
       const provider = await runtime.providers.status(providerId);
-      return ok({ provider: toProviderPayload(provider) });
+      return ok({ provider: toProviderPayload(runtime, provider) });
     },
 
     async providerLogin(params) {
       const providerId = asString(params.providerId, "providerId");
-      await runtime.providers.login(providerId);
+      await loginWithAuthEvents(runtime, host, logger, providerId);
       return ok();
+    },
+
+    async "provider.setApiKey"(params) {
+      const providerId = asString(params.providerId, "providerId");
+      const key = asString(params.key, "key");
+      const modelRuntime = piModelRuntime(runtime);
+      const provider = modelRuntime.getProvider(providerId);
+      if (!provider) {
+        throw new ModelError(`Unknown provider "${providerId}"`);
+      }
+      if (provider.auth.apiKey?.login === undefined) {
+        throw new ModelError(
+          `Provider "${providerId}" does not accept an API key; use browser sign-in instead`,
+          { details: { providerId } },
+        );
+      }
+      try {
+        await modelRuntime.login(providerId, "api_key", {
+          prompt: async () => key,
+          notify: () => undefined,
+        });
+      } catch (error) {
+        throw new ModelError(`Could not save the API key for "${providerId}": ${String(error)}`, {
+          cause: error,
+          details: { providerId },
+        });
+      }
+      const status = await runtime.providers.status(providerId);
+      return ok({ provider: toProviderPayload(runtime, status) });
     },
 
     async providerLogout(params) {
@@ -282,6 +313,22 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const settings = parseSettings(params.settings);
       const project = await updateProject(dir, (current) => {
         current.settings = settings;
+      });
+      return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "project.updateBrief"(params) {
+      const dir = asString(params.dir, "dir");
+      const mode = asOptionalString(params.mode);
+      if (mode !== undefined && !(PLAN_MODES as readonly string[]).includes(mode)) {
+        throw new ProtocolError(`Invalid plan mode "${mode}"`);
+      }
+      const project = await updateProject(dir, (current) => {
+        const name = asOptionalString(params.name);
+        const prompt = typeof params.prompt === "string" ? params.prompt : undefined;
+        if (name !== undefined) current.name = name;
+        if (prompt !== undefined) current.prompt = prompt;
+        if (mode !== undefined) current.mode = mode as ProjectFile["mode"];
       });
       return ok({ project: toProjectPayload(project, dir) });
     },
@@ -449,16 +496,144 @@ function toModelPayload(model: {
   };
 }
 
-function toProviderPayload(provider: {
-  id: string;
-  name?: string;
-  configured: boolean;
-  authStatus: string;
-}) {
+interface ProviderAuthDetails {
+  apiKey?: { name?: string; login?: unknown };
+  oauth?: { name?: string; loginLabel?: string; login?: unknown };
+}
+
+interface ProviderDetails {
+  auth: ProviderAuthDetails;
+}
+
+type AuthPromptFacade =
+  | { type: "text" | "secret" | "manual_code"; message: string; placeholder?: string }
+  | {
+      type: "select";
+      message: string;
+      options: readonly { id: string; label: string; description?: string }[];
+    };
+
+type AuthEventFacade =
+  | { type: "info"; message: string }
+  | { type: "auth_url"; url: string; instructions?: string }
+  | { type: "device_code"; userCode: string; verificationUri: string }
+  | { type: "progress"; message: string };
+
+interface AuthInteractionFacade {
+  prompt(prompt: AuthPromptFacade): Promise<string>;
+  notify(event: AuthEventFacade): void;
+}
+
+interface PiModelRuntimeFacade {
+  getProvider(id: string): ProviderDetails | undefined;
+  login(
+    providerId: string,
+    type: "api_key" | "oauth",
+    interaction: AuthInteractionFacade,
+  ): Promise<unknown>;
+}
+
+function piModelRuntime(runtime: RuntimeInstance): PiModelRuntimeFacade {
+  return (runtime.pi as { modelRuntime: PiModelRuntimeFacade }).modelRuntime;
+}
+
+function toProviderPayload(
+  runtime: RuntimeInstance,
+  provider: {
+    id: string;
+    name?: string;
+    configured: boolean;
+    authStatus: string;
+  },
+) {
+  const details = piModelRuntime(runtime).getProvider(provider.id);
+  const apiKey = details?.auth.apiKey;
+  const oauth = details?.auth.oauth;
   return {
     id: provider.id,
     name: provider.name,
     configured: provider.configured,
     authStatus: provider.authStatus,
+    canSetApiKey: apiKey?.login !== undefined,
+    canOAuth: oauth !== undefined,
+    oauthLabel: oauth?.loginLabel ?? oauth?.name,
+    apiKeyLabel: apiKey?.name,
   };
+}
+
+async function loginWithAuthEvents(
+  runtime: RuntimeInstance,
+  host: WorkerAgentHost,
+  logger: RigLogger,
+  providerId: string,
+): Promise<void> {
+  const modelRuntime = piModelRuntime(runtime);
+  const provider = modelRuntime.getProvider(providerId);
+  if (!provider) {
+    throw new ModelError(`Unknown provider "${providerId}"`);
+  }
+  const type = provider.auth.oauth !== undefined ? "oauth" : "api_key";
+  let authUrl: string | undefined;
+  let info: string | undefined;
+  try {
+    await modelRuntime.login(providerId, type, {
+      prompt: async (prompt) => {
+        const interaction = {
+          kind: "question" as const,
+          id: randomUUID(),
+          sessionId: "",
+          createdAt: new Date().toISOString(),
+          question: prompt.message,
+          placeholder: prompt.type === "select" ? undefined : prompt.placeholder,
+          options:
+            prompt.type === "select"
+              ? prompt.options.map((option) => ({
+                  label: option.label,
+                  value: option.id,
+                  description: option.description,
+                }))
+              : undefined,
+          allowCustom: prompt.type !== "select",
+          secret: prompt.type === "secret" ? true : undefined,
+          authUrl,
+          authInfo: info,
+        };
+        const result = await host.requestInteraction(interaction);
+        return Array.isArray(result) ? (result[0] ?? "") : result;
+      },
+      notify: (event) => {
+        switch (event.type) {
+          case "auth_url":
+            authUrl = event.url;
+            break;
+          case "device_code":
+            info = `Enter code ${event.userCode} at ${event.verificationUri}`;
+            break;
+          case "info":
+          case "progress":
+            info = event.message;
+            break;
+        }
+        logger.info(`[auth] ${describeAuthEvent(event)}`);
+      },
+    });
+  } catch (error) {
+    throw new ModelError(`Login for provider "${providerId}" failed: ${String(error)}`, {
+      cause: error,
+      details: { providerId },
+    });
+  }
+}
+
+function describeAuthEvent(event: AuthEventFacade): string {
+  switch (event.type) {
+    case "info":
+      return event.message;
+    case "auth_url":
+      return `Open ${event.url}${event.instructions ? ` (${event.instructions})` : ""}`;
+    case "device_code":
+      return `Device code ${event.userCode} at ${event.verificationUri}`;
+    case "progress":
+      return event.message;
+  }
 }

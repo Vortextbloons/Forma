@@ -33,11 +33,11 @@ class WorkerHarness {
   #readyReject!: (error: Error) => void;
   readonly stderr: string[] = [];
 
-  constructor(projectDir: string) {
+  constructor(projectDir: string, env: Record<string, string> = {}) {
     this.child = spawn(
       process.execPath,
       [WORKER_ENTRY, "--project", projectDir, "--log-level", "info"],
-      { cwd: projectDir, stdio: ["pipe", "pipe", "pipe"] },
+      { cwd: projectDir, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...env } },
     );
     this.ready = new Promise<WorkerReady>((resolveReady, rejectReady) => {
       this.#readyResolve = resolveReady;
@@ -187,6 +187,57 @@ describe("forma worker", () => {
       expect(await second.stop()).toBe(0);
     } finally {
       if (second.child.exitCode === null) second.child.kill();
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+    }
+  }, 90_000);
+
+  it("saves and removes API keys through the credential store", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-keys-"));
+    const agentDir = join(root, "agent");
+    const harness = new WorkerHarness(root, { PI_CODING_AGENT_DIR: agentDir });
+    try {
+      await harness.ready;
+
+      const listed = await harness.send("listProviders");
+      expect(listed.ok).toBe(true);
+      const providers = (listed as WorkerResultOk).data as {
+        providers: Array<{ id: string; canSetApiKey?: boolean }>;
+      };
+      const openai = providers.providers.find((provider) => provider.id === "openai");
+      expect(openai?.canSetApiKey).toBe(true);
+
+      const saved = await harness.send("provider.setApiKey", {
+        providerId: "openai",
+        key: "sk-test-1234567890",
+      });
+      expect(saved.ok, JSON.stringify(saved)).toBe(true);
+
+      const authPath = join(agentDir, "auth.json");
+      const stored = JSON.parse(await readFile(authPath, "utf8")) as Record<
+        string,
+        { type: string; key?: string }
+      >;
+      expect(stored.openai?.type).toBe("api_key");
+      expect(stored.openai?.key).toBe("sk-test-1234567890");
+
+      const status = await harness.send("providerStatus", { providerId: "openai" });
+      const payload = (status as WorkerResultOk).data as {
+        provider: { configured: boolean; authStatus: string };
+      };
+      expect(payload.provider.configured).toBe(true);
+      expect(payload.provider.authStatus).toBe("authenticated");
+
+      const removed = await harness.send("providerLogout", { providerId: "openai" });
+      expect(removed.ok).toBe(true);
+      const after = JSON.parse(await readFile(authPath, "utf8").catch(() => "{}")) as Record<
+        string,
+        unknown
+      >;
+      expect(after.openai).toBeUndefined();
+
+      expect(await harness.stop()).toBe(0);
+    } finally {
+      if (harness.child.exitCode === null) harness.child.kill();
       await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
     }
   }, 90_000);

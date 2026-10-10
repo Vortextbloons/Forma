@@ -6,6 +6,7 @@ import {
   parseProjectLibrary,
   parseProjectSnapshot,
   type ContextRole,
+  type ProjectFile,
   type ProjectListEntry,
   type ProjectSettings,
   type ProjectSnapshot,
@@ -155,6 +156,44 @@ export function updateSettings(settings: ProjectSettings): void {
   }, 350);
 }
 
+export interface BriefPatch {
+  name?: string;
+  prompt?: string;
+  mode?: ProjectFile["mode"];
+}
+
+let pendingBrief: BriefPatch | null = null;
+let briefTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function updateBrief(patch: BriefPatch): void {
+  if (!current) return;
+  pendingBrief = { ...(pendingBrief ?? {}), ...patch };
+  current = { ...current, project: { ...current.project, ...patch } };
+  saveStatus = "saving";
+  if (briefTimer) clearTimeout(briefTimer);
+  briefTimer = setTimeout(() => {
+    void flushBrief();
+  }, 350);
+}
+
+async function flushBrief(): Promise<void> {
+  const patch = pendingBrief;
+  if (!patch || !current) return;
+  pendingBrief = null;
+  try {
+    const data = await sendCommand("project.updateBrief", {
+      dir: current.dir,
+      ...patch,
+    });
+    current = parseProjectSnapshot(data);
+    saveStatus = "saved";
+    if (patch.name !== undefined) await loadProjects();
+  } catch (error) {
+    saveStatus = "error";
+    reportError(error, "Could not save the brief");
+  }
+}
+
 async function flushSettings(): Promise<void> {
   const settings = pendingSettings;
   if (!settings || !current) return;
@@ -281,6 +320,7 @@ export const projectStore = {
   duplicateProject,
   deleteProject,
   updateSettings,
+  updateBrief,
   importContext,
   updateContext,
   removeContext,

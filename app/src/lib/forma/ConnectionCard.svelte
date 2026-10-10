@@ -13,10 +13,10 @@
   <div class="connection-card">
     <h2>Connect an AI provider</h2>
     <p>
-      Forma uses your own AI account. Connect a provider before generating your
-      first project.
+      Forma uses your own AI account. Add an API key or sign in once, and it
+      stays on this machine.
     </p>
-    <ProviderManager />
+    <ProviderManager compact />
   </div>
 {:else if loading}
   <p class="muted small">Checking provider connections…</p>

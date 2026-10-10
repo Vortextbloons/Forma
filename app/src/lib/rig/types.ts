@@ -41,10 +41,12 @@ export const FORMA_COMMAND_NAMES = [
   "project.duplicate",
   "project.delete",
   "project.updateSettings",
+  "project.updateBrief",
   "project.setConversation",
   "context.import",
   "context.remove",
   "context.update",
+  "provider.setApiKey",
 ] as const;
 
 export type FormaCommandName = (typeof FORMA_COMMAND_NAMES)[number];
@@ -152,6 +154,10 @@ export interface ProviderInfo {
   name?: string;
   configured: boolean;
   authStatus: string;
+  canSetApiKey?: boolean;
+  canOAuth?: boolean;
+  oauthLabel?: string;
+  apiKeyLabel?: string;
 }
 
 export const THINKING_LEVELS: readonly ThinkingLevel[] = [

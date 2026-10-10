@@ -35,6 +35,10 @@ function parseList(data: unknown): ProviderInfo[] {
         name: typeof r.name === "string" ? r.name : undefined,
         configured: r.configured === true,
         authStatus: typeof r.authStatus === "string" ? r.authStatus : "unknown",
+        canSetApiKey: r.canSetApiKey === true,
+        canOAuth: r.canOAuth === true,
+        oauthLabel: typeof r.oauthLabel === "string" ? r.oauthLabel : undefined,
+        apiKeyLabel: typeof r.apiKeyLabel === "string" ? r.apiKeyLabel : undefined,
       });
     }
   }
@@ -72,7 +76,7 @@ export async function status(id: string): Promise<void> {
 export async function login(id: string): Promise<void> {
   setBusy(id, true);
   try {
-    await sendCommand("providerLogin", { providerId: id });
+    await sendCommand("providerLogin", { providerId: id }, { timeoutMs: 0 });
     await refresh();
     await modelStore.refresh();
   } catch (error) {
@@ -83,6 +87,32 @@ export async function login(id: string): Promise<void> {
   } finally {
     setBusy(id, false);
     void status(id);
+  }
+}
+
+export async function setApiKey(id: string, key: string): Promise<void> {
+  setBusy(id, true);
+  try {
+    const data = await sendCommand(
+      "provider.setApiKey",
+      { providerId: id, key },
+      { timeoutMs: 0 },
+    );
+    const raw = (data as { provider?: unknown } | null)?.provider;
+    if (
+      typeof raw === "object" &&
+      raw !== null &&
+      typeof (raw as Record<string, unknown>).id === "string"
+    ) {
+      upsert(parseList({ providers: [raw] })[0]!);
+    }
+    notificationStore.push({
+      type: "success",
+      message: `API key saved for ${providers.find((p) => p.id === id)?.name ?? id}`,
+    });
+    await modelStore.refresh();
+  } finally {
+    setBusy(id, false);
   }
 }
 
@@ -115,6 +145,7 @@ export const providerStore = {
   refresh,
   status,
   login,
+  setApiKey,
   logout,
   handleEvent,
 };

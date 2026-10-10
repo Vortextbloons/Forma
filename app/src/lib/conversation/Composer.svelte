@@ -7,13 +7,17 @@
   import { messageStore } from "../rig/stores/messageStore.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { notificationStore } from "../rig/stores/notificationStore.svelte";
+  import { modelStore } from "../rig/stores/modelStore.svelte";
 
   let draft = $state("");
   let busy = $state(false);
+  let menuOpen = $state(false);
+  let menuWrap: HTMLDivElement | undefined = $state();
   let textarea: HTMLTextAreaElement | undefined = $state();
 
   const sessionId = $derived(sessionStore.activeSessionId);
   const canSend = $derived(sessionId !== null && draft.trim() !== "" && !busy);
+  const modelLabel = $derived(modelStore.selectedInfo()?.name ?? "Auto model");
 
   $effect(() => {
     const el = textarea;
@@ -21,6 +25,15 @@
       el.style.height = "auto";
       el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
     }
+  });
+
+  $effect(() => {
+    if (!menuOpen) return;
+    const close = (event: PointerEvent): void => {
+      if (menuWrap && !menuWrap.contains(event.target as Node)) menuOpen = false;
+    };
+    window.addEventListener("pointerdown", close, true);
+    return () => window.removeEventListener("pointerdown", close, true);
   });
 
   async function submit(): Promise<void> {
@@ -63,10 +76,27 @@
     aria-label="Message the agent"
   ></textarea>
   <div class="composer-toolbar">
-    <ModelPicker />
-    <ThinkingPicker />
+    <div class="composer-menu-wrap" bind:this={menuWrap}>
+      <button
+        class="composer-model"
+        type="button"
+        aria-expanded={menuOpen}
+        aria-haspopup="true"
+        title="Model and reasoning"
+        onclick={() => (menuOpen = !menuOpen)}
+      >
+        <Icon name="zap" size={13} />
+        <span>{modelLabel}</span>
+        <Icon name="chevron-down" size={12} />
+      </button>
+      {#if menuOpen}
+        <div class="composer-menu" role="menu" aria-label="Model settings">
+          <ModelPicker />
+          <ThinkingPicker />
+        </div>
+      {/if}
+    </div>
     <span class="composer-spacer"></span>
-    <span class="composer-hint">Enter to send · Shift+Enter for newline</span>
     <ContextIndicator />
     <button class="btn btn-accent" type="button" onclick={() => void submit()} disabled={!canSend} aria-label="Send">
       <Icon name="send" size={14} />
