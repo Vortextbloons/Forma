@@ -68,8 +68,8 @@ async function exportChromium(
   composed: Map<string, string>,
 ): Promise<ExportResult> {
   const browser = await launchBrowser();
+  const page = await browser.newPage();
   try {
-    const page = await browser.newPage();
     if (request.format === "pdf") {
       const buffers: Uint8Array[] = [];
       const css = pdfCssSize(size);
@@ -131,7 +131,7 @@ async function exportChromium(
     }
     return { format: "png", files };
   } finally {
-    await browser.close().catch(() => undefined);
+    await page.close().catch(() => undefined);
   }
 }
 
@@ -149,8 +149,8 @@ async function exportPptx(
   presentation.layout = PPTX_LAYOUT;
 
   const browser = await launchBrowser();
+  const page = await browser.newPage();
   try {
-    const page = await browser.newPage();
     let completed = 0;
     for (const pageId of request.pageIds) {
       throwIfAborted(request.signal);
@@ -171,7 +171,7 @@ async function exportPptx(
     await atomicWriteFile(destination, data);
     return { format: "pptx", files: [destination] };
   } finally {
-    await browser.close().catch(() => undefined);
+    await page.close().catch(() => undefined);
   }
 }
 

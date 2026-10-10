@@ -17,6 +17,7 @@ import { PendingRunRegistry } from "./runs.ts";
 import { createFormaEventSink } from "../forma/events.ts";
 import { setFormaEnv } from "../forma/runtime.ts";
 import { closeOcrWorker } from "../extraction/ocr.ts";
+import { closeBrowser } from "../rendering/browser.ts";
 import {
   buildDispatcher,
   dispatchCommand,
@@ -225,6 +226,7 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
     logger.info("[worker] shutting down");
     host.rejectAll(new CancellationError("Worker is shutting down"));
     runs.rejectAll(new CancellationError("Worker is shutting down"));
+    await closeBrowser().catch(() => undefined);
     await closeOcrWorker().catch(() => undefined);
     try {
       await runtime.close();

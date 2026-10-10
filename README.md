@@ -43,11 +43,3 @@ cd desktop && go build .
 
 For UI-only work, `cd app && npm run dev` renders the app against an in-browser
 mock bridge.
-
-## Status
-
-Stages 1–3 are in place: project persistence, the project-owned worker and
-provider setup, outline planning, artwork generation and refinement, slide
-controls, context ingestion with PDF/OCR extraction, research and photo search
-(enforced by project toggles), and Chromium layout validation. Export and
-standalone Windows packaging are the remaining stage.

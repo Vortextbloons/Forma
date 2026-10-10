@@ -18,7 +18,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.FORMA_DATA_DIR;
-  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+  await rm(root, { recursive: true, force: true });
 });
 
 async function makeTextPdf(path: string): Promise<void> {

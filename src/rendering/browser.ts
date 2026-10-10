@@ -1,12 +1,52 @@
 import type { Browser, Page } from "puppeteer";
 
-export async function launchBrowser(): Promise<Browser> {
-  const puppeteer = (await import("puppeteer")).default;
-  return puppeteer.launch({
-    headless: true,
-    ...(process.env.FORMA_CHROME_PATH ? { executablePath: process.env.FORMA_CHROME_PATH } : {}),
-    args: ["--disable-gpu", "--no-first-run", "--hide-scrollbars"],
-  });
+let browserPromise: Promise<Browser> | undefined;
+let browserKey: string | undefined;
+
+function chromeKey(): string {
+  return process.env.FORMA_CHROME_PATH ?? "";
+}
+
+export function launchBrowser(): Promise<Browser> {
+  const key = chromeKey();
+  if (browserPromise && browserKey !== key) {
+    const stale = browserPromise;
+    browserPromise = undefined;
+    browserKey = undefined;
+    void stale.then((browser) => browser.close()).catch(() => undefined);
+  }
+  if (!browserPromise) {
+    browserKey = key;
+    browserPromise = (async () => {
+      const puppeteer = (await import("puppeteer")).default;
+      const browser = await puppeteer.launch({
+        headless: true,
+        ...(key ? { executablePath: key } : {}),
+        args: ["--disable-gpu", "--no-first-run", "--hide-scrollbars"],
+      });
+      browser.on("disconnected", () => {
+        if (browserKey === key) {
+          browserPromise = undefined;
+          browserKey = undefined;
+        }
+      });
+      return browser;
+    })().catch((error: unknown) => {
+      browserPromise = undefined;
+      browserKey = undefined;
+      throw error;
+    });
+  }
+  return browserPromise;
+}
+
+export async function closeBrowser(): Promise<void> {
+  const pending = browserPromise;
+  browserPromise = undefined;
+  browserKey = undefined;
+  if (!pending) return;
+  const browser = await pending.catch(() => undefined);
+  await browser?.close().catch(() => undefined);
 }
 
 export async function renderPage(

@@ -4,6 +4,7 @@ import { RuntimeError } from "rig";
 import { loadExtraction } from "../extraction/index.ts";
 import { effectiveSize, type EffectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
+import type { Page } from "puppeteer";
 import { launchBrowser, waitForAssets } from "./browser.ts";
 import { composePage, type ComposedPage } from "./compose.ts";
 
@@ -183,14 +184,15 @@ async function checkLayout(
 ): Promise<string | undefined> {
   if (composed.size === 0) return undefined;
   const viewport = cssPixelSize(size);
-  let browser: Awaited<ReturnType<typeof launchBrowser>>;
+  let page: Page | undefined;
   try {
-    browser = await launchBrowser();
-  } catch (error) {
-    return `Layout checks are unavailable: ${error instanceof Error ? error.message : String(error)}`;
-  }
-  try {
-    const page = await browser.newPage();
+    let browser: Awaited<ReturnType<typeof launchBrowser>>;
+    try {
+      browser = await launchBrowser();
+    } catch (error) {
+      return `Layout checks are unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    page = await browser.newPage();
     await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1 });
     for (const [pageId, html] of composed) {
       const index = project.pages.indexOf(pageId);
@@ -284,7 +286,7 @@ async function checkLayout(
   } catch (error) {
     return `Layout checks failed: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
-    await browser.close().catch(() => undefined);
+    await page?.close().catch(() => undefined);
   }
   return undefined;
 }

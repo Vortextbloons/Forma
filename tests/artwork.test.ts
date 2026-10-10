@@ -102,7 +102,7 @@ async function setup(options: HarnessOptions): Promise<Harness> {
       unsubscribeRuns();
       setFormaEnv(undefined);
       await runtime.close().catch(() => undefined);
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+      await rm(root, { recursive: true, force: true });
     },
   };
 }

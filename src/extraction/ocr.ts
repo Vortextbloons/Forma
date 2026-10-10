@@ -10,14 +10,14 @@ export function tessdataDir(): string {
   if (override) return override;
   const require = createRequire(import.meta.url);
   const entry = require.resolve("@tesseract.js-data/eng");
-  return join(dirname(entry), "4.0.0_best_int");
+  return join(dirname(entry), "4.0.0");
 }
 
 async function getWorker(): Promise<Tesseract.Worker> {
   workerPromise ??= Tesseract.createWorker("eng", 1, {
     langPath: tessdataDir(),
     gzip: true,
-    cacheMethod: "none",
+    cacheMethod: "write",
   });
   return workerPromise;
 }

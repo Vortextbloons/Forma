@@ -3,10 +3,24 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { createLogger, createRuntime } from "rig";
+import { defaultRigConfig, resolveRigConfig } from "rig/config";
+import { RigEventBus } from "rig/events";
 import type { WorkerReady } from "rig/ipc";
+import { createSessionsFacade } from "rig/sessions";
+import formaAgent from "../src/agent.ts";
+import { createFormaEventSink } from "../src/forma/events.ts";
+import { setFormaEnv } from "../src/forma/runtime.ts";
 import { createProject } from "../src/projects/store.ts";
 import { writePage } from "../src/projects/pages.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
+import {
+  buildDispatcher,
+  dispatchCommand,
+  type RuntimeInstance,
+} from "../src/worker/commands.ts";
+import { WorkerAgentHost } from "../src/worker/host.ts";
+import { PendingRunRegistry } from "../src/worker/runs.ts";
 
 interface WorkerResultOk {
   id: string;
@@ -124,6 +138,126 @@ class WorkerHarness {
   }
 }
 
+class CommandHarness {
+  readonly events: Array<{ type: string; data?: unknown }> = [];
+  #eventWaiters: Array<{
+    type: string;
+    resolve: (event: { type: string; data?: unknown }) => void;
+  }> = [];
+  #seq = 0;
+  #dispatcher!: ReturnType<typeof buildDispatcher>;
+  #runtime: RuntimeInstance | undefined;
+  #cwd = process.cwd();
+  #env: Array<[string, string | undefined]> = [];
+
+  static async open(projectDir: string, env: Record<string, string> = {}): Promise<CommandHarness> {
+    const harness = new CommandHarness();
+    try {
+      for (const [key, value] of Object.entries(env)) {
+        harness.#env.push([key, process.env[key]]);
+        process.env[key] = value;
+      }
+      process.chdir(projectDir);
+      const logger = createLogger({ level: "error" });
+      const bus = new RigEventBus({ projectId: "test" });
+      const host = new WorkerAgentHost({ bus, logger });
+      const runs = new PendingRunRegistry();
+      const config = resolveRigConfig({
+        ...defaultRigConfig(),
+        workspace: "shared",
+        capabilities: { question: true, todo: true },
+        logLevel: "error",
+      });
+      const runtime = await createRuntime({
+        cwd: projectDir,
+        model: "auto",
+        host,
+        bus,
+        logger,
+        config,
+        agent: formaAgent,
+        modelRefresh: true,
+      });
+      harness.#runtime = runtime;
+      await runtime.attachSessionsFactory((sessionsDeps) =>
+        createSessionsFacade(sessionsDeps, { cwd: runtime.projectDir, host }),
+      );
+      const formaEvents = createFormaEventSink((message) => {
+        const event = (message as { event?: { type?: unknown; data?: unknown } }).event;
+        if (event && typeof event.type === "string") {
+          harness.#push({ type: event.type, data: event.data });
+        }
+      }, runtime.projectId);
+      setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents });
+      bus.subscribe((event) => runs.settleFromEvent(event));
+      harness.#dispatcher = buildDispatcher({
+        runtime,
+        host,
+        bus,
+        logger,
+        selectedModel: "auto",
+        runs,
+        formaEvents,
+        getOrCreateSession: async (sessionId?: string) => {
+          if (sessionId) {
+            const existing = runtime.sessions.get(sessionId);
+            if (!existing) throw new Error(`Unknown session "${sessionId}"`);
+            return existing;
+          }
+          return runtime.session ?? (await runtime.sessions.create({ name: "Default" }));
+        },
+        defaultSessionId: () => runtime.session?.id,
+      });
+      return harness;
+    } catch (error) {
+      await harness.close();
+      throw error;
+    }
+  }
+
+  #push(record: { type: string; data?: unknown }): void {
+    this.events.push(record);
+    for (let i = this.#eventWaiters.length - 1; i >= 0; i -= 1) {
+      const waiter = this.#eventWaiters[i]!;
+      if (waiter.type === record.type) {
+        this.#eventWaiters.splice(i, 1);
+        waiter.resolve(record);
+      }
+    }
+  }
+
+  waitForEvent(type: string, timeoutMs = 30_000): Promise<{ type: string; data?: unknown }> {
+    const existing = this.events.find((event) => event.type === type);
+    if (existing) return Promise.resolve(existing);
+    return new Promise((resolveEvent, rejectEvent) => {
+      const waiter = { type, resolve: resolveEvent };
+      this.#eventWaiters.push(waiter);
+      const timer = setTimeout(() => {
+        const index = this.#eventWaiters.indexOf(waiter);
+        if (index >= 0) this.#eventWaiters.splice(index, 1);
+        rejectEvent(new Error(`timed out waiting for worker event "${type}"`));
+      }, timeoutMs);
+      timer.unref?.();
+    });
+  }
+
+  send(name: string, params: Record<string, unknown> = {}): Promise<WorkerResult> {
+    const id = `c${++this.#seq}`;
+    return dispatchCommand(this.#dispatcher, { v: 1, type: "command", id, name, params });
+  }
+
+  async close(): Promise<void> {
+    setFormaEnv(undefined);
+    await this.#runtime?.close().catch(() => undefined);
+    this.#runtime = undefined;
+    process.chdir(this.#cwd);
+    for (const [key, value] of this.#env) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 describe("forma worker", () => {
   it("boots, handles project commands and shuts down cleanly", async () => {    const root = await mkdtemp(join(tmpdir(), "forma-worker-"));
     const projectDir = join(root, "Deck");
@@ -165,7 +299,7 @@ describe("forma worker", () => {
       expect(await harness.stop()).toBe(0);
     } finally {
       if (harness.child.exitCode === null) harness.child.kill();
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+      await rm(root, { recursive: true, force: true });
     }
   }, 90_000);
 
@@ -181,10 +315,9 @@ describe("forma worker", () => {
       settings: defaultSettings("slides"),
     });
 
-    const first = new WorkerHarness(original);
+    const first = await CommandHarness.open(original);
     let sessionId = "";
     try {
-      await first.ready;
       const session = await first.send("newSession", { name: "Project chat" });
       expect(session.ok).toBe(true);
       sessionId = (session as WorkerResultOk).data
@@ -197,7 +330,6 @@ describe("forma worker", () => {
         sessionIds: [sessionId],
       });
       expect(recorded.ok).toBe(true);
-      expect(await first.stop()).toBe(0);
       const index = JSON.parse(await readFile(join(original, ".rig", "state", "sessions.json"), "utf8"));
       const sessionFile = join(original, ".rig", "sessions", basename(index.sessions[sessionId].sessionFile));
       await mkdir(join(original, ".rig", "sessions"), { recursive: true });
@@ -211,14 +343,13 @@ describe("forma worker", () => {
         message: { role: "user", content: [{ type: "text", text: "Remember this conversation" }], timestamp: Date.now() },
       })}\n`);
     } finally {
-      if (first.child.exitCode === null) first.child.kill();
+      await first.close();
     }
 
     await rename(original, moved);
 
-    const second = new WorkerHarness(moved);
+    const second = await CommandHarness.open(moved);
     try {
-      await second.ready;
       const opened = await second.send("project.open", { dir: moved });
       expect(opened.ok).toBe(true);
       const payload = (opened as WorkerResultOk).data as {
@@ -235,20 +366,17 @@ describe("forma worker", () => {
       expect((resumed as WorkerResultOk).data).toMatchObject({
         messages: [{ role: "user", content: [{ type: "text", text: "Remember this conversation" }] }],
       });
-
-      expect(await second.stop()).toBe(0);
     } finally {
-      if (second.child.exitCode === null) second.child.kill();
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+      await second.close();
+      await rm(root, { recursive: true, force: true });
     }
   }, 90_000);
 
   it("handles outline, extraction, compose and validation commands", async () => {
     const root = await mkdtemp(join(tmpdir(), "forma-artwork-ipc-"));
     const projectDir = join(root, "Deck");
-    const harness = new WorkerHarness(root, { FORMA_DATA_DIR: join(root, "data") });
+    const harness = await CommandHarness.open(root, { FORMA_DATA_DIR: join(root, "data") });
     try {
-      await harness.ready;
       const created = await harness.send("project.create", {
         dir: projectDir,
         name: "Deck",
@@ -352,20 +480,16 @@ describe("forma worker", () => {
         extraction: { pages: Array<{ text: string }> } | null;
       };
       expect(extraction.extraction?.pages[0]?.text).toContain("supplied fact");
-
-      expect(await harness.stop()).toBe(0);
     } finally {
-      if (harness.child.exitCode === null) harness.child.kill();
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+      await harness.close();
+      await rm(root, { recursive: true, force: true });
     }
   }, 180_000);
 
   it("saves and removes API keys through the credential store", async () => {    const root = await mkdtemp(join(tmpdir(), "forma-keys-"));
     const agentDir = join(root, "agent");
-    const harness = new WorkerHarness(root, { PI_CODING_AGENT_DIR: agentDir });
+    const harness = await CommandHarness.open(root, { PI_CODING_AGENT_DIR: agentDir });
     try {
-      await harness.ready;
-
       const listed = await harness.send("listProviders");
       expect(listed.ok).toBe(true);
       const providers = (listed as WorkerResultOk).data as {
@@ -402,11 +526,9 @@ describe("forma worker", () => {
         unknown
       >;
       expect(after.openai).toBeUndefined();
-
-      expect(await harness.stop()).toBe(0);
     } finally {
-      if (harness.child.exitCode === null) harness.child.kill();
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
+      await harness.close();
+      await rm(root, { recursive: true, force: true });
     }
   }, 90_000);
 });
