@@ -27,6 +27,7 @@ import {
 import { resolveProjectsHome } from "../src/projects/home.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
 import { repairSessionIndex } from "../src/projects/sessions.ts";
+import { collectVisualReferences } from "../src/forma/visuals.ts";
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "forma-projects-"));
@@ -60,6 +61,10 @@ describe("project persistence", () => {
     const reopened = await openProject(dir);
     expect(reopened.id).toBe(project.id);
     expect(reopened.settings.slideCount).toBe(8);
+    await rm(projectFilePath(dir));
+    await expect(openProject(dir)).rejects.toMatchObject({
+      details: { dir, reason: "project-not-found" },
+    });
     await rm(root, { recursive: true, force: true });
   });
 
@@ -137,6 +142,30 @@ describe("project persistence", () => {
     expect(removed.context).toHaveLength(0);
     await expect(stat(assetPath)).rejects.toThrow();
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("makes ordinary uploaded images available to the AI alongside reference information", async () => {
+    const root = await tempDir();
+    try {
+      const { dir } = await createProject({
+        dir: join(root, "References"),
+        name: "References",
+        prompt: "Use the supplied material",
+        mode: "create",
+        settings: defaultSettings("slides"),
+      });
+      const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+      const imagePath = join(root, "image.png");
+      const textPath = join(root, "facts.txt");
+      await writeFile(imagePath, Buffer.from(png, "base64"));
+      await writeFile(textPath, "Background information");
+      await importContextFile(dir, imagePath, "optional");
+      const { project } = await importContextFile(dir, textPath, "content-source");
+      expect(project.context).toHaveLength(2);
+      expect(await collectVisualReferences(dir, project)).toEqual([{ data: png, mediaType: "image/png" }]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("rejects unsupported context file types", async () => {

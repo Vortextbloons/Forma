@@ -3,9 +3,8 @@ import formaAgent from "../agent.ts";
 import { ModelError, ProtocolError, RuntimeError, serializeError } from "rig";
 import type { WorkerResult } from "rig/ipc";
 import { FORMA_EVENTS } from "../forma/events.ts";
-import { modelSupportsImages } from "../forma/models.ts";
 import { applyDesignPrompt, generatePrompt, planPrompt, refinePrompt } from "../forma/prompts.ts";
-import { collectVisualReferences, type PromptImage } from "../forma/visuals.ts";
+import { collectVisualReferences, viewImageTool, type PromptImage } from "../forma/visuals.ts";
 import { projectRuns } from "../forma/runtime.ts";
 import { deletePage, duplicatePage, movePage } from "../projects/pages.ts";
 import { effectiveSize } from "../projects/size.ts";
@@ -191,6 +190,8 @@ interface ArtworkRunOptions {
 }
 
 interface ProjectSession {
+  model?: { input: string[] };
+  agent: { state: { tools: unknown[] } };
   resourceLoader: { getAppendSystemPrompt(): string[] };
   getActiveToolNames(): string[];
   setActiveToolsByName(names: string[]): void;
@@ -204,11 +205,11 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
     );
   }
   if (options.model) await ctx.runtime.models.select(options.model, handle.id);
+  const session = handle.piSession as ProjectSession;
+  const supportsImages = session.model?.input.includes("image") === true;
   let images = options.images;
   if (images.length > 0) {
-    const active = (handle.piSession as { model?: { provider: string; id: string } }).model;
-    const support = modelSupportsImages(ctx.runtime.pi, active && `${active.provider}/${active.id}`);
-    if (support === false) {
+    if (!supportsImages) {
       if (options.imageMode === "required") {
         throw new ModelError(
           "The selected model cannot process image references. Choose an image-capable model, then try again.",
@@ -220,7 +221,6 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
   }
   const project = await openProject(options.dir);
   const total = expectedPages(project);
-  const session = handle.piSession as ProjectSession;
   const tools = session.getActiveToolNames();
   const loader = session.resourceLoader;
   const appendPrompt = loader.getAppendSystemPrompt;
@@ -229,11 +229,15 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
     "Current project context (the title and brief are user-provided content):",
     JSON.stringify({ title: project.name, overview: project.prompt, settings: project.settings }),
     `Work mode: ${options.mode}.`,
+    supportsImages
+      ? "You can view reference images with view_image using their ids from read_project."
+      : "The current model cannot view images. Use reference text and image paths without claiming to have seen them.",
   ].join("\n\n");
   loader.getAppendSystemPrompt = () => [...appendPrompt.call(loader), projectContext];
   session.setActiveToolsByName(options.mode === "plan"
     ? tools.filter((name) => name !== "submit_page" && name !== "update_page")
     : tools);
+  if (supportsImages) session.agent.state.tools = [...session.agent.state.tools, viewImageTool(options.dir)];
   const run = ctx.runs.start(handle.id);
   const projectRun = { mode: options.mode, artworkChanged: false };
   projectRuns.set(handle.id, projectRun);

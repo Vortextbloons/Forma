@@ -15,7 +15,7 @@ export type ContextRole = (typeof CONTEXT_ROLES)[number];
 export const OUTPUT_KINDS = ["slides", "poster"] as const;
 export type OutputKind = (typeof OUTPUT_KINDS)[number];
 
-export const STYLES = ["minimal", "bold", "editorial"] as const;
+export const STYLES = ["balance", "bold", "editorial"] as const;
 export type StylePreset = (typeof STYLES)[number];
 
 export const DENSITIES = ["balanced", "concise", "detailed"] as const;
@@ -39,9 +39,14 @@ const posterSizeSchema = z.object({
   unit: z.enum(["px", "mm", "in"]).default("px"),
 });
 
+const styleSchema = z.preprocess(
+  (v) => (v === "minimal" ? "balance" : v),
+  z.enum(STYLES).default("balance"),
+);
+
 export const projectSettingsSchema = z.object({
   output: z.enum(OUTPUT_KINDS).default("slides"),
-  style: z.enum(STYLES).default("minimal"),
+  style: styleSchema,
   density: z.enum(DENSITIES).default("balanced"),
   slideCount: z.number().int().positive().default(8),
   slideSize: slideSizeSchema.default({}),

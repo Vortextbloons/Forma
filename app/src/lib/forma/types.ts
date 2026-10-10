@@ -95,7 +95,7 @@ export const CONTEXT_ROLE_LABELS: Record<ContextRole, string> = {
 };
 
 export const STYLE_LABELS: Record<StylePreset, string> = {
-  minimal: "Minimal",
+  balance: "Balance",
   bold: "Bold",
   editorial: "Editorial",
 };

@@ -178,20 +178,26 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     },
 
     async listModels() {
-      const models = (await runtime.models.list()).map(toModelPayload);
+      const models = (await runtime.models.list()).map((model) => toModelPayload(runtime, model));
       return ok({ models });
     },
 
     async listAvailableModels() {
-      const models = (await runtime.models.available()).map(toModelPayload);
+      const models = (await runtime.models.available()).map((model) => toModelPayload(runtime, model));
       return ok({ models });
     },
 
     async selectModel(params) {
       const ref = asString(params.ref, "ref");
-      const model = await runtime.models.select(ref, asOptionalString(params.sessionId));
+      const sessionId = asOptionalString(params.sessionId);
+      const model = await runtime.models.select(ref, sessionId);
       ctx.selectedModel = ref;
-      return ok({ model: toModelPayload(model) });
+      return ok({
+        model: toModelPayload(runtime, model),
+        thinkingLevel: sessionId
+          ? (runtime.sessions.get(sessionId)?.piSession as { thinkingLevel?: string } | undefined)?.thinkingLevel
+          : undefined,
+      });
     },
 
     async setThinkingLevel(params) {
@@ -199,7 +205,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const sessionId = asOptionalString(params.sessionId) ?? ctx.defaultSessionId();
       const handle = sessionId ? runtime.sessions.get(sessionId) : undefined;
       const piSession = handle?.piSession as
-        | { setThinkingLevel?: (level: string) => Promise<void> | void }
+        | { setThinkingLevel?: (level: string) => Promise<void> | void; thinkingLevel?: string }
         | undefined;
       if (!piSession?.setThinkingLevel) {
         throw new ProtocolError(
@@ -207,7 +213,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
         );
       }
       await piSession.setThinkingLevel(level ?? "medium");
-      return ok();
+      return ok({ thinkingLevel: piSession.thinkingLevel });
     },
 
     async listProviders() {
@@ -555,7 +561,7 @@ export function snapshotToInfo(
   };
 }
 
-function toModelPayload(model: {
+function toModelPayload(runtime: RuntimeInstance, model: {
   provider: string;
   id: string;
   name?: string;
@@ -567,6 +573,7 @@ function toModelPayload(model: {
     id: model.id,
     name: model.name,
     reasoning: model.reasoning,
+    thinkingLevelMap: piModelRuntime(runtime).getModel(model.provider, model.id)?.thinkingLevelMap,
     contextWindow: model.contextWindow,
   };
 }
@@ -600,6 +607,9 @@ interface AuthInteractionFacade {
 }
 
 interface PiModelRuntimeFacade {
+  getModel(providerId: string, modelId: string): {
+    thinkingLevelMap?: Partial<Record<NonNullable<SessionInfo["thinkingLevel"]>, string | null>>;
+  } | undefined;
   getProvider(id: string): ProviderDetails | undefined;
   login(
     providerId: string,

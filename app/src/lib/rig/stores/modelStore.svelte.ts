@@ -5,7 +5,7 @@
 
 
 import { sendCommand } from "../bridge";
-import { isThinkingLevel } from "../types";
+import { isThinkingLevel, THINKING_LEVELS } from "../types";
 import type { ModelInfo, ModelRef, RigEvent, ThinkingLevel } from "../types";
 import { sessionStore } from "./sessionStore.svelte";
 
@@ -27,6 +27,7 @@ function parseList(data: unknown): ModelInfo[] {
         id: r.id,
         name: typeof r.name === "string" ? r.name : undefined,
         reasoning: r.reasoning === true,
+        thinkingLevelMap: r.thinkingLevelMap as ModelInfo["thinkingLevelMap"],
         contextWindow: typeof r.contextWindow === "number" ? r.contextWindow : undefined,
       });
     }
@@ -56,9 +57,15 @@ export async function select(ref: ModelRef): Promise<void> {
       sessionId: sessionStore.activeSessionId ?? undefined,
     });
     selectedModel = ref;
-    const raw = (data as { model?: unknown } | null)?.model;
-    if (typeof raw === "object" && raw !== null && (raw as { reasoning?: unknown }).reasoning !== true) {
-      await setThinkingLevel("off");
+    const result = data as { model: ModelInfo; thinkingLevel?: unknown };
+    if (isThinkingLevel(result.thinkingLevel)) {
+      thinkingLevel = result.thinkingLevel;
+    } else if (!supportedThinkingLevels().includes(thinkingLevel)) {
+      const levels = supportedThinkingLevels();
+      const index = THINKING_LEVELS.indexOf(thinkingLevel);
+      const level = THINKING_LEVELS.slice(index).find((candidate) => levels.includes(candidate))
+        ?? [...THINKING_LEVELS.slice(0, index)].reverse().find((candidate) => levels.includes(candidate));
+      if (level) await setThinkingLevel(level);
     }
   } catch {
 
@@ -67,11 +74,12 @@ export async function select(ref: ModelRef): Promise<void> {
 
 export async function setThinkingLevel(level: ThinkingLevel): Promise<void> {
   try {
-    await sendCommand("setThinkingLevel", {
+    const data = await sendCommand("setThinkingLevel", {
       level,
       sessionId: sessionStore.activeSessionId ?? undefined,
     });
-    thinkingLevel = level;
+    const effectiveLevel = (data as { thinkingLevel?: unknown } | null)?.thinkingLevel;
+    thinkingLevel = isThinkingLevel(effectiveLevel) ? effectiveLevel : level;
   } catch {
 
     thinkingLevel = level;
@@ -98,6 +106,16 @@ export function selectedInfo(): ModelInfo | undefined {
   return available[0] ?? models[0];
 }
 
+export function supportedThinkingLevels(): readonly ThinkingLevel[] {
+  const model = selectedInfo();
+  if (!model?.reasoning) return ["off"];
+  return THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    return (level !== "xhigh" && level !== "max") || mapped !== undefined;
+  });
+}
+
 export const modelStore = {
   get models() {
     return models;
@@ -116,5 +134,6 @@ export const modelStore = {
   setThinkingLevel,
   infoFor,
   selectedInfo,
+  supportedThinkingLevels,
   handleEvent,
 };

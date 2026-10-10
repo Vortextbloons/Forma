@@ -149,52 +149,104 @@ async function attach(snapshot: ProjectSnapshot): Promise<void> {
   await ensureConversation();
 }
 
-export async function ensureConversation(): Promise<void> {
+let conversationChain = Promise.resolve();
+
+function withConversation<T>(task: () => Promise<T>): Promise<T> {
+  const next = conversationChain.then(task, task);
+  conversationChain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+function conversationOrder(sessionIds: string[]): string[] {
+  const ids = [...sessionIds];
+  const active = sessionStore.activeSessionId;
+  if (active && ids.includes(active)) {
+    return [active, ...ids.filter((id) => id !== active).reverse()];
+  }
+  return ids.reverse();
+}
+
+function patchConversationSessionIds(sessionIds: string[]): void {
   if (!current) return;
-  const ids = [...current.project.conversation.sessionIds].reverse();
-  for (const id of ids) {
-    if (await sessionStore.resume(id)) return;
-  }
-  await newChat();
+  current = {
+    ...current,
+    project: {
+      ...current.project,
+      conversation: { sessionIds },
+    },
+  };
 }
 
-export async function newChat(): Promise<void> {
-  if (!current || run) return;
-  const info = await sessionStore.newSession("Project chat");
-  if (info) {
-    await setConversation([...current.project.conversation.sessionIds, info.id]);
-  } else {
-    reportError(new Error("Could not create a session. Try again."), "Could not start a new chat");
-  }
-}
-
-export async function selectChat(id: string): Promise<void> {
-  if (!current || run || !current.project.conversation.sessionIds.includes(id)) return;
-  if (!await sessionStore.resume(id)) {
-    reportError(new Error("The conversation could not be loaded. Try again."), "Could not open chat");
-  }
-}
-
-async function setConversation(sessionIds: string[]): Promise<void> {
+async function persistConversation(sessionIds: string[]): Promise<void> {
   if (!current) return;
+  const snapshot = current;
   try {
     const data = await sendCommand("project.setConversation", {
-      dir: current.dir,
+      dir: snapshot.dir,
       sessionIds,
     });
-    current = parseProjectSnapshot(data);
+    if (current?.dir === snapshot.dir) current = parseProjectSnapshot(data);
   } catch (error) {
-    reportError(error, "Could not record the conversation");
+    if (current?.dir === snapshot.dir) reportError(error, "Could not record the conversation");
   }
+}
+
+async function createChatSession(): Promise<void> {
+  if (!current || run) return;
+  const snapshot = current;
+  await stopActiveGeneration();
+  if (current?.dir !== snapshot.dir) return;
+  const info = await sessionStore.newSession("Project chat");
+  if (current?.dir !== snapshot.dir) return;
+  if (!info) {
+    reportError(new Error("Could not create a session. Try again."), "Could not start a new chat");
+    return;
+  }
+  const sessionIds = [...snapshot.project.conversation.sessionIds, info.id];
+  patchConversationSessionIds(sessionIds);
+  sessionStore.select(info.id);
+  await persistConversation(sessionIds);
+}
+
+export function ensureConversation(): Promise<void> {
+  return withConversation(async () => {
+    if (!current) return;
+    for (const id of conversationOrder(current.project.conversation.sessionIds)) {
+      if (await sessionStore.resume(id)) return;
+    }
+    await createChatSession();
+  });
+}
+
+export function newChat(): Promise<void> {
+  return withConversation(() => createChatSession());
+}
+
+export function selectChat(id: string): Promise<void> {
+  return withConversation(async () => {
+    if (!current || run || !current.project.conversation.sessionIds.includes(id)) return;
+    await stopActiveGeneration();
+    if (!await sessionStore.resume(id)) {
+      reportError(new Error("The conversation could not be loaded. Try again."), "Could not open chat");
+    }
+  });
 }
 
 export async function refreshProject(): Promise<void> {
   if (!current) return;
+  const snapshot = current;
   try {
-    const data = await sendCommand("project.open", { dir: current.dir }, { timeoutMs: 60_000 });
-    current = parseProjectSnapshot(data);
-  } catch {
-    // the worker may be restarting; events will repopulate state
+    const data = await sendCommand("project.open", { dir: snapshot.dir }, { timeoutMs: 60_000 });
+    if (current?.dir === snapshot.dir) current = parseProjectSnapshot(data);
+  } catch (error) {
+    if (current?.dir === snapshot.dir && (error as { details?: { reason?: string } }).details?.reason === "project-not-found") {
+      resetProject();
+      notificationStore.push({ type: "error", message: "This project is no longer available. Open another project or create a new one." });
+      await loadProjects();
+    }
   }
 }
 
@@ -346,6 +398,7 @@ async function startArtwork(
 function applyProjectPayload(data: unknown): void {
   try {
     const snapshot = parseProjectSnapshot(data);
+    if (current?.dir !== snapshot.dir) return;
     current = { ...snapshot, project: { ...snapshot.project, ...(pendingBrief ?? {}), settings: pendingSettings ?? snapshot.project.settings } };
     if (!selectedPageId || !current.project.pages.includes(selectedPageId)) {
       selectedPageId = current.project.pages[0] ?? null;
@@ -661,6 +714,16 @@ export async function deleteProject(dir: string): Promise<void> {
 export async function closeProject(): Promise<void> {
   await stopActiveGeneration();
   try { await flushProjectChanges(); } catch { return; }
+  resetProject();
+}
+
+function resetProject(): void {
+  clearTimeout(briefTimer);
+  clearTimeout(saveTimer);
+  clearTimeout(outlineTimer);
+  pendingBrief = null;
+  pendingSettings = null;
+  pendingOutline = null;
   current = null;
   selectedPageId = null;
   run = null;
@@ -810,11 +873,13 @@ function handleFormaEvent(event: FormaDomainEvent): void {
   }
 }
 
-getBridge().onReady(() => {
+getBridge().onReady(async () => {
   if (!opening && current) {
-    void ensureConversation();
-    void refreshProject();
-    void refreshSearchCredentials();
+    const dir = current.dir;
+    await refreshProject();
+    if (opening || current?.dir !== dir) return;
+    await ensureConversation();
+    await refreshSearchCredentials();
   }
 });
 

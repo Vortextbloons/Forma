@@ -529,7 +529,7 @@ class MockBridge extends BaseBridge {
   private mockSettings(output: unknown): Record<string, unknown> {
     return {
       output: output === "poster" ? "poster" : "slides",
-      style: "minimal",
+      style: "balance",
       density: "balanced",
       slideCount: 8,
       slideSize: { preset: "16:9", width: 1920, height: 1080 },

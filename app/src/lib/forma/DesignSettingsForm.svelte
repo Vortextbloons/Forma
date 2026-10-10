@@ -3,6 +3,7 @@
   import { DENSITY_LABELS, STYLE_LABELS } from "./types";
   import { formatDimensions } from "./sizes";
   import PageIcon from "./PageIcon.svelte";
+  import Icon from "../components/Icon.svelte";
 
   let {
   settings,
@@ -19,6 +20,17 @@
 } = $props();
 
   let moreOptions = $state(false);
+  let disclosureEl = $state<HTMLElement | null>(null);
+
+  function onWindowPointerDown(event: PointerEvent): void {
+    if (!moreOptions) return;
+    if (disclosureEl && event.target instanceof Node && disclosureEl.contains(event.target)) return;
+    moreOptions = false;
+  }
+
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") moreOptions = false;
+  }
 
   const SLIDE_PRESETS: Record<string, { width: number; height: number }> = {
     "16:9": { width: 1920, height: 1080 },
@@ -330,6 +342,62 @@
   {/if}
 
   <div class="field">
+    <span class="field-label">Style</span>
+    <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
+      {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
+        <button
+          type="button"
+          class="preset-tile"
+          class:active={settings.style === value}
+          aria-pressed={settings.style === value}
+          onclick={() => emit({ style: value as ProjectSettings["style"] })}
+        >
+          <span class="mini-slide mini-{value}">
+            <i class="m-rule"></i>
+            <i class="m-title"></i>
+            <i class="m-line"></i>
+            <i class="m-line m-short"></i>
+            <i class="m-accent"></i>
+          </span>
+          <span class="tile-label">{label}</span>
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Density</span>
+    <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
+      {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
+        <button
+          type="button"
+          class="preset-tile"
+          class:active={settings.density === value}
+          aria-pressed={settings.density === value}
+          onclick={() => emit({ density: value as ProjectSettings["density"] })}
+        >
+          <span class="mini-slide mini-density-{value}">
+            <i class="m-title"></i>
+            <i class="m-line"></i>
+            <i class="m-line"></i>
+            {#if value !== "concise"}
+              <i class="m-line"></i>
+              <i class="m-line m-short"></i>
+            {/if}
+            {#if value === "detailed"}
+              <i class="m-line"></i>
+              <i class="m-line"></i>
+              <i class="m-line m-short"></i>
+              <i class="m-grid"></i>
+            {/if}
+          </span>
+          <span class="tile-label">{label}</span>
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="field">
     <span class="field-label">Sources</span>
     <label class="toggle-row" class:disabled={!exaConfigured}>
       <input
@@ -348,65 +416,18 @@
       </p>
     {/if}
   </div>
-  <details class="settings-disclosure" bind:open={moreOptions}>
-    <summary>More options</summary>
-    <div class="advanced-settings">
-        <div class="field">
-          <span class="field-label">Style</span>
-          <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
-            {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
-              <button
-                type="button"
-                class="preset-tile"
-                class:active={settings.style === value}
-                aria-pressed={settings.style === value}
-                onclick={() => emit({ style: value as ProjectSettings["style"] })}
-              >
-                <span class="mini-slide mini-{value}">
-                  <i class="m-rule"></i>
-                  <i class="m-title"></i>
-                  <i class="m-line"></i>
-                  <i class="m-line m-short"></i>
-                  <i class="m-accent"></i>
-                </span>
-                <span class="tile-label">{label}</span>
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div class="field">
-          <span class="field-label">Density</span>
-          <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
-            {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
-              <button
-                type="button"
-                class="preset-tile"
-                class:active={settings.density === value}
-                aria-pressed={settings.density === value}
-                onclick={() => emit({ density: value as ProjectSettings["density"] })}
-              >
-                <span class="mini-slide mini-density-{value}">
-                  <i class="m-title"></i>
-                  <i class="m-line"></i>
-                  <i class="m-line"></i>
-                  {#if value !== "concise"}
-                    <i class="m-line"></i>
-                    <i class="m-line m-short"></i>
-                  {/if}
-                  {#if value === "detailed"}
-                    <i class="m-line"></i>
-                    <i class="m-line"></i>
-                    <i class="m-line m-short"></i>
-                    <i class="m-grid"></i>
-                  {/if}
-                </span>
-                <span class="tile-label">{label}</span>
-              </button>
-            {/each}
-          </div>
-        </div>
-
+  <div class="settings-disclosure" bind:this={disclosureEl}>
+    <button
+      class="disclosure-toggle"
+      type="button"
+      aria-expanded={moreOptions}
+      onclick={() => (moreOptions = !moreOptions)}
+    >
+      More options
+      <Icon name={moreOptions ? "chevron-down" : "chevron-right"} size={13} />
+    </button>
+    {#if moreOptions}
+      <div class="more-options-popover" role="dialog" aria-label="More options">
         <label class="toggle-row" class:disabled={!pexelsConfigured}>
           <input
             type="checkbox"
@@ -419,10 +440,20 @@
         {#if !pexelsConfigured}
           <p class="muted small">
             Add a Pexels API key in
-            <button class="link-btn" type="button" onclick={openSearchSettings}>Settings</button>
+            <button
+              class="link-btn"
+              type="button"
+              onclick={() => {
+                moreOptions = false;
+                openSearchSettings?.();
+              }}
+            >Settings</button>
             to enable image search.
           </p>
         {/if}
-    </div>
-  </details>
+      </div>
+    {/if}
+  </div>
 </div>
+
+<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />

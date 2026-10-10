@@ -1,6 +1,5 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
-  import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { projectStore } from "./projectStore.svelte";
 
   let {
@@ -22,7 +21,6 @@
   } = $props();
 
   const project = $derived(projectStore.current?.project);
-  const running = $derived(projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionStore.activeSessionId)));
   const savedLabel = $derived(
     projectStore.saveStatus === "saving"
       ? "Saving…"
@@ -47,10 +45,6 @@
   <span class="header-project" title={project?.name ?? ""}>{project?.name ?? ""}</span>
   <span class="save-state" class:error={projectStore.saveStatus === "error"}>{savedLabel}</span>
   <span class="spacer"></span>
-  <div class="segmented work-mode-switch" role="group" aria-label="Work mode">
-    <button type="button" class:active={project?.mode === "plan"} aria-pressed={project?.mode === "plan"} disabled={running} onclick={() => projectStore.updateBrief({ mode: "plan" })}>Plan</button>
-    <button type="button" class:active={project?.mode === "create"} aria-pressed={project?.mode === "create"} disabled={running} onclick={() => projectStore.updateBrief({ mode: "create" })}>Build</button>
-  </div>
   <div class="segmented layout-switch" role="group" aria-label="Chat layout">
     <button type="button" class:active={layout === "full"} aria-pressed={layout === "full"} onclick={() => onLayoutChange("full")}><Icon name="message" size={14} /> Full chat</button>
     <button type="button" disabled={compact} class:active={layout === "side"} aria-pressed={layout === "side"} onclick={() => onLayoutChange("side")}><Icon name="panel-right" size={14} /> Side chat</button>

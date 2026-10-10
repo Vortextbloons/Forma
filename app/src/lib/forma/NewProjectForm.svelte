@@ -13,6 +13,8 @@
   let kind = $state<OutputKind>("slides");
   let settings = $state<ProjectSettings>(defaultProjectSettings("slides"));
   let staged = $state<Array<{ path: string; name: string }>>([]);
+  let stagedOpen = $state(false);
+  let assetsEl = $state<HTMLElement | null>(null);
   let creating = $state(false);
   let error = $state("");
 
@@ -22,15 +24,28 @@
   }
 
   async function addAssets(): Promise<void> {
-    const paths = await pickFiles("Add assets and context");
+    const paths = await pickFiles("Add reference images and documents");
+    let added = false;
     for (const path of paths) {
       if (staged.some((item) => item.path === path)) continue;
       staged = [...staged, { path, name: path.split(/[\\/]/).pop() ?? path }];
+      added = true;
     }
+    if (added) stagedOpen = true;
   }
 
   function removeStaged(path: string): void {
     staged = staged.filter((item) => item.path !== path);
+  }
+
+  function onWindowPointerDown(event: PointerEvent): void {
+    if (!stagedOpen) return;
+    if (assetsEl && event.target instanceof Node && assetsEl.contains(event.target)) return;
+    stagedOpen = false;
+  }
+
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") stagedOpen = false;
   }
 
   async function submit(): Promise<void> {
@@ -45,7 +60,7 @@
       await projectStore.createProject({
         name: name.trim(),
         prompt: prompt.trim(),
-        mode: "plan",
+        mode: "create",
         settings,
       });
       if (staged.length > 0) {
@@ -66,7 +81,7 @@
   <div class="creation-heading">
     <span class="creation-kicker">YOUR NEXT IDEA</span>
     <h1 class="start-prompt">Give it shape.</h1>
-    <p class="muted">Start with a brief. Work through the idea, then build when you're ready.</p>
+    <p class="muted">Start with a brief. Build right away or make a plan first.</p>
   </div>
   <div class="creation-grid">
     <section class="creation-brief" aria-label="Project brief">
@@ -79,11 +94,22 @@
         <textarea class="textarea start-brief" rows="3" placeholder="What are we making, who is it for, and what should it say?" bind:value={prompt} required></textarea>
       </label>
 
-      <div class="start-assets">
+      <div class="start-assets" bind:this={assetsEl}>
         <button class="btn btn-ghost" type="button" onclick={() => void addAssets()}>
           <Icon name="plus" size={14} /> Attach files
         </button>
         {#if staged.length > 0}
+          <button
+            class="btn btn-ghost staged-toggle"
+            type="button"
+            aria-expanded={stagedOpen}
+            title="Show attached files"
+            onclick={() => (stagedOpen = !stagedOpen)}
+          >
+            <Icon name="file" size={12} /> {staged.length} attached
+          </button>
+        {/if}
+        {#if stagedOpen && staged.length > 0}
           <ul class="staged-list">
             {#each staged as item (item.path)}
               <li>
@@ -100,6 +126,18 @@
 
       <ConnectionCard />
 
+      {#if error}
+        <p class="error-text">{error}</p>
+      {/if}
+
+      <button class="btn btn-accent create-button" type="submit" disabled={creating}>
+        {#if creating}
+          <span class="spinner"></span> Creating…
+        {:else}
+          Create project <Icon name="chevron-right" size={15} />
+        {/if}
+      </button>
+      <p class="creation-note muted small">Nothing builds until you ask. Planning is optional.</p>
     </section>
     <section class="creation-controls" aria-label="Project options">
       <div class="field">
@@ -140,17 +178,6 @@
 
     </section>
   </div>
-
-  {#if error}
-    <p class="error-text">{error}</p>
-  {/if}
-
-  <button class="btn btn-accent create-button" type="submit" disabled={creating}>
-    {#if creating}
-      <span class="spinner"></span> Creating…
-    {:else}
-      Create project <Icon name="chevron-right" size={15} />
-    {/if}
-  </button>
-  <p class="creation-note muted small">Your project opens in Plan mode. Nothing builds until you ask.</p>
 </form>
+
+<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />

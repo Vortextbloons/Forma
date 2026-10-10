@@ -1,23 +1,34 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
+  import Collapsible from "../components/Collapsible.svelte";
   import ContextTextDialog from "./ContextTextDialog.svelte";
   import { projectStore } from "./projectStore.svelte";
   import { pickFiles, openUrl } from "../rig/native";
-  import { CONTEXT_ROLE_LABELS, CONTEXT_ROLE_OPTIONS, formatFileSize } from "./types";
-  import type { ContextItem, ContextRole } from "./types";
+  import { formatFileSize } from "./types";
+  import type { ContextItem } from "./types";
 
   let importing = $state(false);
   let noteOpen = $state(false);
   let noteDraft = $state("");
   let noteName = $state("");
-  let noteRole = $state<ContextRole>("content-source");
   let viewingId = $state<string | null>(null);
+  let actionsEl = $state<HTMLElement | null>(null);
+
+  function onWindowPointerDown(event: PointerEvent): void {
+    if (!noteOpen) return;
+    if (actionsEl && event.target instanceof Node && actionsEl.contains(event.target)) return;
+    noteOpen = false;
+  }
+
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") noteOpen = false;
+  }
 
   const project = $derived(projectStore.current?.project);
   const sources = $derived(project?.sources ?? []);
 
   async function add(): Promise<void> {
-    const paths = await pickFiles("Add assets and context");
+    const paths = await pickFiles("Add reference images and documents");
     if (paths.length === 0) return;
     importing = true;
     try {
@@ -30,14 +41,10 @@
   async function addNote(): Promise<void> {
     const text = noteDraft.trim();
     if (!text) return;
-    await projectStore.importNote(text, noteRole, noteName.trim() || undefined);
+    await projectStore.importNote(text, "content-source", noteName.trim() || undefined);
     noteDraft = "";
     noteName = "";
     noteOpen = false;
-  }
-
-  function changeRole(id: string, value: string): void {
-    void projectStore.updateContext(id, { role: value as ContextRole });
   }
 
   function remove(id: string): void {
@@ -57,7 +64,9 @@
 </script>
 
 <div class="assets-panel">
-  <div class="assets-actions">
+  <h2>References</h2>
+  <p class="muted small">Add images the AI can use in your artwork and information to draw from. Forma chooses what fits your brief.</p>
+  <div class="assets-actions" bind:this={actionsEl}>
     <button class="btn btn-accent" type="button" disabled={importing} onclick={() => void add()}>
       {#if importing}
         <span class="spinner"></span> Importing…
@@ -65,42 +74,36 @@
         <Icon name="plus" size={13} /> Add files
       {/if}
     </button>
-    <button class="btn" type="button" onclick={() => (noteOpen = !noteOpen)}>
-      <Icon name="pencil" size={13} /> Add note
+    <button class="btn" type="button" aria-expanded={noteOpen} onclick={() => (noteOpen = !noteOpen)}>
+      <Icon name="pencil" size={13} /> Add information
     </button>
+    {#if noteOpen}
+      <div class="note-form">
+        <input
+          class="input"
+          type="text"
+          placeholder="Title (optional)"
+          bind:value={noteName}
+          aria-label="Information title"
+        />
+        <textarea
+          class="input textarea"
+          rows="4"
+          placeholder="Add facts, background, or key messages for the AI to draw from…"
+          bind:value={noteDraft}
+          aria-label="Reference information"
+        ></textarea>
+        <div class="note-form-foot">
+          <button class="btn btn-accent" type="button" disabled={noteDraft.trim() === ""} onclick={() => void addNote()}>
+            Add information
+          </button>
+        </div>
+      </div>
+    {/if}
   </div>
   <p class="muted small">
     PNG, JPEG, WebP, SVG, PDF, TXT, Markdown. Files are copied into the project.
   </p>
-
-  {#if noteOpen}
-    <div class="note-form">
-      <input
-        class="input"
-        type="text"
-        placeholder="Note name (optional)"
-        bind:value={noteName}
-        aria-label="Note name"
-      />
-      <textarea
-        class="input textarea"
-        rows="4"
-        placeholder="Paste notes or facts to use in the artwork…"
-        bind:value={noteDraft}
-        aria-label="Note text"
-      ></textarea>
-      <div class="note-form-foot">
-        <select class="select" bind:value={noteRole} aria-label="Note role">
-          {#each CONTEXT_ROLE_OPTIONS as role (role)}
-            <option value={role}>{CONTEXT_ROLE_LABELS[role]}</option>
-          {/each}
-        </select>
-        <button class="btn btn-accent" type="button" disabled={noteDraft.trim() === ""} onclick={() => void addNote()}>
-          Add note
-        </button>
-      </div>
-    </div>
-  {/if}
 
   {#if project && project.context.length > 0}
     {#each project.context as item (item.id)}
@@ -119,16 +122,7 @@
           </button>
         </div>
         <div class="asset-meta">
-          <select
-            class="select"
-            aria-label="Role for {item.name}"
-            value={item.role}
-            onchange={(event) => changeRole(item.id, event.currentTarget.value)}
-          >
-            {#each CONTEXT_ROLE_OPTIONS as role (role)}
-              <option value={role}>{CONTEXT_ROLE_LABELS[role]}</option>
-            {/each}
-          </select>
+          <span class="muted small">{item.mime.startsWith("image/") ? "Image" : "Information"}</span>
           <span class="muted small">{formatFileSize(item.size)}</span>
         </div>
         <div class="asset-status">
@@ -161,42 +155,45 @@
       </div>
     {/each}
   {:else}
-    <p class="muted small">No assets or context yet.</p>
+    <p class="muted small">No references yet. Add images, documents, or information to give Forma a starting point.</p>
   {/if}
 
   <div class="sources-section">
-    <h3 class="sources-title">Sources</h3>
-    {#if sources.length === 0}
-      <p class="muted small">Research links and photo provenance appear here.</p>
-    {:else}
-      <ul class="sources-list">
-        {#each sources as source (source.id)}
-          <li class="source-row">
-            <span class="source-kind">{source.kind === "photo" ? "Photo" : "Web"}</span>
-            {#if source.url}
-              <button class="link-btn source-title" type="button" title={source.url} onclick={() => void openUrl(source.url!)}>
-                {source.title}
-              </button>
-            {:else}
-              <span class="source-title">{source.title}</span>
-            {/if}
-            {#if source.author}
-              <span class="muted small">
-                by
-                {#if source.authorUrl}
-                  <button class="link-btn" type="button" onclick={() => void openUrl(source.authorUrl!)}>{source.author}</button>
-                {:else}
-                  {source.author}
-                {/if}
-              </span>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
+    <Collapsible title="Sources">
+      {#if sources.length === 0}
+        <p class="muted small">Research links and photo provenance appear here.</p>
+      {:else}
+        <ul class="sources-list">
+          {#each sources as source (source.id)}
+            <li class="source-row">
+              <span class="source-kind">{source.kind === "photo" ? "Photo" : "Web"}</span>
+              {#if source.url}
+                <button class="link-btn source-title" type="button" title={source.url} onclick={() => void openUrl(source.url!)}>
+                  {source.title}
+                </button>
+              {:else}
+                <span class="source-title">{source.title}</span>
+              {/if}
+              {#if source.author}
+                <span class="muted small">
+                  by
+                  {#if source.authorUrl}
+                    <button class="link-btn" type="button" onclick={() => void openUrl(source.authorUrl!)}>{source.author}</button>
+                  {:else}
+                    {source.author}
+                  {/if}
+                </span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </Collapsible>
   </div>
 </div>
 
 {#if viewingId}
   <ContextTextDialog id={viewingId} onclose={() => (viewingId = null)} />
 {/if}
+
+<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />

@@ -94,7 +94,7 @@
       <nav class="settings-nav" aria-label="Settings sections">
         {#if projectStore.current}
           <button type="button" class:settings-nav-active={tab === "design"} onclick={() => (tab = "design")}>Design</button>
-          <button type="button" class:settings-nav-active={tab === "assets"} onclick={() => (tab = "assets")}>Assets & context</button>
+          <button type="button" class:settings-nav-active={tab === "assets"} onclick={() => (tab = "assets")}>References</button>
         {/if}
         <button
           type="button"

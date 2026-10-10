@@ -17,7 +17,7 @@ import { WorkerAgentHost } from "../src/worker/host.ts";
 import { PendingRunRegistry } from "../src/worker/runs.ts";
 import { createFormaEventSink } from "../src/forma/events.ts";
 import { setFormaEnv } from "../src/forma/runtime.ts";
-import { createProject, openProject, setOutline, updateProject } from "../src/projects/store.ts";
+import { createProject, importContextAsset, openProject, setOutline, updateProject } from "../src/projects/store.ts";
 import { readPage, writePage } from "../src/projects/pages.ts";
 import { defaultSettings, type OutputKind } from "../src/projects/schema.ts";
 
@@ -294,7 +294,12 @@ describe("forma artwork pipeline", () => {
     }
   }, 90_000);
 
-  it.each(["slides", "poster"] as const)("builds %s directly from the brief without an outline", async (output) => {
+  it.each([
+    ["slides", "artwork.generate"],
+    ["poster", "artwork.generate"],
+    ["slides", "artwork.refine"],
+    ["poster", "artwork.refine"],
+  ] as const)("builds %s directly from the brief without an outline via %s", async (output, command) => {
     const harness = await setup({
       output,
       responses: [
@@ -303,12 +308,55 @@ describe("forma artwork pipeline", () => {
       ],
     });
     try {
-      const result = await harness.send("artwork.generate", { dir: harness.dir });
+      const result = await harness.send(command, { dir: harness.dir, scope: "project", mode: "build", message: "Build from my brief" });
       expect(result.ok, JSON.stringify(result)).toBe(true);
       const project = await openProject(harness.dir);
       expect(project.pages).toHaveLength(1);
       expect(project.artworkRevision).toBe(project.settingsRevision);
       expect((await readPage(harness.dir, project.pages[0]!)).html).toContain("Built from the brief");
+    } finally {
+      await harness.close();
+    }
+  }, 60_000);
+
+  it("lets an image-capable model view a reference on demand and removes the tool for a text-only model", async () => {
+    let imageId = "";
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+    const harness = await setup({
+      prepare: async (dir) => {
+        const { item } = await importContextAsset(dir, {
+          name: "Reference photo", extension: ".png", mime: "image/png", data: Buffer.from(png, "base64"), role: "optional",
+        });
+        imageId = item.id;
+      },
+      responses: [
+        (context: ModelContext) => {
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).toContain("view_image");
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("submit_page");
+          return fauxAssistantMessage([fauxToolCall("view_image", { id: imageId })]);
+        },
+        (context: ModelContext) => {
+          const result = context.messages.find((message: { role: string; toolName?: string }) => message.role === "toolResult" && message.toolName === "view_image");
+          expect(result?.content).toContainEqual({ type: "image", data: png, mimeType: "image/png" });
+          return fauxAssistantMessage("I can see the reference", { stopReason: "stop" });
+        },
+        (context: ModelContext) => {
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("view_image");
+          return fauxAssistantMessage("I can use the reference information", { stopReason: "stop" });
+        },
+      ],
+    });
+    try {
+      const handle = await harness.runtime.sessions.create({ name: "Image chat" });
+      const session = handle.piSession as { model: object; agent: { state: { model: object } }; getActiveToolNames(): string[] };
+      const textModel = session.model;
+      session.agent.state.model = { ...textModel, input: ["text", "image"] };
+      const viewed = await harness.send("artwork.refine", { dir: harness.dir, sessionId: handle.id, scope: "project", mode: "plan", message: "Look at my reference" });
+      expect(viewed.ok, JSON.stringify(viewed)).toBe(true);
+      expect(session.getActiveToolNames()).not.toContain("view_image");
+      session.agent.state.model = textModel;
+      const textOnly = await harness.send("artwork.refine", { dir: harness.dir, sessionId: handle.id, scope: "project", mode: "build", message: "What information is available?" });
+      expect(textOnly.ok, JSON.stringify(textOnly)).toBe(true);
     } finally {
       await harness.close();
     }

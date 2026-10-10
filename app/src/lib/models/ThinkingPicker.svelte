@@ -1,5 +1,4 @@
 <script module lang="ts">
-  import { THINKING_LEVELS } from "../rig/types";
   import type { ThinkingLevel } from "../rig/types";
 
   const LABELS: Record<ThinkingLevel, string> = {
@@ -18,7 +17,7 @@
 
   function onSelect(event: Event): void {
     const value = (event.currentTarget as HTMLSelectElement).value;
-    if (!(THINKING_LEVELS as readonly string[]).includes(value)) return;
+    if (!(modelStore.supportedThinkingLevels() as readonly string[]).includes(value)) return;
     void modelStore.setThinkingLevel(value as ThinkingLevel);
   }
 </script>
@@ -31,7 +30,7 @@
     value={modelStore.thinkingLevel}
     onchange={onSelect}
   >
-    {#each THINKING_LEVELS as level (level)}
+    {#each modelStore.supportedThinkingLevels() as level (level)}
       <option value={level}>{LABELS[level]}</option>
     {/each}
   </select>

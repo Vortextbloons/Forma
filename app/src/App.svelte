@@ -32,11 +32,17 @@
       settingsTab = "search";
       showSettings = true;
     };
+    const onOpenReferences = (): void => {
+      settingsTab = "assets";
+      showSettings = true;
+    };
     window.addEventListener("rig:open-provider-settings", onOpenProviders);
     window.addEventListener("forma:open-search-settings", onOpenSearch);
+    window.addEventListener("forma:open-references", onOpenReferences);
     return () => {
       window.removeEventListener("rig:open-provider-settings", onOpenProviders);
       window.removeEventListener("forma:open-search-settings", onOpenSearch);
+      window.removeEventListener("forma:open-references", onOpenReferences);
     };
   });
 </script>

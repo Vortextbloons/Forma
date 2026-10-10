@@ -14,11 +14,23 @@
   const isPoster = $derived(project?.settings.output === "poster");
 
   let scope = $state<"page" | "project">("project");
-  const mode = $derived(project?.mode === "create" ? "build" : "plan");
   const empty = $derived(messageStore.bySession(sessionId ?? "").length === 0);
   let historyOpen = $state(false);
+  let historyEl = $state<HTMLElement | null>(null);
   let switching = $state(false);
-  const running = $derived(projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionId)));
+
+  function onWindowPointerDown(event: PointerEvent): void {
+    if (!historyOpen) return;
+    if (historyEl && event.target instanceof Node && historyEl.contains(event.target)) return;
+    historyOpen = false;
+  }
+
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape") historyOpen = false;
+  }
+
+  const artworkRunning = $derived(projectStore.run !== null);
+  const running = $derived(artworkRunning || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionId)));
   const chatIds = $derived([...(project?.conversation.sessionIds ?? [])].reverse());
 
   function chatTitle(id: string): string {
@@ -55,28 +67,28 @@
 </script>
 
 <div class="chat-panel">
-  <div class="chat-header">
+  <div class="chat-header" bind:this={historyEl}>
     <strong>Chat</strong>
     <span class="spacer"></span>
     <button class="btn btn-ghost" type="button" aria-expanded={historyOpen} aria-controls="chat-history" onclick={() => (historyOpen = !historyOpen)}>
       Previous chats
       <Icon name="chevron-down" size={12} />
     </button>
-    <button class="icon-btn" type="button" title="New chat" aria-label="New chat" disabled={running || switching} onclick={() => void changeChat()}>
+    <button class="icon-btn" type="button" title="New chat" aria-label="New chat" disabled={artworkRunning || switching} onclick={() => void changeChat()}>
       <Icon name="plus" size={16} />
     </button>
+    {#if historyOpen}
+      <div class="chat-history" id="chat-history" aria-label="Previous chats">
+        {#each chatIds as id (id)}
+          <button type="button" class:active={id === sessionId} aria-current={id === sessionId ? "true" : undefined} disabled={running || switching} onclick={() => void changeChat(id)}>
+            <span>{chatTitle(id)}</span>
+            {#if id === sessionId}<span class="small muted">Current</span>{/if}
+          </button>
+        {/each}
+        {#if chatIds.length === 0}<p class="small muted">Your conversations will appear here.</p>{/if}
+      </div>
+    {/if}
   </div>
-  {#if historyOpen}
-    <div class="chat-history" id="chat-history" aria-label="Previous chats">
-      {#each chatIds as id (id)}
-        <button type="button" class:active={id === sessionId} aria-current={id === sessionId ? "true" : undefined} disabled={running || switching} onclick={() => void changeChat(id)}>
-          <span>{chatTitle(id)}</span>
-          {#if id === sessionId}<span class="small muted">Current</span>{/if}
-        </button>
-      {/each}
-      {#if chatIds.length === 0}<p class="small muted">Your conversations will appear here.</p>{/if}
-    </div>
-  {/if}
   <div class="chat-target">
     <span>{pages.length > 0 ? "Working on" : "Project"}</span>
     {#if pages.length > 0 && !isPoster}
@@ -100,19 +112,12 @@
     {/if}
 
   </div>
-  <p class="work-mode-hint">{mode === "plan" ? "Plan ideas and outlines. Artwork stays unchanged." : "Ask Forma to create or change the artwork."}</p>
-  {#if project && pages.length === 0}
-    <div class="project-actions-bar">
-      <button class="btn" type="button" disabled={running} onclick={() => void projectStore.plan()}><Icon name="message" size={14} /> {project.outline?.length ? "Revise plan" : "Plan project"}</button>
-      <button class="btn btn-accent" type="button" disabled={running} onclick={() => void projectStore.generate()}><Icon name="zap" size={14} /> Build project</button>
-    </div>
-  {/if}
   {#if empty && project}
     <div class="chat-welcome">
       <span class="creation-kicker">{isPoster ? "POSTER STUDIO" : "PRESENTATION STUDIO"}</span>
       <h1>{project.name}</h1>
       <p>{project.prompt}</p>
-      <span class="muted small">Your brief is ready. Talk through an idea, plan the project, or start building.</span>
+      <span class="muted small">Ask Forma to build from your brief, or choose Plan in the composer to work through ideas first.</span>
     </div>
   {/if}
   {#if sessionId}
@@ -123,6 +128,8 @@
     </div>
   {/if}
   {#key sessionId}
-    <Composer {target} {mode} />
+    <Composer {target} />
   {/key}
 </div>
+
+<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />

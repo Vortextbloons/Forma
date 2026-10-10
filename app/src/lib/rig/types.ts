@@ -160,6 +160,7 @@ export interface ModelInfo {
   id: string;
   name?: string;
   reasoning?: boolean;
+  thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
   contextWindow?: number;
 }
 

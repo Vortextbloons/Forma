@@ -3,7 +3,7 @@ import type { OutputKind, ProjectSettings } from "./types";
 export function defaultProjectSettings(output: OutputKind = "slides"): ProjectSettings {
   return {
     output,
-    style: "minimal",
+    style: "balance",
     density: "balanced",
     slideCount: 8,
     slideSize: { preset: "16:9", width: 1920, height: 1080 },

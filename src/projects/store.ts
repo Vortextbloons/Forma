@@ -195,7 +195,7 @@ export async function openProject(dir: string): Promise<ProjectFile> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new RuntimeError(`No project found in "${resolve(dir)}"`, {
-        details: { dir: resolve(dir) },
+        details: { dir: resolve(dir), reason: "project-not-found" },
       });
     }
     throw error;

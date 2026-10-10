@@ -12,7 +12,7 @@
   import { projectStore } from "../forma/projectStore.svelte";
   import type { ChatTarget } from "../forma/projectStore.svelte";
 
-  let { target = { scope: "project" } as ChatTarget, mode = "build" as "plan" | "build" }: { target?: ChatTarget; mode?: "plan" | "build" } = $props();
+  let { target = { scope: "project" } as ChatTarget }: { target?: ChatTarget } = $props();
 
   let draft = $state("");
   let busy = $state(false);
@@ -21,6 +21,7 @@
   let textarea: HTMLTextAreaElement | undefined = $state();
 
   const sessionId = $derived(sessionStore.activeSessionId);
+  const mode = $derived(projectStore.current?.project.mode === "plan" ? "plan" : "build");
   const running = $derived(busy || projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionId)));
   const canSend = $derived(sessionId !== null && draft.trim() !== "" && !running);
   const modelLabel = $derived(
@@ -90,6 +91,18 @@
 </script>
 
 <div class="composer">
+  {#if projectStore.current}
+    <div class="composer-mode-row">
+      <div class="segmented segmented-small" role="group" aria-label="Work mode">
+        <button type="button" class:active={mode === "plan"} aria-pressed={mode === "plan"} disabled={running} onclick={() => projectStore.updateBrief({ mode: "plan" })}>Plan</button>
+        <button type="button" class:active={mode === "build"} aria-pressed={mode === "build"} disabled={running} onclick={() => projectStore.updateBrief({ mode: "create" })}>Build</button>
+      </div>
+      <button class="btn btn-ghost" type="button" onclick={() => window.dispatchEvent(new CustomEvent("forma:open-references"))}>
+        <Icon name="plus" size={13} /> References
+      </button>
+      <span class="muted small">{mode === "plan" ? "Discuss ideas and make a plan. Artwork stays unchanged." : "Create and edit artwork. No plan needed."}</span>
+    </div>
+  {/if}
   <textarea
     class="input textarea composer-textarea"
     placeholder={sessionId
