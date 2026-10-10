@@ -56,6 +56,7 @@ export function refinePrompt(
   scope: "page" | "project",
   pageId: string | undefined,
   message: string,
+  mode: "plan" | "build",
 ): string {
   const lines: string[] = [];
   if (scope === "page" && pageId) {
@@ -75,8 +76,14 @@ export function refinePrompt(
     );
   }
   lines.push(
-    "If the message asks for changes, persist them with update_page or submit_page. If it is a question, answer it without editing.",
-    "After editing a page, call inspect_page and fix any reported layout problems.",
+    mode === "plan"
+      ? "This is a planning request: do not edit, create, or delete any pages. Respond with a concrete plan of the changes you would make."
+      : "If the message asks for changes, persist them with update_page or submit_page. If it is a question, answer it without editing.",
+  );
+  if (mode === "build") {
+    lines.push("After editing a page, call inspect_page and fix any reported layout problems.");
+  }
+  lines.push(
     "",
     "User message:",
     message,

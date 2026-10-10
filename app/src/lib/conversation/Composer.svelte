@@ -12,7 +12,7 @@
   import { projectStore } from "../forma/projectStore.svelte";
   import type { ChatTarget } from "../forma/projectStore.svelte";
 
-  let { target = { scope: "project" } as ChatTarget }: { target?: ChatTarget } = $props();
+  let { target = { scope: "project" } as ChatTarget, mode = "build" as "plan" | "build" }: { target?: ChatTarget; mode?: "plan" | "build" } = $props();
 
   let draft = $state("");
   let busy = $state(false);
@@ -21,7 +21,7 @@
   let textarea: HTMLTextAreaElement | undefined = $state();
 
   const sessionId = $derived(sessionStore.activeSessionId);
-  const running = $derived(busy || projectStore.run !== null);
+  const running = $derived(busy || projectStore.run !== null || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionId)));
   const canSend = $derived(sessionId !== null && draft.trim() !== "" && !running);
   const modelLabel = $derived(
     modelStore.selectedModel === "auto"
@@ -60,7 +60,7 @@
     if (projectStore.current) {
       busy = true;
       try {
-        await projectStore.sendChat(text, target);
+        await projectStore.sendChat(text, target, mode);
       } finally {
         busy = false;
       }
@@ -94,7 +94,9 @@
     class="input textarea composer-textarea"
     placeholder={sessionId
       ? projectStore.current && projectStore.current.project.pages.length > 0
-        ? "Refine the artwork — describe the change…"
+        ? mode === "plan"
+          ? "Plan a change — describe what you want…"
+          : "Refine the artwork — describe the change…"
         : "Describe a task…"
       : "Create or select a session first"}
     rows="1"
@@ -129,9 +131,15 @@
     <ThinkingPicker />
     <span class="composer-spacer"></span>
     <ContextIndicator />
-    <button class="btn btn-accent" type="button" onclick={() => void submit()} disabled={!canSend} aria-label="Send">
-      <Icon name="send" size={14} />
-      Send
-    </button>
+    {#if running}
+      <button class="btn" type="button" onclick={() => void projectStore.stopGeneration()} aria-label="Stop response">
+        <Icon name="x" size={14} /> Stop
+      </button>
+    {:else}
+      <button class="btn btn-accent" type="button" onclick={() => void submit()} disabled={!canSend} aria-label="Send">
+        <Icon name="send" size={14} />
+        Send
+      </button>
+    {/if}
   </div>
 </div>

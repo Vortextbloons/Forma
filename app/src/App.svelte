@@ -10,7 +10,7 @@
   getBridge();
 
   let showSettings = $state(false);
-  let settingsTab = $state<"providers" | "search" | "project">("providers");
+  let settingsTab = $state<"providers" | "search" | "project" | "design" | "assets">("providers");
   const banner = $derived(notificationStore.items[0]);
 
   const BANNER_TTL_MS = 6000;
@@ -63,7 +63,7 @@
   {#if projectStore.current}
     <WorkspaceScreen
       onOpenSettings={() => {
-        settingsTab = "project";
+        settingsTab = "design";
         showSettings = true;
       }}
       onCloseProject={() => projectStore.closeProject()}

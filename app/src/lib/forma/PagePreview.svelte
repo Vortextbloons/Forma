@@ -46,7 +46,7 @@
         class="page-frame"
         style={`width:${size.width}px;height:${size.height}px;transform:scale(${scale});`}
         srcdoc={html}
-        sandbox=""
+        sandbox="allow-scripts"
         tabindex="-1"
         aria-hidden="true"
         title="Slide thumbnail"
@@ -63,7 +63,7 @@
           class="page-frame"
           style={`width:${size.width}px;height:${size.height}px;transform:scale(${scale});`}
           srcdoc={html}
-          sandbox=""
+          sandbox="allow-scripts"
           tabindex="-1"
           title="Artwork preview"
         ></iframe>

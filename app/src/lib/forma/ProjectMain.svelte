@@ -92,9 +92,17 @@
     <section class="stage" style={`--page-ratio:${(size.width / size.height).toFixed(4)}`}>
       <PagePreview pageId={selectedPageId} />
       {#if project.settings.output === "slides"}
-        <p class="stage-caption">
-          Slide {selectedIndex + 1} of {pages.length}{pageTitle ? ` · ${pageTitle}` : ""}
-        </p>
+        <div class="stage-navigation">
+          <button class="icon-btn" type="button" aria-label="Previous slide" title="Previous slide" disabled={selectedIndex === 0} onclick={() => projectStore.selectPage(pages[selectedIndex - 1]!)}>
+            <Icon name="arrow-left" size={16} />
+          </button>
+          <p class="stage-caption">
+            Slide {selectedIndex + 1} of {pages.length}{pageTitle ? ` · ${pageTitle}` : ""}
+          </p>
+          <button class="icon-btn" type="button" aria-label="Next slide" title="Next slide" disabled={selectedIndex === pages.length - 1} onclick={() => projectStore.selectPage(pages[selectedIndex + 1]!)}>
+            <Icon name="chevron-right" size={16} />
+          </button>
+        </div>
       {/if}
     </section>
 

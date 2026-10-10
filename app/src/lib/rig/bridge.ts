@@ -111,6 +111,7 @@ abstract class BaseBridge implements RigBridge {
   private readonly errorCbs = new Set<(info: { message: string; fatal?: boolean }) => void>();
   private readonly pending = new Map<string, PendingEntry>();
   private cmdSeq = 0;
+  private eventSeq = 0;
   private closed = false;
   private unsubs: Array<() => void> = [];
 
@@ -235,8 +236,10 @@ abstract class BaseBridge implements RigBridge {
 
 
   protected handleRawEvent(payload: unknown): void {
-    const event = unwrapEvent(payload);
-    if (!event) return;
+    const raw = unwrapEvent(payload);
+    if (!raw) return;
+    this.eventSeq = Math.max(this.eventSeq + 1, raw.seq);
+    const event = { ...raw, seq: this.eventSeq };
     for (const store of allEventStores()) {
       try {
         store.handleEvent(event);

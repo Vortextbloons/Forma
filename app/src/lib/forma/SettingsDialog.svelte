@@ -2,6 +2,8 @@
   import Icon from "../components/Icon.svelte";
   import ProviderManager from "../models/ProviderManager.svelte";
   import ModelPicker from "../models/ModelPicker.svelte";
+  import AssetsPanel from "./AssetsPanel.svelte";
+  import DesignPanel from "./DesignPanel.svelte";
   import { workerStore } from "../rig/stores/workerStore.svelte";
   import { notificationStore } from "../rig/stores/notificationStore.svelte";
   import { restartWorker } from "../rig/bridge";
@@ -13,11 +15,11 @@
     initialTab = "providers",
     onclose,
   }: {
-    initialTab?: "providers" | "search" | "project";
+    initialTab?: "providers" | "search" | "project" | "design" | "assets";
     onclose: () => void;
   } = $props();
 
-  let tab = $state<"providers" | "search" | "project">("providers");
+  let tab = $state<"providers" | "search" | "project" | "design" | "assets">("providers");
   let exaKey = $state("");
   let pexelsKey = $state("");
   let saving = $state<SearchProviderId | null>(null);
@@ -90,6 +92,10 @@
     </div>
     <div class="modal-body">
       <nav class="settings-nav" aria-label="Settings sections">
+        {#if projectStore.current}
+          <button type="button" class:settings-nav-active={tab === "design"} onclick={() => (tab = "design")}>Design</button>
+          <button type="button" class:settings-nav-active={tab === "assets"} onclick={() => (tab = "assets")}>Assets & context</button>
+        {/if}
         <button
           type="button"
           class:settings-nav-active={tab === "providers"}
@@ -104,11 +110,15 @@
           type="button"
           class:settings-nav-active={tab === "project"}
           onclick={() => (tab = "project")}
-        >Project & app</button>
+        >App & worker</button>
       </nav>
 
       <div class="settings-pane">
-        {#if tab === "providers"}
+        {#if tab === "design"}
+          <DesignPanel />
+        {:else if tab === "assets"}
+          <AssetsPanel />
+        {:else if tab === "providers"}
           <div class="field">
             <span class="field-label">Providers</span>
             <ProviderManager />

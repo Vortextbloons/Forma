@@ -11,6 +11,7 @@ import type {
   RigEvent,
   ThinkingLevel,
 } from "../types";
+import { asRecord } from "../format";
 
 export interface ThinkingEntry {
   id: string;
@@ -48,6 +49,8 @@ interface InteractionRow extends InteractionState {
 
 let messages = $state<MessageRow[]>([]);
 let interactions = $state<InteractionRow[]>([]);
+let latestSeq = 0;
+let userSeq = 0;
 
 function findMessage(sessionId: string, id: string): MessageRow | undefined {
   return messages.find((m) => m.sessionId === sessionId && m.id === id);
@@ -80,12 +83,40 @@ export function findInteractionByToolCall(
 export function addUserMessage(sessionId: string, content: string): void {
   messages.push({
     sessionId,
-    id: `user-${Date.now()}`,
+    id: `user-${++userSeq}`,
     role: "user",
     content,
     status: "complete",
-    seq: 0,
+    seq: latestSeq + 0.5,
   });
+}
+
+export function restoreMessages(sessionId: string, history: unknown): void {
+  if (bySession(sessionId).length > 0 || !Array.isArray(history)) return;
+  for (const [index, raw] of history.entries()) {
+    const message = asRecord(raw);
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    let content = typeof message.content === "string"
+      ? message.content
+      : Array.isArray(message.content)
+        ? message.content.map((block) => asRecord(block)).filter((block) => block.type === "text").map((block) => block.text).join("\n")
+        : "";
+    if (message.role === "user" && content.startsWith("The user is refining ")) {
+      const marker = "\nUser message:\n";
+      const start = content.indexOf(marker);
+      if (start >= 0) content = content.slice(start + marker.length);
+    }
+    if (!content) continue;
+    messages.push({
+      sessionId,
+      id: `history-${index}`,
+      role: message.role,
+      content,
+      model: typeof message.model === "string" ? message.model : undefined,
+      status: "complete",
+      seq: index - history.length,
+    });
+  }
 }
 
 function attachThinking(sessionId: string, messageId: string | undefined): MessageRow | undefined {
@@ -100,6 +131,7 @@ function attachThinking(sessionId: string, messageId: string | undefined): Messa
 }
 
 export function handleEvent(event: RigEvent): void {
+  latestSeq = event.seq;
   const sessionId = event.sessionId;
   switch (event.type) {
     case "message.started": {
@@ -205,5 +237,6 @@ export const messageStore = {
   allInteractions,
   findInteractionByToolCall,
   addUserMessage,
+  restoreMessages,
   handleEvent,
 };

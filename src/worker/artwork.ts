@@ -80,13 +80,17 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
           details: { pageIds: project.pages },
         });
       }
-      const message = asString(params.message, "message");
-      const images = await collectVisualReferences(dir, project);
-      const result = await runArtwork(ctx, {
-        kind: "refine",
-        dir,
-        sessionId: asOptionalString(params.sessionId),
-        prompt: refinePrompt(project, scope, pageId, message),
+  const message = asString(params.message, "message");
+  const mode = asOptionalString(params.mode) ?? "build";
+  if (mode !== "plan" && mode !== "build") {
+    throw new ProtocolError(`Invalid refinement mode "${mode}"`);
+  }
+  const images = await collectVisualReferences(dir, project);
+  const result = await runArtwork(ctx, {
+    kind: "refine",
+    dir,
+    sessionId: asOptionalString(params.sessionId),
+    prompt: refinePrompt(project, scope, pageId, message, mode),
         images,
         imageMode: "optional",
       });

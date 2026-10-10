@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { WorkerReady } from "rig/ipc";
 import { createProject } from "../src/projects/store.ts";
 import { writePage } from "../src/projects/pages.ts";
@@ -198,6 +198,18 @@ describe("forma worker", () => {
       });
       expect(recorded.ok).toBe(true);
       expect(await first.stop()).toBe(0);
+      const index = JSON.parse(await readFile(join(original, ".rig", "state", "sessions.json"), "utf8"));
+      const sessionFile = join(original, ".rig", "sessions", basename(index.sessions[sessionId].sessionFile));
+      await mkdir(join(original, ".rig", "sessions"), { recursive: true });
+      await writeFile(sessionFile, `${JSON.stringify({
+        type: "session", version: 3, id: sessionId, timestamp: new Date().toISOString(), cwd: original,
+      })}\n${JSON.stringify({
+        type: "message",
+        id: "saved-user-message",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        message: { role: "user", content: [{ type: "text", text: "Remember this conversation" }], timestamp: Date.now() },
+      })}\n`);
     } finally {
       if (first.child.exitCode === null) first.child.kill();
     }
@@ -220,6 +232,9 @@ describe("forma worker", () => {
         ? ((resumed as WorkerResultOk).data as { session: { id: string } }).session.id
         : "";
       expect(resumedId).toBe(sessionId);
+      expect((resumed as WorkerResultOk).data).toMatchObject({
+        messages: [{ role: "user", content: [{ type: "text", text: "Remember this conversation" }] }],
+      });
 
       expect(await second.stop()).toBe(0);
     } finally {

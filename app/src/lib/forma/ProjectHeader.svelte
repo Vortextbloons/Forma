@@ -43,15 +43,15 @@
     class="icon-btn drawer-toggle"
     class:active={drawerOpen}
     type="button"
-    title="Toggle panel"
-    aria-label="Toggle side panel"
+    title="Toggle chat"
+    aria-label="Toggle chat"
     aria-expanded={drawerOpen}
     onclick={onToggleDrawer}
   >
     <Icon name="panel-right" size={15} />
   </button>
   <button class="btn btn-ghost" type="button" onclick={onOpenSettings}>
-    <Icon name="gear" size={14} /> Settings
+    <Icon name="gear" size={14} /> Project settings
   </button>
   <button class="btn" type="button" disabled title="Export is not available yet">
     <Icon name="external" size={14} /> Export

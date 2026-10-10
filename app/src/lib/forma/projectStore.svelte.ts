@@ -148,15 +148,25 @@ export async function ensureConversation(): Promise<void> {
   if (!current) return;
   const ids = [...current.project.conversation.sessionIds].reverse();
   for (const id of ids) {
-    await sessionStore.resume(id);
-    if (sessionStore.byId(id)) {
-      sessionStore.select(id);
-      return;
-    }
+    if (await sessionStore.resume(id)) return;
   }
+  await newChat();
+}
+
+export async function newChat(): Promise<void> {
+  if (!current || run) return;
   const info = await sessionStore.newSession("Project chat");
   if (info) {
-    await setConversation([info.id]);
+    await setConversation([...current.project.conversation.sessionIds, info.id]);
+  } else {
+    reportError(new Error("Could not create a session. Try again."), "Could not start a new chat");
+  }
+}
+
+export async function selectChat(id: string): Promise<void> {
+  if (!current || run || !current.project.conversation.sessionIds.includes(id)) return;
+  if (!await sessionStore.resume(id)) {
+    reportError(new Error("The conversation could not be loaded. Try again."), "Could not open chat");
   }
 }
 
@@ -308,7 +318,7 @@ async function startArtwork(
 function applyProjectPayload(data: unknown): void {
   try {
     current = parseProjectSnapshot(data);
-    if (selectedPageId && !current.project.pages.includes(selectedPageId)) {
+    if (!selectedPageId || !current.project.pages.includes(selectedPageId)) {
       selectedPageId = current.project.pages[0] ?? null;
     }
     saveStatus = "saved";
@@ -329,7 +339,11 @@ export async function applyDesign(): Promise<void> {
   await startArtwork("artwork.applyDesign", {}, "design", "Could not apply the design changes");
 }
 
-export async function sendRefine(message: string, target: ChatTarget): Promise<void> {
+export async function sendRefine(
+  message: string,
+  target: ChatTarget,
+  mode: "plan" | "build" = "build",
+): Promise<void> {
   const sessionId = sessionStore.activeSessionId;
   if (!current || run || !sessionId) return;
   messageStore.addUserMessage(sessionId, message);
@@ -339,16 +353,21 @@ export async function sendRefine(message: string, target: ChatTarget): Promise<v
       scope: target.scope,
       ...(target.scope === "page" && target.pageId ? { pageId: target.pageId } : {}),
       message,
+      mode,
     },
     "refine",
     "Could not apply the refinement",
   );
 }
 
-export async function sendChat(message: string, target: ChatTarget): Promise<void> {
+export async function sendChat(
+  message: string,
+  target: ChatTarget,
+  mode: "plan" | "build" = "build",
+): Promise<void> {
   if (!current) return;
   if (current.project.pages.length > 0) {
-    await sendRefine(message, target);
+    await sendRefine(message, target, mode);
     return;
   }
   const sessionId = sessionStore.activeSessionId;
@@ -847,5 +866,7 @@ export const projectStore = {
   refreshProject,
   closeProject,
   ensureConversation,
+  newChat,
+  selectChat,
   stopGeneration,
 };

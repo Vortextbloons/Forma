@@ -5,6 +5,7 @@
 
 
 import { sendCommand } from "../bridge";
+import { messageStore } from "./messageStore.svelte";
 import { isSessionInfo, isThinkingLevel } from "../types";
 import type { RigEvent, SessionInfo, SessionStatus, ThinkingLevel } from "../types";
 
@@ -80,15 +81,18 @@ export async function newSession(name?: string): Promise<SessionInfo | undefined
   }
 }
 
-export async function resume(id: string): Promise<void> {
+export async function resume(id: string): Promise<boolean> {
   setBusy(id, true);
   try {
     const data = await sendCommand("resumeSession", { sessionId: id });
     const raw = (data as { session?: unknown } | null)?.session;
-    if (isSessionInfo(raw)) upsert(raw);
+    if (!isSessionInfo(raw)) return false;
+    upsert(raw);
+    messageStore.restoreMessages(id, (data as { messages?: unknown }).messages);
     activeSessionId = id;
+    return true;
   } catch {
-
+    return false;
   } finally {
     setBusy(id, false);
   }

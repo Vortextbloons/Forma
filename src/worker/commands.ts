@@ -150,7 +150,8 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     async resumeSession(params) {
       const sessionId = asString(params.sessionId, "sessionId");
       const handle = await runtime.sessions.resume(sessionId);
-      return ok({ session: toSessionInfo(handle, host) });
+      const piSession = handle.piSession as { messages: unknown[] };
+      return ok({ session: toSessionInfo(handle, host), messages: piSession.messages });
     },
 
     async closeSession(params) {

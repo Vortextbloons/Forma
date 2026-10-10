@@ -6,9 +6,15 @@
   let { entry }: { entry: MessageEntry } = $props();
 
   const streaming = $derived(entry.status === "streaming");
-  const modelLabel = $derived(
-    entry.model ? (modelStore.infoFor(entry.model)?.name ?? entry.model) : undefined,
-  );
+  const modelLabel = $derived.by(() => {
+    const ref = entry.model;
+    if (!ref) return undefined;
+    const info = modelStore.infoFor(ref);
+    const id = info?.id ?? (ref.includes("/") ? ref.slice(ref.indexOf("/") + 1) : ref);
+    const name = info?.name;
+    if (name && name !== ref && !name.includes("/")) return name;
+    return id;
+  });
 </script>
 
 <div class="msg msg-assistant">
