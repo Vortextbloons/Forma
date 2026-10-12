@@ -3,7 +3,7 @@
   import ThumbnailRail from "./ThumbnailRail.svelte";
   import ProjectMain from "./ProjectMain.svelte";
   import RightPanel from "./RightPanel.svelte";
-  import StatusBar from "./StatusBar.svelte";
+  import ChatInfoPanel from "./ChatInfoPanel.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import { projectStore } from "./projectStore.svelte";
 
@@ -37,9 +37,11 @@
       <ThumbnailRail />
     {/if}
     <ProjectMain />
+    {#if effectiveLayout === "full" && !previewOpen}
+      <ChatInfoPanel />
+    {/if}
     <RightPanel />
   </div>
-  <StatusBar />
 </div>
 
 {#if showExport}

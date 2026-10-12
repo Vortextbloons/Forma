@@ -32,6 +32,7 @@
 
   onMount(() => Events.On("rig:files-dropped", (event) => {
     dropActive = false;
+    if (event.data.target !== "materials") return;
     void importPaths(event.data.files);
   }));
 
@@ -46,7 +47,7 @@
   }
 
   async function add(): Promise<void> {
-    await importPaths(await pickFiles("Add reference images and documents"));
+    await importPaths(await pickFiles("Add project materials"));
   }
 
   function acceptsDrop(event: DragEvent): boolean {
@@ -151,6 +152,12 @@
     return item.sourceId ? sources.find((source) => source.id === item.sourceId) : undefined;
   }
 
+  function providerLabel(provider: string | undefined): string {
+    if (provider === "ddgs") return "Built-in image search";
+    if (provider === "pexels") return "Pexels";
+    return provider ?? "Source";
+  }
+
   function extractionLabel(item: ContextItem): string {
     if (!item.extraction) return "";
     const kind =
@@ -163,13 +170,13 @@
   class="assets-panel"
   class:file-drop-target-active={dropActive}
   role="region"
-  aria-label="References"
-  data-file-drop-target
+  aria-label="Project materials"
+  data-file-drop-target="materials"
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={(event) => void onDrop(event)}
 >
-  <h2>References</h2>
+  <h2>Project materials</h2>
   <p class="muted small">Add images the AI can use in your artwork and information to draw from. Forma chooses what fits your brief.</p>
   <div class="assets-actions" bind:this={actionsEl}>
     <button class="btn btn-accent" type="button" disabled={importing} onclick={() => void add()}>
@@ -196,7 +203,7 @@
           rows="4"
           placeholder="Add facts, background, or key messages for the AI to draw from…"
           bind:value={noteDraft}
-          aria-label="Reference information"
+          aria-label="Project material information"
         ></textarea>
         <div class="note-form-foot">
           <button class="btn btn-accent" type="button" disabled={noteDraft.trim() === ""} onclick={() => void addNote()}>
@@ -253,14 +260,17 @@
             {/if}
             {#if source.url}
               <span>·</span>
-              <button class="link-btn" type="button" onclick={() => void openUrl(source.url!)}>Pexels</button>
+              <button class="link-btn" type="button" onclick={() => void openUrl(source.url!)}>{providerLabel(source.provider)}</button>
+            {/if}
+            {#if source.licenseStatus === "unverified"}
+              <span>· Reuse rights unverified</span>
             {/if}
           </div>
         {/if}
       </div>
     {/each}
   {:else}
-    <p class="muted small">No references yet. Add images, documents, or information to give Forma a starting point.</p>
+    <p class="muted small">No project materials yet. Add images, documents, or information to give Forma a starting point.</p>
   {/if}
 
   <div class="sources-section">

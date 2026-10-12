@@ -317,6 +317,7 @@ html[data-theme="light"] {
   padding-inline: 0;
   border: 0;
   background: transparent;
+  font-size: 18px;
 }
 
 .composer {
@@ -330,7 +331,7 @@ html[data-theme="light"] {
 }
 
 .composer-textarea {
-  min-height: 54px;
+  min-height: 40px;
   padding: 12px 12px 7px;
   font-size: 14px;
 }
@@ -778,3 +779,21 @@ html[data-theme="light"] .select {
 .hljs-strong {
   font-weight: 600;
 }
+
+.design-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.design-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.design-approval-actions .btn {
+  min-height: 34px;
+  padding-inline: 14px;
+}
+

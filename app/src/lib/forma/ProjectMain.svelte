@@ -80,7 +80,7 @@
     {#if projectStore.needsImageModel}
       <div class="stage-banner">
         <Icon name="alert" size={14} />
-        <span>The selected model cannot read the image references in this project.</span>
+        <span>The selected model cannot read the images in this project.</span>
         <button
           class="btn btn-ghost"
           type="button"

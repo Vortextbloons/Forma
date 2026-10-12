@@ -3,7 +3,6 @@
   import ProviderManager from "../models/ProviderManager.svelte";
   import ModelPicker from "../models/ModelPicker.svelte";
   import AssetsPanel from "./AssetsPanel.svelte";
-  import DesignPanel from "./DesignPanel.svelte";
   import { workerStore } from "../rig/stores/workerStore.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { notificationStore } from "../rig/stores/notificationStore.svelte";
@@ -19,11 +18,11 @@
     initialTab = "providers",
     onclose,
   }: {
-    initialTab?: "providers" | "search" | "project" | "design" | "assets";
+    initialTab?: "providers" | "search" | "project" | "assets";
     onclose: () => void;
   } = $props();
 
-  let tab = $state<"providers" | "search" | "project" | "design" | "assets">("providers");
+  let tab = $state<"providers" | "search" | "project" | "assets">("providers");
   let exaKey = $state("");
   let pexelsKey = $state("");
   let saving = $state<SearchProviderId | null>(null);
@@ -43,7 +42,7 @@
   );
 
   const credentials = $derived(projectStore.searchCredentials);
-  const searchOptions: Array<{ key: keyof SearchDefaults; label: string }> = [
+  const searchOptions: Array<{ key: "research" | "imageSearch"; label: string }> = [
     { key: "research", label: "Web search" },
     { key: "imageSearch", label: "Image finder" },
   ];
@@ -118,7 +117,7 @@
     }
   }
 
-  async function saveDefault(key: keyof SearchDefaults, enabled: boolean): Promise<void> {
+  async function saveDefault(key: "research" | "imageSearch", enabled: boolean): Promise<void> {
     savingDefaults = true;
     try {
       await projectStore.setSearchDefaults({ ...projectStore.searchDefaults, [key]: enabled });
@@ -129,7 +128,21 @@
     }
   }
 
-  function setProjectSearch(key: keyof SearchDefaults, value: string): void {
+  async function saveProvider(key: "researchProvider" | "imageProvider", value: string): Promise<void> {
+    savingDefaults = true;
+    try {
+      const defaults: SearchDefaults = { ...projectStore.searchDefaults };
+      if (key === "researchProvider") defaults.researchProvider = value as SearchDefaults["researchProvider"];
+      else defaults.imageProvider = value as SearchDefaults["imageProvider"];
+      await projectStore.setSearchDefaults(defaults);
+    } catch (error) {
+      notificationStore.push({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      savingDefaults = false;
+    }
+  }
+
+  function setProjectSearch(key: "research" | "imageSearch", value: string): void {
     const project = projectStore.current?.project;
     if (!project) return;
     projectStore.updateSettings({ ...project.settings, [key]: value === "default" ? null : value === "on" });
@@ -165,8 +178,7 @@
     <div class="modal-body">
       <nav class="settings-nav" aria-label="Settings sections" inert={updating}>
         {#if projectStore.current}
-          <button type="button" class:settings-nav-active={tab === "design"} onclick={() => (tab = "design")}>Design</button>
-          <button type="button" class:settings-nav-active={tab === "assets"} onclick={() => (tab = "assets")}>References</button>
+          <button type="button" class:settings-nav-active={tab === "assets"} onclick={() => (tab = "assets")}>Project materials</button>
         {/if}
         <button
           type="button"
@@ -186,9 +198,7 @@
       </nav>
 
       <div class="settings-pane">
-        {#if tab === "design"}
-          <DesignPanel />
-        {:else if tab === "assets"}
+        {#if tab === "assets"}
           <AssetsPanel />
         {:else if tab === "providers"}
           <div class="field">
@@ -215,6 +225,34 @@
               </label>
             {/each}
           </div>
+          <div class="field">
+            <span class="field-label">Providers</span>
+            <p class="muted small">Used by every project.</p>
+            <label class="field">
+              <span class="field-label">Web search</span>
+              <select
+                class="input"
+                value={projectStore.searchDefaults.researchProvider}
+                disabled={savingDefaults || projectStore.run !== null}
+                onchange={(event) => void saveProvider("researchProvider", event.currentTarget.value)}
+              >
+                <option value="ddgs">Built-in web search — included</option>
+                <option value="exa">Exa — API key</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Image finder</span>
+              <select
+                class="input"
+                value={projectStore.searchDefaults.imageProvider}
+                disabled={savingDefaults || projectStore.run !== null}
+                onchange={(event) => void saveProvider("imageProvider", event.currentTarget.value)}
+              >
+                <option value="ddgs">Built-in image search — included</option>
+                <option value="pexels">Pexels — API key</option>
+              </select>
+            </label>
+          </div>
           {#if projectStore.current}
             <div class="field">
               <span class="field-label">This project · {projectStore.current.project.name}</span>
@@ -236,64 +274,78 @@
               {/each}
             </div>
           {/if}
-          <div class="field">
-            <span class="field-label">Exa — web search</span>
-            <p class="muted small">
-              Add an API key to use web search.
-              {#if credentials.exa.configured}
-                <span class="badge">Configured · {credentials.exa.masked}</span>
-              {:else}
-                <span class="badge">Not configured</span>
-              {/if}
-            </p>
-            <div class="field-row">
-              <input
-                class="input"
-                type="password"
-                placeholder="Exa API key"
-                bind:value={exaKey}
-                aria-label="Exa API key"
-              />
-              <button
-                class="btn"
-                type="button"
-                disabled={saving !== null || exaKey.trim() === ""}
-                onclick={() => void saveKey("exa")}
-              >Save</button>
-              {#if credentials.exa.configured}
-                <button class="btn btn-ghost" type="button" onclick={() => void clearKey("exa")}>Remove</button>
-              {/if}
+          {#if projectStore.searchDefaults.researchProvider === "exa"}
+            <div class="field">
+              <span class="field-label">Exa — web search</span>
+              <p class="muted small">
+                Add an API key to use web search.
+                {#if credentials.exa.configured}
+                  <span class="badge">Configured · {credentials.exa.masked}</span>
+                {:else}
+                  <span class="badge">Not configured</span>
+                {/if}
+              </p>
+              <div class="field-row">
+                <input
+                  class="input"
+                  type="password"
+                  placeholder="Exa API key"
+                  bind:value={exaKey}
+                  aria-label="Exa API key"
+                />
+                <button
+                  class="btn"
+                  type="button"
+                  disabled={saving !== null || exaKey.trim() === ""}
+                  onclick={() => void saveKey("exa")}
+                >Save</button>
+                {#if credentials.exa.configured}
+                  <button class="btn btn-ghost" type="button" onclick={() => void clearKey("exa")}>Remove</button>
+                {/if}
+              </div>
             </div>
-          </div>
-          <div class="field">
-            <span class="field-label">Pexels — image finder</span>
-            <p class="muted small">
-              Add an API key to find photos.
-              {#if credentials.pexels.configured}
-                <span class="badge">Configured · {credentials.pexels.masked}</span>
-              {:else}
-                <span class="badge">Not configured</span>
-              {/if}
-            </p>
-            <div class="field-row">
-              <input
-                class="input"
-                type="password"
-                placeholder="Pexels API key"
-                bind:value={pexelsKey}
-                aria-label="Pexels API key"
-              />
-              <button
-                class="btn"
-                type="button"
-                disabled={saving !== null || pexelsKey.trim() === ""}
-                onclick={() => void saveKey("pexels")}
-              >Save</button>
-              {#if credentials.pexels.configured}
-                <button class="btn btn-ghost" type="button" onclick={() => void clearKey("pexels")}>Remove</button>
-              {/if}
+          {:else}
+            <div class="field">
+              <span class="field-label">Web search</span>
+              <p class="muted small"><span class="badge">Included · No API key needed</span></p>
             </div>
-          </div>
+          {/if}
+          {#if projectStore.searchDefaults.imageProvider === "pexels"}
+            <div class="field">
+              <span class="field-label">Pexels — image finder</span>
+              <p class="muted small">
+                Add an API key to find photos.
+                {#if credentials.pexels.configured}
+                  <span class="badge">Configured · {credentials.pexels.masked}</span>
+                {:else}
+                  <span class="badge">Not configured</span>
+                {/if}
+              </p>
+              <div class="field-row">
+                <input
+                  class="input"
+                  type="password"
+                  placeholder="Pexels API key"
+                  bind:value={pexelsKey}
+                  aria-label="Pexels API key"
+                />
+                <button
+                  class="btn"
+                  type="button"
+                  disabled={saving !== null || pexelsKey.trim() === ""}
+                  onclick={() => void saveKey("pexels")}
+                >Save</button>
+                {#if credentials.pexels.configured}
+                  <button class="btn btn-ghost" type="button" onclick={() => void clearKey("pexels")}>Remove</button>
+                {/if}
+              </div>
+            </div>
+          {:else}
+            <div class="field">
+              <span class="field-label">Image finder</span>
+              <p class="muted small"><span class="badge">Included · No API key needed</span></p>
+            </div>
+          {/if}
           <p class="muted small">
             Keys are stored per user, outside projects, and protected with Windows DPAPI.
           </p>

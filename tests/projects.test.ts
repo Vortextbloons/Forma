@@ -53,7 +53,9 @@ describe("project persistence", () => {
       settings.style = "editorial";
       settings.density = "concise";
       settings.designProfile!.colors.accent = "#ca2468";
+      settings.designProfile!.colors.coral = "#ef7866";
       settings.designProfile!.fonts.heading = "Georgia";
+      settings.designProfile!.fonts.utility = "Consolas";
       settings.designProfile!.direction = "Strong headlines and spacious layouts";
       const theme = await saveTheme("Studio", settings);
       settings.designProfile!.colors.accent = "#112233";
@@ -122,20 +124,44 @@ describe("project persistence", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it("seeds a new project with the caller's model preferences", async () => {
+    const root = await tempDir();
+    const seeded = await createProject({
+      dir: join(root, "Seeded"),
+      name: "Seeded",
+      prompt: "",
+      mode: "plan",
+      settings: defaultSettings(),
+      preferences: { model: "openai/gpt-5", thinkingLevel: "high" },
+    });
+    expect(seeded.project.preferences).toEqual({ model: "openai/gpt-5", thinkingLevel: "high", zoom: "fit" });
+    expect((await openProject(seeded.dir)).preferences).toEqual(seeded.project.preferences);
+
+    const unseeded = await createProject({
+      dir: join(root, "Unseeded"),
+      name: "Unseeded",
+      prompt: "",
+      mode: "plan",
+      settings: defaultSettings(),
+    });
+    expect(unseeded.project.preferences).toEqual({ model: "auto", thinkingLevel: "medium", zoom: "fit" });
+    await rm(root, { recursive: true, force: true });
+  });
+
   it("keeps saved chat preferences and defaults projects saved before they existed", async () => {
     const root = await tempDir();
     const dir = join(root, "Preferences");
     await createProject({ dir, name: "Preferences", prompt: "", mode: "plan", settings: defaultSettings() });
 
     await updateProject(dir, (project) => {
-      project.preferences = { model: "openai/gpt-5", thinkingLevel: "high", refineScope: "page", zoom: 150 };
+      project.preferences = { model: "openai/gpt-5", thinkingLevel: "high", zoom: 150 };
     });
-    expect((await openProject(dir)).preferences).toEqual({ model: "openai/gpt-5", thinkingLevel: "high", refineScope: "page", zoom: 150 });
+    expect((await openProject(dir)).preferences).toEqual({ model: "openai/gpt-5", thinkingLevel: "high", zoom: 150 });
 
     const legacy = JSON.parse(await readFile(projectFilePath(dir), "utf8"));
     delete legacy.preferences;
     await writeFile(projectFilePath(dir), JSON.stringify(legacy));
-    expect((await openProject(dir)).preferences).toEqual({ model: "auto", thinkingLevel: "medium", refineScope: "project", zoom: "fit" });
+    expect((await openProject(dir)).preferences).toEqual({ model: "auto", thinkingLevel: "medium", zoom: "fit" });
     await rm(root, { recursive: true, force: true });
   });
 

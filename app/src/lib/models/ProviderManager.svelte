@@ -1,7 +1,7 @@
 <script lang="ts">
   import { providerStore } from "../rig/stores/providerStore.svelte";
   import Icon from "../components/Icon.svelte";
-  import InteractionCard from "../conversation/InteractionCard.svelte";
+  import QuestionComposer from "../conversation/QuestionComposer.svelte";
   import { messageStore } from "../rig/stores/messageStore.svelte";
   import type { ProviderInfo } from "../rig/types";
 
@@ -92,7 +92,7 @@
 
 <div class="provider-manager">
   {#each authInteractions as interaction (interaction.interaction.id)}
-    <InteractionCard sessionId="" state={interaction} />
+    <QuestionComposer sessionId="" pending={interaction} />
   {/each}
 
   {#if providerStore.providers.length > 6}

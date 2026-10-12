@@ -1,13 +1,16 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { RuntimeError } from "rig";
+import { ProtocolError, RuntimeError } from "rig";
 import { openProject } from "../projects/store.ts";
 import type { ContextItem, ProjectFile } from "../projects/schema.ts";
 import { renderArtworkPreview } from "../rendering/validate.ts";
 
 const ATTACHABLE = new Set(["image/png", "image/jpeg", "image/webp"]);
-const MAX_IMAGES = 6;
+export const MAX_IMAGES = 6;
 const MAX_BYTES = 6 * 1024 * 1024;
+
+export const IMAGES_UNSUPPORTED =
+  "The selected model cannot read images. Choose an image-capable model, then try again.";
 
 export interface PromptImage {
   data: string;
@@ -20,15 +23,43 @@ export interface VisualReferences {
   skipped: Array<{ id: string; name: string; reason: string }>;
 }
 
-async function referenceImage(dir: string, item: ContextItem, signal?: AbortSignal): Promise<PromptImage> {
-  const data = await readFile(resolve(dir, item.asset), { signal });
-  if (data.byteLength <= MAX_BYTES) return { data: data.toString("base64"), mediaType: item.mime };
+async function promptImage(data: Buffer, mediaType: string): Promise<PromptImage> {
+  if (data.byteLength <= MAX_BYTES) return { data: data.toString("base64"), mediaType };
   const { createCanvas, loadImage } = await import("@napi-rs/canvas");
   const image = await loadImage(data);
   const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
   const canvas = createCanvas(Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)));
   canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
   return { data: (await canvas.encode("webp", 85)).toString("base64"), mediaType: "image/webp" };
+}
+
+async function referenceImage(dir: string, item: ContextItem, signal?: AbortSignal): Promise<PromptImage> {
+  const data = await readFile(resolve(dir, item.asset), { signal });
+  return promptImage(data, item.mime);
+}
+
+export async function normalizePromptImages(value: unknown): Promise<PromptImage[]> {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new ProtocolError('Missing or invalid parameter "images" (expected an array)');
+  }
+  if (value.length > MAX_IMAGES) {
+    throw new RuntimeError(`Attach at most ${MAX_IMAGES} images per message.`);
+  }
+  const images: PromptImage[] = [];
+  for (const raw of value) {
+    const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+    const data = typeof record.data === "string" ? record.data : "";
+    const mediaType = typeof record.mediaType === "string" ? record.mediaType : "";
+    if (!data || !mediaType) {
+      throw new ProtocolError('Missing or invalid image attachment (expected "data" and "mediaType")');
+    }
+    if (!ATTACHABLE.has(mediaType)) {
+      throw new RuntimeError(`Unsupported image type "${mediaType}". Attach PNG, JPEG, or WebP images.`);
+    }
+    images.push(await promptImage(Buffer.from(data, "base64"), mediaType));
+  }
+  return images;
 }
 
 export function viewImageTool(dir: string) {
@@ -64,6 +95,7 @@ export async function collectVisualReferences(
   dir: string,
   project: ProjectFile,
   pageId?: string,
+  limit = MAX_IMAGES,
 ): Promise<VisualReferences> {
   const assigned = new Set([
     ...(project.pageMeta[pageId ?? ""]?.assets ?? []),
@@ -73,7 +105,7 @@ export async function collectVisualReferences(
     .sort((a, b) => Number(assigned.has(b.id)) - Number(assigned.has(a.id)) || Number(b.role === "must-include") - Number(a.role === "must-include"));
   const result: VisualReferences = { images: [], labels: [], skipped: [] };
   for (const item of items) {
-    if (result.images.length >= MAX_IMAGES) {
+    if (result.images.length >= limit) {
       result.skipped.push({ id: item.id, name: item.name, reason: "Attachment limit; available through view_image" });
       continue;
     }

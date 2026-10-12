@@ -88,6 +88,10 @@ describe("forma exports", () => {
     await updateProject(dir, (project) => { project.settings.designProfile!.colors.accent = "#2266cc"; });
     const second = await runExport({ dir, project: await openProject(dir), format: "png", pageIds: [pages[1]!], destination: join(root, "theme-after.png") });
     expect(await centerColor(await readFile(second.files[0]!))).toEqual([34, 102, 204]);
+    await updateProject(dir, (project) => { project.settings.designProfile!.colors.coral = "#ef7866"; });
+    await updatePage(dir, pages[1]!, { css: ".fill{position:absolute;inset:0;background:var(--forma-color-coral)}" });
+    const expanded = await runExport({ dir, project: await openProject(dir), format: "png", pageIds: [pages[1]!], destination: join(root, "theme-expanded.png") });
+    expect(await centerColor(await readFile(expanded.files[0]!))).toEqual([239, 120, 102]);
     expect(await readPage(dir, pages[0]!)).toEqual(source);
     const print = await composePage(dir, pages[0]!, { width: 210, height: 297, unit: "mm" });
     expect(print.html).toContain("--forma-heading-size: 7.875mm");

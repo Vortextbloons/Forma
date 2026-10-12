@@ -104,7 +104,13 @@ func main() {
 		if len(files) == 0 {
 			return
 		}
-		app.Event.Emit("rig:files-dropped", map[string]any{"files": files})
+		payload := map[string]any{"files": files}
+		if details := event.Context().DropTargetDetails(); details != nil {
+			if target := details.Attributes["data-file-drop-target"]; target != "" {
+				payload["target"] = target
+			}
+		}
+		app.Event.Emit("rig:files-dropped", payload)
 	})
 
 	if err := app.Run(); err != nil {

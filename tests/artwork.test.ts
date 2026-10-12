@@ -23,8 +23,7 @@ import { defaultSettings, type OutputKind } from "../src/projects/schema.ts";
 import { launchBrowser } from "../src/rendering/browser.ts";
 import { document as composeDocument } from "../src/rendering/compose.ts";
 import { elementSelectionScript } from "../src/rendering/selection.ts";
-
-const AGENT_PATH = join(import.meta.dirname, "..", "src", "agent.ts");
+import formaAgent from "../src/agent.ts";
 
 it("selects the clicked element from a sandboxed preview without changing its source context", async () => {
   const browser = await launchBrowser();
@@ -94,7 +93,7 @@ async function setup(options: HarnessOptions): Promise<Harness> {
     typeof options.responses === "function" ? options.responses(dir) : options.responses;
   const runtime = await createTestRuntime({
     cwd: dir,
-    agent: AGENT_PATH,
+    agent: formaAgent,
     responses,
   });
   const logger = createLogger({ level: "error" });
@@ -528,6 +527,63 @@ describe("forma artwork pipeline", () => {
     }
   }, 60_000);
 
+  it("delivers attached chat images to a vision model with priority over project references", async () => {
+    const chatPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const referencePng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+    const harness = await setup({
+      prepare: async (dir) => {
+        for (let index = 0; index < 6; index += 1) {
+          await importContextAsset(dir, {
+            name: `Reference ${index + 1}`, extension: ".png", mime: "image/png", data: Buffer.from(referencePng, "base64"), role: "optional",
+          });
+        }
+      },
+      responses: [
+        (context: ModelContext) => {
+          expect(context.systemPrompt).toContain("The user attached 1 image");
+          const user = context.messages.find((message: { role: string }) => message.role === "user");
+          const content = Array.isArray(user?.content) ? user.content : [];
+          const images = content.filter((block: { type: string }) => block.type === "image");
+          expect(images).toHaveLength(6);
+          expect(images[0]).toMatchObject({ data: chatPng, mimeType: "image/png" });
+          return fauxAssistantMessage("Using the attached image", { stopReason: "stop" });
+        },
+      ],
+    });
+    try {
+      const handle = await harness.runtime.sessions.create({ name: "Chat images" });
+      const session = handle.piSession as { model: object; agent: { state: { model: object } } };
+      session.agent.state.model = { ...session.model, input: ["text", "image"] };
+      const result = await harness.send("artwork.refine", {
+        dir: harness.dir, sessionId: handle.id, scope: "project", mode: "build", message: "Match this style",
+        images: [{ data: chatPng, mediaType: "image/png" }],
+      });
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+    } finally { await harness.close(); }
+  }, 60_000);
+
+  it("rejects chat images for a text-only model in project and regular chat", async () => {
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+    const harness = await setup({
+      responses: [fauxAssistantMessage("Should not run", { stopReason: "stop" })],
+    });
+    try {
+      const handle = await harness.runtime.sessions.create({ name: "Text only" });
+      const refine = await harness.send("artwork.refine", {
+        dir: harness.dir, sessionId: handle.id, scope: "project", mode: "build", message: "Use this",
+        images: [{ data: png, mediaType: "image/png" }],
+      });
+      expect(refine.ok).toBe(false);
+      if (!refine.ok) expect((refine.error.details as { reason?: string })?.reason).toBe("images-unsupported");
+      const prompt = await harness.send("prompt", {
+        sessionId: handle.id, prompt: "Look at this",
+        images: [{ data: png, mediaType: "image/png" }],
+      });
+      expect(prompt.ok).toBe(false);
+      if (!prompt.ok) expect((prompt.error.details as { reason?: string })?.reason).toBe("images-unsupported");
+    } finally { await harness.close(); }
+  }, 60_000);
+
   it("refreshes project context and work mode in the system prompt without marking answers as artwork changes", async () => {
     const harness = await setup({
       responses: [
@@ -568,6 +624,105 @@ describe("forma artwork pipeline", () => {
       const project = await openProject(harness.dir);
       expect(project.artworkRevision).toBe(-1);
       expect(project.pages).toEqual([]);
+    } finally {
+      await harness.close();
+    }
+  }, 60_000);
+
+  it("keeps specialist tools deferred until load_tools activates them", async () => {
+    const harness = await setup({
+      responses: [
+        (context: ModelContext) => {
+          const names = context.tools?.map((tool: { name: string }) => tool.name) ?? [];
+          expect(names).toContain("load_tools");
+          expect(names).toContain("read_project");
+          expect(names).not.toContain("research");
+          expect(names).not.toContain("read_url");
+          expect(names).not.toContain("find_brand_icon");
+          return fauxAssistantMessage([fauxToolCall("load_tools", { group: "research" })]);
+        },
+        (context: ModelContext) => {
+          const names = context.tools?.map((tool: { name: string }) => tool.name) ?? [];
+          expect(names).toContain("research");
+          expect(names).toContain("read_url");
+          return fauxAssistantMessage([fauxToolCall("load_tools", { group: "research" })]);
+        },
+        (context: ModelContext) => {
+          const names = context.tools?.map((tool: { name: string }) => tool.name) ?? [];
+          expect(names.filter((name: string) => name === "research")).toHaveLength(1);
+          return fauxAssistantMessage("Ready", { stopReason: "stop" });
+        },
+      ],
+    });
+    try {
+      const result = await harness.send("prompt", { prompt: "Load the research tools" });
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+    } finally {
+      await harness.close();
+    }
+  }, 60_000);
+
+  it("loads tools only for the requesting session", async () => {
+    const harness = await setup({
+      responses: [
+        (context: ModelContext) => {
+          expect(context.tools?.map((tool: { name: string }) => tool.name)).not.toContain("find_photos");
+          return fauxAssistantMessage([fauxToolCall("load_tools", { group: "photos" })]);
+        },
+        () => fauxAssistantMessage("Loaded photos", { stopReason: "stop" }),
+        (context: ModelContext) => {
+          const names = context.tools?.map((tool: { name: string }) => tool.name) ?? [];
+          expect(names).toContain("load_tools");
+          expect(names).not.toContain("find_photos");
+          expect(names).not.toContain("import_photo");
+          return fauxAssistantMessage("Unaffected", { stopReason: "stop" });
+        },
+      ],
+    });
+    try {
+      const loader = await harness.runtime.sessions.create({ name: "Loader" });
+      const other = await harness.runtime.sessions.create({ name: "Other" });
+      const first = await harness.send("prompt", { sessionId: loader.id, prompt: "Load the photo tools" });
+      expect(first.ok, JSON.stringify(first)).toBe(true);
+      const second = await harness.send("prompt", { sessionId: other.id, prompt: "Hello" });
+      expect(second.ok, JSON.stringify(second)).toBe(true);
+    } finally {
+      await harness.close();
+    }
+  }, 60_000);
+
+  it("preserves planning restrictions and view tools when loading groups mid-run", async () => {
+    const harness = await setup({
+      responses: [
+        (context: ModelContext) => {
+          const names = context.tools?.map((tool: { name: string }) => tool.name) ?? [];
+          expect(names).toContain("view_image");
+          expect(names).toContain("view_artwork");
+          expect(names).not.toContain("submit_page");
+          expect(names).not.toContain("research");
+          return fauxAssistantMessage([fauxToolCall("load_tools", { group: "research" })]);
+        },
+        (context: ModelContext) => {
+          const names = context.tools?.map((tool: { name: string }) => tool.name) ?? [];
+          expect(names).toContain("research");
+          expect(names).toContain("view_image");
+          expect(names).toContain("view_artwork");
+          expect(names).not.toContain("submit_page");
+          return fauxAssistantMessage("Loaded", { stopReason: "stop" });
+        },
+      ],
+    });
+    try {
+      const handle = await harness.runtime.sessions.create({ name: "Vision chat" });
+      const session = handle.piSession as { model: object; agent: { state: { model: object } }; getActiveToolNames(): string[] };
+      session.agent.state.model = { ...session.model, input: ["text", "image"] };
+      const result = await harness.send("artwork.refine", { dir: harness.dir, sessionId: handle.id, scope: "project", mode: "plan", message: "Load research while planning" });
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      const active = session.getActiveToolNames();
+      expect(active).toContain("research");
+      expect(active).toContain("read_url");
+      expect(active).toContain("submit_page");
+      expect(active).not.toContain("view_image");
     } finally {
       await harness.close();
     }

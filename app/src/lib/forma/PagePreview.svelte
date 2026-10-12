@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import Icon from "../components/Icon.svelte";
   import ModelPicker from "../models/ModelPicker.svelte";
+  import ThinkingPicker from "../models/ThinkingPicker.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { modelStore } from "../rig/stores/modelStore.svelte";
   import { providerStore } from "../rig/stores/providerStore.svelte";
@@ -229,14 +230,12 @@
         </button>
         {#if modelMenuOpen}
           <div class="composer-menu" role="menu" aria-label="Model settings">
-            <ModelPicker onselect={() => (modelMenuOpen = false)} />
+            <ModelPicker />
           </div>
         {/if}
       </div>
-    </div>
-    <div class="feedback-actions">
-      <span>{running ? "AI is working…" : "Enter to send · Shift+Enter for a new line"}</span>
-      <button class="btn btn-accent" type="submit" disabled={!comment.trim() || running || !sessionStore.activeSessionId}>Apply change</button>
+      <ThinkingPicker />
+      <button class="btn btn-accent feedback-apply" type="submit" disabled={!comment.trim() || running || !sessionStore.activeSessionId}>Apply change</button>
     </div>
     </form>
   </div>
@@ -256,8 +255,7 @@
     font-family: var(--font-ui);
   }
 
-  .feedback-heading,
-  .feedback-actions {
+  .feedback-heading {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -296,17 +294,16 @@
   }
 
   .feedback-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     margin-top: 8px;
   }
 
-  .feedback-actions {
-    justify-content: space-between;
-    margin-top: 12px;
-  }
-
-  .feedback-actions span {
-    color: var(--muted);
-    font-size: 10px;
-    max-width: 170px;
+  .feedback-apply {
+    padding: 4px 8px;
+    font-size: 12px;
+    white-space: nowrap;
+    margin-left: auto;
   }
 </style>

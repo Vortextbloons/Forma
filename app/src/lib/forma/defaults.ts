@@ -14,5 +14,7 @@ export function defaultProjectSettings(output: OutputKind = "slides"): ProjectSe
     research: null,
     imageSearch: null,
     designProfile: defaultDesignProfile(),
+    designApproved: false,
+    designName: "AI chooses",
   };
 }

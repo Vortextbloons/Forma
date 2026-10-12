@@ -20,6 +20,8 @@ import { createArtworkHandlers } from "./artwork.ts";
 import { createExportHandlers } from "./exports.ts";
 import { scheduleExtraction, loadExtraction } from "../extraction/index.ts";
 import { projectRuns, type FormaEventSink } from "../forma/runtime.ts";
+import { IMAGES_UNSUPPORTED, normalizePromptImages } from "../forma/visuals.ts";
+import { prepareSessionTools } from "../tools/lazy.ts";
 import {
   SEARCH_PROVIDERS,
   clearSearchKey,
@@ -49,11 +51,13 @@ import { listThemes, saveTheme } from "../projects/themes.ts";
 import {
   CONTEXT_ROLES,
   PLAN_MODES,
+  THINKING_LEVELS,
   deriveProjectName,
   projectPreferencesSchema,
   projectSettingsSchema,
   type ContextRole,
   type ProjectFile,
+  type ProjectPreferences,
   type ProjectSettings,
 } from "../projects/schema.ts";
 import { resultErr, resultOk } from "./results.ts";
@@ -108,8 +112,10 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
     },
 
     async "design.saveTheme"(params) {
-      const project = await openProject(asString(params.dir, "dir"));
-      const theme = await saveTheme(asString(params.name, "name"), project.settings);
+      const settings = params.settings === undefined
+        ? (await openProject(asString(params.dir, "dir"))).settings
+        : parseSettings(params.settings);
+      const theme = await saveTheme(asString(params.name, "name"), settings);
       return ok({ theme });
     },
 
@@ -117,16 +123,24 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const prompt = asString(params.prompt, "prompt");
       const sessionId = asOptionalString(params.sessionId);
       const handle = await ctx.getOrCreateSession(sessionId);
+      prepareSessionTools(handle);
       if (ctx.runs.get(handle.id) || projectRuns.has(handle.id)) {
         throw new ProtocolError(
           `Session "${handle.id}" already has a running prompt; abort it first`,
         );
       }
+      const images = await normalizePromptImages(params.images);
+      if (
+        images.length > 0 &&
+        (handle.piSession as { model?: { input: string[] } }).model?.input.includes("image") !== true
+      ) {
+        throw new ModelError(IMAGES_UNSUPPORTED, { details: { reason: "images-unsupported" } });
+      }
       const run = ctx.runs.start(handle.id);
       try {
         await ctx.runtime.prompt(prompt, {
           sessionId: handle.id,
-          images: asOptionalArray(params.images) as Array<{ data: string; mediaType: string }>,
+          ...(images.length > 0 ? { images } : {}),
         });
       } catch (error) {
         run.markAbortedIfAbortError(error);
@@ -142,6 +156,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       if (sessionId) {
         const projectRun = projectRuns.get(sessionId);
         if (projectRun) projectRun.aborted = true;
+        ctx.host.rejectForSession(sessionId, new CancellationError());
         const handle = ctx.runtime.sessions.get(sessionId);
         if (handle) {
           const run = ctx.runs.get(sessionId);
@@ -312,6 +327,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
         prompt,
         mode: mode as ProjectFile["mode"],
         settings,
+        preferences: parseModelPreferences(params.preferences),
       });
       return ok({ project: toProjectPayload(created.project, created.dir) });
     },
@@ -593,10 +609,6 @@ function decodeUriName(value: string): string {
   }
 }
 
-function asOptionalArray(value: unknown): unknown[] | undefined {
-  return Array.isArray(value) ? value : undefined;
-}
-
 function asStringArray(value: unknown, name: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new ProtocolError(`Missing or invalid parameter "${name}" (expected string[])`);
@@ -611,6 +623,24 @@ function asSearchProvider(value: unknown): SearchProviderId {
     );
   }
   return value as SearchProviderId;
+}
+
+function parseModelPreferences(
+  value: unknown,
+): Pick<Partial<ProjectPreferences>, "model" | "thinkingLevel"> | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const preferences: Pick<Partial<ProjectPreferences>, "model" | "thinkingLevel"> = {};
+  if (typeof record.model === "string" && record.model.length > 0) {
+    preferences.model = record.model;
+  }
+  if (
+    typeof record.thinkingLevel === "string" &&
+    (THINKING_LEVELS as readonly string[]).includes(record.thinkingLevel)
+  ) {
+    preferences.thinkingLevel = record.thinkingLevel as ProjectPreferences["thinkingLevel"];
+  }
+  return Object.keys(preferences).length > 0 ? preferences : undefined;
 }
 
 function parseSettings(value: unknown): ProjectSettings {
@@ -675,12 +705,14 @@ function toModelPayload(runtime: RuntimeInstance, model: {
   reasoning?: boolean;
   contextWindow?: number;
 }) {
+  const details = piModelRuntime(runtime).getModel(model.provider, model.id);
   return {
     provider: model.provider,
     id: model.id,
     name: model.name,
     reasoning: model.reasoning,
-    thinkingLevelMap: piModelRuntime(runtime).getModel(model.provider, model.id)?.thinkingLevelMap,
+    thinkingLevelMap: details?.thinkingLevelMap,
+    input: details?.input,
     contextWindow: model.contextWindow,
   };
 }
@@ -716,6 +748,7 @@ interface AuthInteractionFacade {
 interface PiModelRuntimeFacade {
   getModel(providerId: string, modelId: string): {
     thinkingLevelMap?: Partial<Record<NonNullable<SessionInfo["thinkingLevel"]>, string | null>>;
+    input?: Array<"text" | "image">;
   } | undefined;
   getProvider(id: string): ProviderDetails | undefined;
   login(

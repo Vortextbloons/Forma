@@ -59,3 +59,16 @@ npm test
 
 For UI-only work, `cd app && npm run dev` runs the app in a browser with a mock
 backend.
+
+The Windows release bundles a Python runtime for the built-in web and image
+search (`desktop/scripts/release.ps1`, pinned in
+`desktop/build/ddgs-requirements.txt`). For development, create the local search
+runtime once:
+
+```sh
+python -m venv desktop/bin/ddgs
+desktop/bin/ddgs/Scripts/python.exe -m pip install -r desktop/build/ddgs-requirements.txt
+```
+
+Forma finds this runtime automatically. `FORMA_DDGS_PYTHON` overrides the Python
+executable; `FORMA_DDGS_HELPER` overrides the bundled helper script for testing.

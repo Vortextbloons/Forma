@@ -191,7 +191,7 @@ class CommandHarness {
           harness.#push({ type: event.type, data: event.data });
         }
       }, runtime.projectId);
-      setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents });
+      setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents, host });
       bus.subscribe((event) => runs.settleFromEvent(event));
       harness.#dispatcher = buildDispatcher({
         runtime,
@@ -262,6 +262,23 @@ class CommandHarness {
 }
 
 describe("forma worker", () => {
+  it("cancels pending questions only in the stopped session", async () => {
+    const bus = new RigEventBus({ projectId: "questions" });
+    const host = new WorkerAgentHost({ bus, logger: createLogger({ level: "error" }) });
+    const events: string[] = [];
+    bus.subscribe((event) => { if (event.type === "interaction.resolved") events.push(event.data.interactionId); });
+    const first = host.requestInteraction({ kind: "question", id: "first", sessionId: "stopped", createdAt: new Date().toISOString(), question: "Which palette?" });
+    const second = host.requestInteraction({ kind: "question", id: "second", sessionId: "other", createdAt: new Date().toISOString(), question: "Who is the audience?" });
+    const rejected = expect(first).rejects.toThrow("Stopped");
+    host.rejectForSession("stopped", new Error("Stopped"));
+    await rejected;
+    expect(host.hasPendingForSession("stopped")).toBe(false);
+    expect(host.hasPendingForSession("other")).toBe(true);
+    expect(() => host.resolve("first", "question", "approve")).toThrow(/Unknown interaction/);
+    host.resolve("second", "question", "Customers");
+    expect(await second).toBe("Customers");
+    expect(events).toEqual(["first", "second"]);
+  });
   it("boots, handles project commands and shuts down cleanly", async () => {    const root = await mkdtemp(join(tmpdir(), "forma-worker-"));
     const projectDir = join(root, "Deck");
     const harness = new WorkerHarness(root);
@@ -399,6 +416,9 @@ describe("forma worker", () => {
       const library = await harness.send("design.listThemes");
       expect(library.ok, JSON.stringify(library)).toBe(true);
       expect((library as WorkerResultOk).data).toMatchObject({ themes: [{ name: "Studio", designProfile: settings.designProfile }] });
+      const customTheme = await harness.send("design.saveTheme", { name: "Custom", settings });
+      expect(customTheme.ok, JSON.stringify(customTheme)).toBe(true);
+      expect((customTheme as WorkerResultOk).data).toMatchObject({ theme: { name: "Custom", designProfile: settings.designProfile } });
 
       const updated = await harness.send("artwork.updateOutline", {
         dir: projectDir,
@@ -577,6 +597,93 @@ describe("forma worker", () => {
         unknown
       >;
       expect(after.openai).toBeUndefined();
+    } finally {
+      await harness.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 90_000);
+
+  it("defaults new installations to built-in search with both toggles on", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-defaults-"));
+    const harness = await CommandHarness.open(root, {
+      PI_CODING_AGENT_DIR: join(root, "agent"),
+      FORMA_DATA_DIR: join(root, "data"),
+    });
+    try {
+      const search = await harness.send("settings.getSearch");
+      expect(search.ok, JSON.stringify(search)).toBe(true);
+      expect((search as WorkerResultOk).data).toMatchObject({
+        defaults: {
+          research: true,
+          imageSearch: true,
+          researchProvider: "ddgs",
+          imageProvider: "ddgs",
+        },
+      });
+      const stored = JSON.parse(
+        await readFile(join(root, "data", "settings", "credentials.json"), "utf8"),
+      ) as { defaults?: unknown };
+      expect(stored.defaults).toMatchObject({ researchProvider: "ddgs", imageProvider: "ddgs" });
+    } finally {
+      await harness.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 90_000);
+
+  it("migrates existing keys and saved toggles to provider choices", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-migrate-"));
+    await mkdir(join(root, "data", "settings"), { recursive: true });
+    await writeFile(
+      join(root, "data", "settings", "credentials.json"),
+      JSON.stringify({ defaults: { research: true, imageSearch: false } }),
+    );
+    const harness = await CommandHarness.open(root, {
+      PI_CODING_AGENT_DIR: join(root, "agent"),
+      FORMA_DATA_DIR: join(root, "data"),
+    });
+    try {
+      const search = await harness.send("settings.getSearch");
+      expect(search.ok, JSON.stringify(search)).toBe(true);
+      expect((search as WorkerResultOk).data).toMatchObject({
+        defaults: {
+          research: true,
+          imageSearch: false,
+          researchProvider: "ddgs",
+          imageProvider: "ddgs",
+        },
+      });
+      const stored = JSON.parse(
+        await readFile(join(root, "data", "settings", "credentials.json"), "utf8"),
+      ) as { defaults?: { researchProvider?: string; imageProvider?: string } };
+      expect(stored.defaults).toMatchObject({ researchProvider: "ddgs", imageProvider: "ddgs" });
+    } finally {
+      await harness.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 90_000);
+
+  it("selects configured API providers when migrating keys", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-migrate-keys-"));
+    const harness = await CommandHarness.open(root, {
+      PI_CODING_AGENT_DIR: join(root, "agent"),
+      FORMA_DATA_DIR: join(root, "data"),
+    });
+    try {
+      const saved = await harness.send("settings.setSearchKey", {
+        provider: "exa",
+        key: "exa-migrate-key-1234",
+      });
+      expect(saved.ok, JSON.stringify(saved)).toBe(true);
+      const search = await harness.send("settings.getSearch");
+      expect(search.ok, JSON.stringify(search)).toBe(true);
+      expect((search as WorkerResultOk).data).toMatchObject({
+        defaults: {
+          research: false,
+          imageSearch: false,
+          researchProvider: "exa",
+          imageProvider: "ddgs",
+        },
+      });
     } finally {
       await harness.close();
       await rm(root, { recursive: true, force: true });

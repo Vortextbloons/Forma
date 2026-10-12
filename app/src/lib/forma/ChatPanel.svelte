@@ -1,8 +1,10 @@
 <script lang="ts">
   import Messages from "../conversation/Messages.svelte";
   import Composer from "../conversation/Composer.svelte";
+  import QuestionComposer from "../conversation/QuestionComposer.svelte";
   import Icon from "../components/Icon.svelte";
   import PagePreview from "./PagePreview.svelte";
+  import DesignMashup from "./DesignMashup.svelte";
   import { messageStore } from "../rig/stores/messageStore.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { projectStore } from "./projectStore.svelte";
@@ -11,12 +13,14 @@
   const sessionId = $derived(sessionStore.activeSessionId);
   const project = $derived(projectStore.current?.project);
   const pages = $derived(project?.pages ?? []);
-  const selectedId = $derived(projectStore.selectedPageId);
   const selectedElement = $derived(projectStore.selectedElement);
   const isPoster = $derived(project?.settings.output === "poster");
   const showRail = $derived(pages.length > 0);
+  const designApproved = $derived(project?.settings.designApproved ?? false);
+  const designProfile = $derived(project?.settings.designProfile);
+  const designLabel = $derived(designApproved ? (project?.settings.designName ?? "Custom") : "AI chooses");
 
-  const scope = $derived(projectStore.refineScope);
+  const targetPageId = $derived(projectStore.refineTargetPageId);
   const empty = $derived(messageStore.bySession(sessionId ?? "").length === 0);
   let historyOpen = $state(false);
   let historyEl = $state<HTMLElement | null>(null);
@@ -43,11 +47,18 @@
 
   const artworkRunning = $derived(projectStore.run !== null);
   const running = $derived(artworkRunning || ["running", "waiting", "approval"].includes(sessionStore.statusOf(sessionId)));
+  const activeQuestion = $derived.by(() => {
+    if (sessionId === null || sessionStore.statusOf(sessionId) !== "waiting") return undefined;
+    const pending = messageStore.pendingInteractions(sessionId).find((state) => state.interaction.kind === "question");
+    return pending ? { sessionId, state: pending } : undefined;
+  });
   const chatIds = $derived([...(project?.conversation.sessionIds ?? [])].reverse());
 
   function chatTitle(id: string): string {
     const first = messageStore.bySession(id).find((message) => message.role === "user");
-    return first?.content ?? `Chat ${chatIds.length - chatIds.indexOf(id)}`;
+    if (first?.content) return first.content;
+    if (first?.images?.length) return "Images";
+    return `Chat ${chatIds.length - chatIds.indexOf(id)}`;
   }
 
   async function changeChat(id?: string): Promise<void> {
@@ -61,29 +72,48 @@
     }
   }
 
+  let thumbTimer: number | undefined;
+
+  function onThumbClick(pageId: string): void {
+    if (isPoster) {
+      previewPageId = pageId;
+      return;
+    }
+    window.clearTimeout(thumbTimer);
+    thumbTimer = window.setTimeout(() => {
+      projectStore.toggleRefineTarget(pageId);
+      projectStore.selectPage(pageId);
+    }, 250);
+  }
+
+  function onThumbDblClick(pageId: string): void {
+    window.clearTimeout(thumbTimer);
+    previewPageId = pageId;
+  }
+
   const target = $derived<ChatTarget>(
     selectedElement
       ? { scope: "page", pageId: selectedElement.pageId, element: selectedElement }
-      : scope === "page" && selectedId && !isPoster
-      ? { scope: "page", pageId: selectedId }
-      : { scope: "project" },
+      : targetPageId && !isPoster
+        ? { scope: "page", pageId: targetPageId }
+        : { scope: "project" },
   );
-
-  const targetLabel = $derived.by(() => {
-    if (isPoster) return "Poster";
-    if (pages.length === 0) return "Project brief";
-    if (scope === "page" && selectedId) {
-      const index = pages.indexOf(selectedId);
-      return index >= 0 ? `Slide ${index + 1}` : "Entire presentation";
-    }
-    return "Entire presentation";
-  });
 </script>
 
 <div class="chat-panel" class:has-rail={showRail}>
   <div class="chat-body">
   <div class="chat-header" bind:this={historyEl}>
     <strong>Chat</strong>
+    {#if project}
+      <button class="btn btn-sm btn-ghost chat-design" type="button" title="Change project design" onclick={() => window.dispatchEvent(new CustomEvent("forma:open-design"))}>
+        {#if designApproved && designProfile}
+          <DesignMashup profile={designProfile} height={16} width={34} />
+        {:else}
+          <span class="chat-design-empty" aria-hidden="true"></span>
+        {/if}
+        {designLabel}
+      </button>
+    {/if}
     <span class="spacer"></span>
     <button class="btn btn-ghost" type="button" aria-expanded={historyOpen} aria-controls="chat-history" onclick={() => (historyOpen = !historyOpen)}>
       Previous chats
@@ -103,32 +133,6 @@
         {#if chatIds.length === 0}<p class="small muted">Your conversations will appear here.</p>{/if}
       </div>
     {/if}
-  </div>
-  <div class="chat-target">
-    <span>{pages.length > 0 ? "Working on" : "Project"}</span>
-    {#if selectedElement}
-      <strong class="selected-element" title={selectedElement.selector}>Selected element: {selectedElement.text || "Shape"}</strong>
-      <button class="icon-btn" type="button" aria-label="Clear selected element" title="Clear selected element" onclick={() => projectStore.selectElement(null)}><Icon name="x" size={14} /></button>
-    {:else if pages.length > 0 && !isPoster}
-      <div class="segmented segmented-small" role="group" aria-label="Refinement target">
-        <button
-          type="button"
-          class:active={scope === "page"}
-          aria-pressed={scope === "page"}
-          disabled={!selectedId}
-          onclick={() => projectStore.setRefineScope("page")}
-        >Selected slide</button>
-        <button
-          type="button"
-          class:active={scope === "project"}
-          aria-pressed={scope === "project"}
-          onclick={() => projectStore.setRefineScope("project")}
-        >Entire presentation</button>
-      </div>
-    {:else}
-      <strong>{targetLabel}</strong>
-    {/if}
-
   </div>
   {#if selectedElement}
     <p class="element-feedback-hint muted small">Describe the change below. AI will apply your feedback to this element.</p>
@@ -151,22 +155,43 @@
     </div>
   {/if}
   {#key sessionId}
-    <Composer {target} />
+    {#if activeQuestion}
+      <div class="chat-question-slot">
+        <QuestionComposer sessionId={activeQuestion.sessionId} pending={activeQuestion.state} />
+      </div>
+    {:else}
+      <Composer {target} />
+    {/if}
   {/key}
   </div>
   {#if showRail}
     <aside class="chat-slide-rail" aria-label={isPoster ? "Poster" : "Slides"}>
       {#each pages as pageId, i (pageId)}
-        <button
-          class="chat-slide-thumb"
-          class:active={selectedId === pageId}
-          type="button"
-          aria-label={isPoster ? `Open preview for the poster: ${titleOf(pageId)}` : `Open preview for slide ${i + 1}: ${titleOf(pageId)}`}
-          onclick={() => (previewPageId = pageId)}
-        >
-          <PagePreview {pageId} mode="thumb" />
-          {#if !isPoster}<span class="chat-slide-num">{i + 1}</span>{/if}
-        </button>
+        <div class="chat-slide-item">
+          <button
+            class="chat-slide-thumb"
+            class:active={targetPageId === pageId}
+            type="button"
+            aria-pressed={targetPageId === pageId || undefined}
+            aria-label={isPoster ? `Open preview for the poster: ${titleOf(pageId)}` : `Select slide ${i + 1}: ${titleOf(pageId)}`}
+            onclick={() => onThumbClick(pageId)}
+            ondblclick={() => onThumbDblClick(pageId)}
+          >
+            <PagePreview {pageId} mode="thumb" />
+            {#if !isPoster}<span class="chat-slide-num">{i + 1}</span>{/if}
+          </button>
+          {#if !isPoster}
+            <button
+              class="icon-btn chat-slide-delete"
+              type="button"
+              title="Delete"
+              aria-label={`Delete slide ${i + 1}`}
+              onclick={() => void projectStore.deletePage(pageId)}
+            >
+              <Icon name="trash" size={12} />
+            </button>
+          {/if}
+        </div>
       {/each}
     </aside>
   {/if}
@@ -198,14 +223,16 @@
 <svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />
 
 <style>
-  .selected-element {
-    min-width: 0;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .chat-design {
+    gap: 8px;
+    flex-shrink: 0;
   }
-
+  .chat-design-empty {
+    width: 22px;
+    height: 12px;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 999px;
+  }
   .element-feedback-hint {
     margin: 0;
     padding: 8px 14px;

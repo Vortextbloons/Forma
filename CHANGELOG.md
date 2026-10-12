@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-_No user-facing changes yet._
+### Added
+
+- **Built-in web and image search** — Forma ships with search included, so research and photo imports work without API keys or a separate Python install. Exa and Pexels remain available as API-key providers in Settings under Web & images.
+- **Photo reuse notice** — imported built-in photos record their source page and show “Reuse rights unverified” in References.
 
 ---
 

@@ -125,7 +125,7 @@ export function highlightCode(code: string, language?: string): string {
   return escapeHtml(code);
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

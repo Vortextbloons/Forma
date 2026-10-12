@@ -42,6 +42,11 @@ export const ICON_PATHS = {
   zap: ["M13 2L3 14h9l-1 8 10-12h-9l1-8z"],
   "dots-h": ["M5 12h.01", "M12 12h.01", "M19 12h.01"],
   download: ["M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4", "M7 10l5 5 5-5", "M12 15V3"],
+  image: [
+    "M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z",
+    "M10 8.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0",
+    "M21 15l-5-5L5 21",
+  ],
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

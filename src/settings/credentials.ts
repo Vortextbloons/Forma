@@ -26,9 +26,15 @@ export function credentialsFile(): string {
   return join(resolveDataDir(), "settings", "credentials.json");
 }
 
-async function loadStored(): Promise<StoredFile> {
+async function loadStored(): Promise<StoredFile | undefined> {
+  let raw: string;
   try {
-    return JSON.parse(await readFile(credentialsFile(), "utf8")) as StoredFile;
+    raw = await readFile(credentialsFile(), "utf8");
+  } catch {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as StoredFile;
   } catch {
     return {};
   }
@@ -36,7 +42,7 @@ async function loadStored(): Promise<StoredFile> {
 
 async function loadSecrets(): Promise<Partial<Record<SearchProviderId, string>>> {
   if (cache) return cache;
-  const stored = await loadStored();
+  const stored = (await loadStored()) ?? {};
   const secrets: Partial<Record<SearchProviderId, string>> = {};
   for (const provider of SEARCH_PROVIDERS) {
     const entry = stored[provider];
@@ -64,23 +70,40 @@ export async function getSearchKey(provider: SearchProviderId): Promise<string |
 export async function setSearchKey(provider: SearchProviderId, key: string): Promise<void> {
   const trimmed = key.trim();
   if (!trimmed) throw new Error("The API key cannot be empty");
-  const stored = await loadStored();
+  const stored = (await loadStored()) ?? {};
   stored[provider] = { protected: await protectSecret(trimmed), updatedAt: new Date().toISOString() };
   await writeStored(stored);
 }
 
 export async function clearSearchKey(provider: SearchProviderId): Promise<void> {
-  const stored = await loadStored();
+  const stored = (await loadStored()) ?? {};
   delete stored[provider];
   await writeStored(stored);
 }
 
 export async function getSearchDefaults(): Promise<SearchDefaults> {
-  return searchDefaultsSchema.parse((await loadStored()).defaults ?? {});
+  const stored = await loadStored();
+  if (!stored) {
+    const defaults = searchDefaultsSchema.parse({ research: true, imageSearch: true });
+    await writeStored({ defaults });
+    return defaults;
+  }
+  const raw = stored.defaults;
+  const secrets = await loadSecrets();
+  const defaults = searchDefaultsSchema.parse({
+    research: raw?.research,
+    imageSearch: raw?.imageSearch,
+    researchProvider: raw?.researchProvider ?? (secrets.exa ? "exa" : "ddgs"),
+    imageProvider: raw?.imageProvider ?? (secrets.pexels ? "pexels" : "ddgs"),
+  });
+  if (raw?.researchProvider === undefined || raw?.imageProvider === undefined) {
+    await writeStored({ ...stored, defaults });
+  }
+  return defaults;
 }
 
 export async function setSearchDefaults(defaults: SearchDefaults): Promise<void> {
-  const stored = await loadStored();
+  const stored = (await loadStored()) ?? {};
   stored.defaults = defaults;
   await writeStored(stored);
 }

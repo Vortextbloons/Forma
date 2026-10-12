@@ -2,6 +2,7 @@
   import StartScreen from "./lib/forma/StartScreen.svelte";
   import WorkspaceScreen from "./lib/forma/WorkspaceScreen.svelte";
   import SettingsDialog from "./lib/forma/SettingsDialog.svelte";
+  import DesignDialog from "./lib/forma/DesignDialog.svelte";
   import Icon from "./lib/components/Icon.svelte";
   import { projectStore } from "./lib/forma/projectStore.svelte";
   import { notificationStore } from "./lib/rig/stores/notificationStore.svelte";
@@ -10,7 +11,8 @@
   getBridge();
 
   let showSettings = $state(false);
-  let settingsTab = $state<"providers" | "search" | "project" | "design" | "assets">("providers");
+  let showDesign = $state(false);
+  let settingsTab = $state<"providers" | "search" | "project" | "assets">("providers");
   const banner = $derived(notificationStore.items[0]);
 
   const BANNER_TTL_MS = 6000;
@@ -36,13 +38,18 @@
       settingsTab = "assets";
       showSettings = true;
     };
+    const onOpenDesign = (): void => {
+      showDesign = true;
+    };
     window.addEventListener("rig:open-provider-settings", onOpenProviders);
     window.addEventListener("forma:open-search-settings", onOpenSearch);
     window.addEventListener("forma:open-references", onOpenReferences);
+    window.addEventListener("forma:open-design", onOpenDesign);
     return () => {
       window.removeEventListener("rig:open-provider-settings", onOpenProviders);
       window.removeEventListener("forma:open-search-settings", onOpenSearch);
       window.removeEventListener("forma:open-references", onOpenReferences);
+      window.removeEventListener("forma:open-design", onOpenDesign);
     };
   });
 </script>
@@ -69,14 +76,24 @@
   {#if projectStore.current}
     <WorkspaceScreen
       onOpenSettings={() => {
-        settingsTab = "design";
-        showSettings = true;
+        showDesign = true;
       }}
       onCloseProject={() => projectStore.closeProject()}
     />
   {:else}
     <StartScreen
       onOpenSettings={() => {
+        settingsTab = "providers";
+        showSettings = true;
+      }}
+    />
+  {/if}
+
+  {#if showDesign}
+    <DesignDialog
+      onclose={() => (showDesign = false)}
+      onOpenSettings={() => {
+        showDesign = false;
         settingsTab = "providers";
         showSettings = true;
       }}

@@ -373,7 +373,12 @@ class MockBridge extends BaseBridge {
   private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
   private themes: DesignTheme[] = [];
   private mockSeq = 0;
-  private mockSearchDefaults = { research: false, imageSearch: false };
+  private mockSearchDefaults = {
+    research: false,
+    imageSearch: false,
+    researchProvider: "ddgs",
+    imageProvider: "ddgs",
+  };
   private mockSearch: Record<string, { configured: boolean; masked?: string }> = {
     exa: { configured: false },
     pexels: { configured: false },
@@ -563,7 +568,7 @@ class MockBridge extends BaseBridge {
       context: [],
       sources: [],
       conversation: { sessionIds: [] },
-      preferences: { model: "auto", thinkingLevel: "medium", refineScope: "project", zoom: "fit" },
+      preferences: { model: "auto", thinkingLevel: "medium", zoom: "fit", ...asRecord(overrides.preferences) },
     };
   }
 

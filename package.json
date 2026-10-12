@@ -25,11 +25,13 @@
   "dependencies": {
     "@napi-rs/canvas": "^1.0.10",
     "@tesseract.js-data/eng": "^1.0.0",
+    "echarts": "^6.1.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
     "pptxgenjs": "^4.0.1",
     "puppeteer": "^25.13.0",
     "rig": "file:vendor/rig-0.3.0.tgz",
+    "simple-icons": "^16.35.0",
     "tesseract.js": "^7.0.0",
     "zod": "^3.25.0"
   },

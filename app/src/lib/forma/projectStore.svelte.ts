@@ -48,7 +48,7 @@ let validating = $state(false);
 let selectedPageId = $state<string | null>(null);
 let selectedElement = $state<(SelectedElement & { pageId: string }) | null>(null);
 let zoom = $state<number | "fit">("fit");
-let refineScope = $state<"page" | "project">("project");
+let refineTargetPageId = $state<string | null>(null);
 let needsImageModel = $state(false);
 let composed = $state<Record<string, { html: string; missing: string[] }>>({});
 let exportRun = $state<ExportRunState | null>(null);
@@ -58,7 +58,12 @@ let searchCredentials = $state<Record<SearchProviderId, SearchCredentialStatus>>
   exa: { configured: false },
   pexels: { configured: false },
 });
-let searchDefaults = $state<SearchDefaults>({ research: false, imageSearch: false });
+let searchDefaults = $state<SearchDefaults>({
+  research: false,
+  imageSearch: false,
+  researchProvider: "ddgs",
+  imageProvider: "ddgs",
+});
 
 let opening = false;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -126,6 +131,10 @@ export async function createProject(input: CreateProjectInput): Promise<void> {
         prompt: input.prompt,
         mode: input.mode,
         settings: input.settings,
+        preferences: {
+          model: modelStore.selectedModel,
+          thinkingLevel: modelStore.thinkingLevel,
+        },
       },
       { timeoutMs: 0 },
     );
@@ -187,7 +196,7 @@ async function attach(snapshot: ProjectSnapshot): Promise<void> {
   selectedElement = null;
   needsImageModel = false;
   zoom = snapshot.project.preferences.zoom;
-  refineScope = snapshot.project.preferences.refineScope;
+  refineTargetPageId = null;
   await Promise.all([loadProjects(), loadThemes(), refreshSearchCredentials(), ensureConversation()]);
 }
 
@@ -204,7 +213,6 @@ export function savePreferences(): void {
   const preferences: ProjectPreferences = {
     model: modelStore.selectedModel,
     thinkingLevel: modelStore.thinkingLevel,
-    refineScope,
     zoom,
   };
   current = { ...current, project: { ...current.project, preferences } };
@@ -222,13 +230,13 @@ export async function loadThemes(): Promise<void> {
   }
 }
 
-export async function saveTheme(name: string): Promise<boolean> {
-  if (!current || run) return false;
-  const dir = current.dir;
+export async function saveTheme(name: string, settings?: ProjectSettings): Promise<boolean> {
+  if (run || (!current && !settings)) return false;
+  const dir = current?.dir;
   try {
-    await flushProjectChanges();
+    if (!settings) await flushProjectChanges();
     if (current?.dir !== dir) return false;
-    await sendCommand("design.saveTheme", { dir, name });
+    await sendCommand("design.saveTheme", { dir, name, ...(settings ? { settings } : {}) });
     await loadThemes();
     return true;
   } catch (error) {
@@ -246,6 +254,8 @@ export function useTheme(id: string): void {
     style: theme.style,
     density: theme.density,
     designProfile: JSON.parse(JSON.stringify(theme.designProfile)),
+    designApproved: true,
+    designName: theme.name,
   });
 }
 
@@ -463,8 +473,8 @@ async function startArtwork(
   params: Record<string, unknown>,
   kind: FormaRunState["kind"],
   failureLabel: string,
-): Promise<void> {
-  if (!current || run) return;
+): Promise<boolean> {
+  if (!current || run) return false;
   const sessionId = sessionStore.activeSessionId;
   runPageIds.clear();
   run = {
@@ -482,6 +492,7 @@ async function startArtwork(
       { timeoutMs: 0 },
     );
     applyProjectPayload(data);
+    return true;
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "CANCELLATION_ERROR") {
@@ -496,6 +507,7 @@ async function startArtwork(
         needsImageModel = true;
       }
     }
+    return false;
   } finally {
     run = null;
   }
@@ -537,16 +549,23 @@ export async function sendRefine(
   message: string,
   target: ChatTarget,
   mode: "plan" | "build" = "build",
-): Promise<void> {
+  images?: Array<{ data: string; mediaType: string }>,
+): Promise<boolean> {
   const sessionId = sessionStore.activeSessionId;
-  if (!current || run || !sessionId) return;
-  messageStore.addUserMessage(sessionId, message, target.element ? { text: target.element.text } : undefined);
-  await startArtwork(
+  if (!current || run || !sessionId) return false;
+  messageStore.addUserMessage(
+    sessionId,
+    message,
+    target.element ? { text: target.element.text } : undefined,
+    images?.map((image) => ({ data: image.data, mimeType: image.mediaType })),
+  );
+  return startArtwork(
     "artwork.refine",
     {
       scope: target.scope,
       ...(target.scope === "page" && target.pageId ? { pageId: target.pageId } : {}),
       ...(target.element ? { element: target.element } : {}),
+      ...(images?.length ? { images } : {}),
       message,
       mode,
     },
@@ -626,6 +645,7 @@ export async function deletePage(pageId: string): Promise<void> {
     if (selectedPageId === pageId) {
       selectedPageId = current.project.pages[0] ?? null;
     }
+    if (refineTargetPageId === pageId) refineTargetPageId = null;
     if (selectedElement?.pageId === pageId) selectedElement = null;
   } catch (error) {
     reportError(error, "Could not delete the slide");
@@ -648,9 +668,8 @@ export function setZoom(value: number | "fit"): void {
   savePreferences();
 }
 
-export function setRefineScope(value: "page" | "project"): void {
-  refineScope = value;
-  savePreferences();
+export function toggleRefineTarget(pageId: string): void {
+  refineTargetPageId = refineTargetPageId === pageId ? null : pageId;
 }
 
 export async function composePage(pageId: string): Promise<string | null> {
@@ -883,13 +902,17 @@ export async function duplicateProject(dir: string): Promise<void> {
 
 export async function deleteProject(dir: string): Promise<void> {
   if (current?.dir === dir) current = null;
-  if (boundDir === dir && libraryHome) {
-    await openProjectDir(libraryHome);
-    await waitForReady(60_000);
-    boundDir = "";
+  library = library.filter((entry) => entry.dir !== dir);
+  try {
+    if (boundDir === dir && libraryHome) {
+      await openProjectDir(libraryHome);
+      await waitForReady(60_000);
+      boundDir = "";
+    }
+    await sendCommand("project.delete", { dir });
+  } finally {
+    await loadProjects();
   }
-  await sendCommand("project.delete", { dir });
-  await loadProjects();
 }
 
 export async function closeProject(): Promise<void> {
@@ -908,6 +931,7 @@ function resetProject(): void {
   current = null;
   selectedPageId = null;
   selectedElement = null;
+  refineTargetPageId = null;
   run = null;
   validation = null;
   composed = {};
@@ -993,6 +1017,13 @@ function patchContextFromEvent(event: FormaDomainEvent): void {
 function handleFormaEvent(event: FormaDomainEvent): void {
   if (!current || event.projectId !== current.project.id) return;
   switch (event.type) {
+    case "forma.design.changed": {
+      current = { ...current, project: { ...current.project, settings: event.data.settings as ProjectSettings, settingsRevision: event.data.settingsRevision as number } };
+      composed = {};
+      validation = null;
+      selectedElement = null;
+      break;
+    }
     case "forma.run.progress": {
       if (event.data.phase !== "started") return;
       const kind = event.data.kind;
@@ -1018,6 +1049,21 @@ function handleFormaEvent(event: FormaDomainEvent): void {
       }
       validation = null;
       if (run) run = { ...run, completed: runPageIds.size };
+      break;
+    }
+    case "forma.page.deleted": {
+      const pageId = event.data.pageId;
+      if (typeof pageId !== "string") return;
+      const pages = current.project.pages.filter((id) => id !== pageId);
+      const pageMeta = { ...current.project.pageMeta };
+      delete pageMeta[pageId];
+      current = { ...current, project: { ...current.project, pages, pageMeta } };
+      const { [pageId]: _removed, ...rest } = composed;
+      composed = rest;
+      if (selectedPageId === pageId) selectedPageId = pages[0] ?? null;
+      if (refineTargetPageId === pageId) refineTargetPageId = null;
+      if (selectedElement?.pageId === pageId) selectedElement = null;
+      validation = null;
       break;
     }
     case "forma.outline.ready": {
@@ -1073,6 +1119,7 @@ function handleFormaEvent(event: FormaDomainEvent): void {
 getBridge().onReady(async () => {
   if (!current) {
     await loadProjects();
+    await loadThemes();
     return;
   }
   if (!opening) {
@@ -1131,8 +1178,8 @@ export const projectStore = {
   get zoom() {
     return zoom;
   },
-  get refineScope() {
-    return refineScope;
+  get refineTargetPageId() {
+    return refineTargetPageId;
   },
   get needsImageModel() {
     return needsImageModel;
@@ -1181,7 +1228,7 @@ export const projectStore = {
   selectPage,
   selectElement,
   setZoom,
-  setRefineScope,
+  toggleRefineTarget,
   savePreferences,
   composePage,
   validateArtwork,

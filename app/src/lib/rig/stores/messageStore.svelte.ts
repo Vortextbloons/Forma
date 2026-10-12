@@ -19,12 +19,20 @@ export interface ThinkingEntry {
   complete: boolean;
 }
 
+export interface MessageImage {
+  data: string;
+  mimeType: string;
+}
+
+export const IMAGE_ONLY_TEXT = "(see attached image)";
+
 export interface MessageEntry {
   id: string;
   role: "user" | "assistant" | "tool-result";
   content: string;
   model?: string;
   element?: { text: string };
+  images?: MessageImage[];
   stopReason?: string;
   status: "streaming" | "complete";
   thinking?: ThinkingEntry;
@@ -81,13 +89,19 @@ export function findInteractionByToolCall(
 }
 
 
-export function addUserMessage(sessionId: string, content: string, element?: MessageEntry["element"]): void {
+export function addUserMessage(
+  sessionId: string,
+  content: string,
+  element?: MessageEntry["element"],
+  images?: MessageImage[],
+): void {
   messages.push({
     sessionId,
     id: `user-${++userSeq}`,
     role: "user",
     content,
     ...(element ? { element } : {}),
+    ...(images?.length ? { images } : {}),
     status: "complete",
     seq: latestSeq + 0.5,
   });
@@ -98,11 +112,18 @@ export function restoreMessages(sessionId: string, history: unknown): void {
   for (const [index, raw] of history.entries()) {
     const message = asRecord(raw);
     if (message.role !== "user" && message.role !== "assistant") continue;
-    let content = typeof message.content === "string"
-      ? message.content
-      : Array.isArray(message.content)
-        ? message.content.map((block) => asRecord(block)).filter((block) => block.type === "text").map((block) => block.text).join("\n")
-        : "";
+    let content = "";
+    let images: MessageImage[] | undefined;
+    if (typeof message.content === "string") {
+      content = message.content;
+    } else if (Array.isArray(message.content)) {
+      const blocks = message.content.map((block) => asRecord(block));
+      content = blocks.filter((block) => block.type === "text").map((block) => block.text).join("\n");
+      const found = blocks
+        .filter((block) => block.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string")
+        .map((block) => ({ data: block.data as string, mimeType: block.mimeType as string }));
+      if (found.length > 0) images = found;
+    }
     let element: MessageEntry["element"];
     if (message.role === "user" && (content.startsWith("The user is refining ") || content.startsWith("The user selected an element on page "))) {
       const marker = "\nUser message:\n";
@@ -120,13 +141,15 @@ export function restoreMessages(sessionId: string, history: unknown): void {
         content = content.slice(start + marker.length);
       }
     }
-    if (!content) continue;
+    if (message.role === "user" && images?.length && content === IMAGE_ONLY_TEXT) content = "";
+    if (!content && !images?.length) continue;
     messages.push({
       sessionId,
       id: `history-${index}`,
       role: message.role,
       content,
       ...(element ? { element } : {}),
+      ...(images ? { images } : {}),
       model: typeof message.model === "string" ? message.model : undefined,
       status: "complete",
       seq: index - history.length,

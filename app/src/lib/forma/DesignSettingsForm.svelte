@@ -3,30 +3,16 @@
   import { DENSITY_LABELS, STYLE_LABELS } from "./types";
   import { formatDimensions } from "./sizes";
   import PageIcon from "./PageIcon.svelte";
-  import Icon from "../components/Icon.svelte";
 
   let {
   settings,
   onchange,
-  compact = false,
+  section = "full",
 }: {
   settings: ProjectSettings;
   onchange: (next: ProjectSettings) => void;
-  compact?: boolean;
+  section?: "full" | "chooser" | "editor";
 } = $props();
-
-  let moreOptions = $state(false);
-  let disclosureEl = $state<HTMLElement | null>(null);
-
-  function onWindowPointerDown(event: PointerEvent): void {
-    if (!moreOptions) return;
-    if (disclosureEl && event.target instanceof Node && disclosureEl.contains(event.target)) return;
-    moreOptions = false;
-  }
-
-  function onWindowKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") moreOptions = false;
-  }
 
   const SLIDE_PRESETS: Record<string, { width: number; height: number }> = {
     "16:9": { width: 1920, height: 1080 },
@@ -131,7 +117,6 @@
           <span>4:3</span>
           <em>1440 × 1080</em>
         </button>
-        {#if moreOptions || settings.slideSize.preset === "custom"}
         <button
           type="button"
           class="size-tile"
@@ -142,7 +127,6 @@
           <span>Custom</span>
           <em>pixels</em>
         </button>
-        {/if}
       </div>
       {#if settings.slideSize.preset === "custom"}
         <div class="field-row">
@@ -218,8 +202,7 @@
             <span>Square</span>
             <em>1080 × 1080</em>
           </button>
-          {#if moreOptions || settings.posterSize.preset === "custom"}
-        <button
+          <button
             type="button"
             class="size-tile"
             class:active={settings.posterSize.preset === "custom"}
@@ -229,7 +212,6 @@
             <span>Custom</span>
             <em>pixels</em>
           </button>
-        {/if}
         </div>
       </div>
     {:else}
@@ -248,8 +230,7 @@
               <em>{option.width} × {option.height}</em>
             </button>
           {/each}
-          {#if moreOptions || settings.posterSize.preset === "custom"}
-        <button
+          <button
             type="button"
             class="size-tile"
             class:active={settings.posterSize.preset === "custom"}
@@ -259,7 +240,6 @@
             <span>Custom</span>
             <em>{settings.posterSize.unit}</em>
           </button>
-        {/if}
         </div>
       </div>
     {/if}
@@ -339,86 +319,61 @@
 
 {/snippet}
 
-{#snippet options()}
-  <div class="field">
-    <span class="field-label">Density</span>
-    <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
-      {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
-        <button
-          type="button"
-          class="preset-tile"
-          class:active={settings.density === value}
-          aria-pressed={settings.density === value}
-          onclick={() => emit({ density: value as ProjectSettings["density"] })}
-        >
-          <span class="mini-slide mini-density-{value}">
-            <i class="m-title"></i>
-            <i class="m-line"></i>
-            <i class="m-line"></i>
-            {#if value !== "concise"}
-              <i class="m-line"></i>
-              <i class="m-line m-short"></i>
-            {/if}
-            {#if value === "detailed"}
-              <i class="m-line"></i>
-              <i class="m-line"></i>
-              <i class="m-line m-short"></i>
-              <i class="m-grid"></i>
-            {/if}
-          </span>
-          <span class="tile-label">{label}</span>
-        </button>
-      {/each}
-    </div>
-  </div>
-
-  <div class="settings-disclosure" bind:this={disclosureEl}>
-    <button
-      class="disclosure-toggle"
-      type="button"
-      aria-expanded={moreOptions}
-      onclick={() => (moreOptions = !moreOptions)}
-    >
-      More options
-      <Icon name={moreOptions ? "chevron-down" : "chevron-right"} size={13} />
-    </button>
-  </div>
-{/snippet}
-
 <div class="design-settings">
-  {@render dimensions()}
-  <div class="field">
-    <span class="field-label">Style</span>
-    <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
-      {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
-        <button
-          type="button"
-          class="preset-tile"
-          class:active={settings.style === value}
-          aria-pressed={settings.style === value}
-          onclick={() => emit({ style: value as ProjectSettings["style"] })}
-        >
-          <span class="mini-slide mini-{value}" aria-hidden="true">
-            <span class="sample-title">{value === "balance" ? "Room to grow." : value === "bold" ? "Make waves." : "A new perspective."}</span>
-            <span class="sample-art"></span>
-          </span>
-          <span class="tile-label">{label}</span>
-        </button>
-      {/each}
+  {#if section !== "editor"}
+    {@render dimensions()}
+    <div class="field">
+      <span class="field-label">Style</span>
+      <div class="tile-grid tile-grid-3" role="group" aria-label="Style">
+        {#each Object.entries(STYLE_LABELS) as [value, label] (value)}
+          <button
+            type="button"
+            class="preset-tile"
+            class:active={settings.style === value}
+            aria-pressed={settings.style === value}
+            onclick={() => emit({ style: value as ProjectSettings["style"] })}
+          >
+            <span class="mini-slide mini-{value}" aria-hidden="true">
+              <span class="sample-title">{value === "balance" ? "Room to grow." : value === "bold" ? "Make waves." : "A new perspective."}</span>
+              <span class="sample-art"></span>
+            </span>
+            <span class="tile-label">{label}</span>
+          </button>
+        {/each}
+      </div>
     </div>
-  </div>
-
-  {#if compact}
-    <details class="creation-options">
-      <summary>
-        <span>Density</span>
-        <span class="muted small">{DENSITY_LABELS[settings.density]} density</span>
-      </summary>
-      <div class="design-settings">{@render options()}</div>
-    </details>
-  {:else}
-    {@render options()}
+  {/if}
+  {#if section !== "chooser"}
+    <div class="field">
+      <span class="field-label">Density</span>
+      <div class="tile-grid tile-grid-3" role="group" aria-label="Density">
+        {#each Object.entries(DENSITY_LABELS) as [value, label] (value)}
+          <button
+            type="button"
+            class="preset-tile"
+            class:active={settings.density === value}
+            aria-pressed={settings.density === value}
+            onclick={() => emit({ density: value as ProjectSettings["density"] })}
+          >
+            <span class="mini-slide mini-density-{value}">
+              <i class="m-title"></i>
+              <i class="m-line"></i>
+              <i class="m-line"></i>
+              {#if value !== "concise"}
+                <i class="m-line"></i>
+                <i class="m-line m-short"></i>
+              {/if}
+              {#if value === "detailed"}
+                <i class="m-line"></i>
+                <i class="m-line"></i>
+                <i class="m-line m-short"></i>
+                <i class="m-grid"></i>
+              {/if}
+            </span>
+            <span class="tile-label">{label}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
   {/if}
 </div>
-
-<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeydown} />

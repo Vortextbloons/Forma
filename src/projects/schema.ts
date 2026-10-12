@@ -59,6 +59,8 @@ export const projectSettingsSchema = z.object({
   research: z.boolean().nullable().default(null),
   imageSearch: z.boolean().nullable().default(null),
   designProfile: designProfileSchema.optional(),
+  designApproved: z.boolean().default(true),
+  designName: z.string().trim().default("Custom"),
 });
 
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
@@ -99,6 +101,7 @@ export const sourceRecordSchema = z.object({
   author: z.string().optional(),
   authorUrl: z.string().optional(),
   query: z.string().optional(),
+  licenseStatus: z.enum(["unverified"]).optional(),
   createdAt: z.string(),
 });
 
@@ -117,7 +120,6 @@ export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 export const projectPreferencesSchema = z.object({
   model: z.string().default("auto"),
   thinkingLevel: z.enum(THINKING_LEVELS).default("medium"),
-  refineScope: z.enum(["page", "project"]).default("project"),
   zoom: z.union([z.number().positive(), z.literal("fit")]).default("fit"),
 });
 

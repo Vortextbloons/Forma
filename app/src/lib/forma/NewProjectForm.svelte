@@ -1,5 +1,6 @@
 <script lang="ts">
   import DesignSettingsForm from "./DesignSettingsForm.svelte";
+  import DesignProfileForm from "./DesignProfileForm.svelte";
   import Icon from "../components/Icon.svelte";
   import PageIcon from "./PageIcon.svelte";
   import ConnectionCard from "./ConnectionCard.svelte";
@@ -15,6 +16,7 @@
   let settings = $state<ProjectSettings>(defaultProjectSettings("slides"));
   let creating = $state(false);
   let error = $state("");
+  let showOptions = $state(false);
 
   function setKind(next: OutputKind): void {
     kind = next;
@@ -108,12 +110,45 @@
         </div>
       </div>
 
-      <DesignSettingsForm
-        compact
-        {settings}
-        onchange={(next) => (settings = next)}
-      />
+      <DesignSettingsForm section="chooser" {settings} onchange={(next) => (settings = next)} />
+
+      <DesignProfileForm section="chooser" {settings} onchange={(next) => (settings = next)} disabled={creating} />
+
+      <button class="btn options-button" type="button" onclick={() => (showOptions = true)}>
+        <Icon name="gear" size={14} /> More options
+      </button>
 
     </section>
   </div>
 </form>
+
+{#if showOptions}
+  <div
+    class="modal-overlay"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) showOptions = false;
+    }}
+  >
+    <div class="modal options-modal" role="dialog" aria-modal="true" aria-label="Design options" tabindex="-1">
+      <div class="modal-head">
+        <span class="modal-title">Design options</span>
+        <button class="icon-btn" type="button" title="Close" aria-label="Close design options" onclick={() => (showOptions = false)}>
+          <Icon name="x" size={16} />
+        </button>
+      </div>
+      <div class="modal-body options-modal-body">
+        <DesignSettingsForm section="editor" {settings} onchange={(next) => (settings = next)} />
+        <DesignProfileForm section="editor" {settings} onchange={(next) => (settings = next)} disabled={creating} />
+      </div>
+    </div>
+  </div>
+{/if}
+
+<svelte:window onkeydown={(event) => { if (event.key === "Escape") showOptions = false; }} />
+
+<style>
+  .options-modal-body {
+    flex-direction: column;
+  }
+</style>

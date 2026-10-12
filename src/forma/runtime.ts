@@ -1,4 +1,5 @@
 import type { WorkerToHost } from "rig/ipc";
+import type { AgentHost } from "rig";
 
 export interface FormaEventSink {
   emit(type: string, data: Record<string, unknown>, sessionId?: string): void;
@@ -7,6 +8,7 @@ export interface FormaEventSink {
 export interface FormaEnv {
   projectDir: string;
   events: FormaEventSink;
+  host?: AgentHost;
 }
 
 let current: FormaEnv | undefined;

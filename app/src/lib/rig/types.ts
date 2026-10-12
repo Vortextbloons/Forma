@@ -166,6 +166,7 @@ export interface ModelInfo {
   name?: string;
   reasoning?: boolean;
   thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
+  input?: string[];
   contextWindow?: number;
 }
 

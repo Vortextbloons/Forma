@@ -13,11 +13,34 @@
         <span class="element-edit-text" title={entry.element.text}>{entry.element.text || "Selected shape"}</span>
       </div>
     {/if}
+    {#if entry.images?.length}
+      <div class="msg-images" class:has-text={entry.content !== ""}>
+        {#each entry.images as image, index (index)}
+          <img class="msg-image" src={`data:${image.mimeType};base64,${image.data}`} alt={`Attached image ${index + 1}`} />
+        {/each}
+      </div>
+    {/if}
     {entry.content}
   </div>
 </div>
 
 <style>
+  .msg-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .msg-images.has-text {
+    margin-bottom: 8px;
+  }
+
+  .msg-image {
+    max-width: 220px;
+    max-height: 220px;
+    border-radius: 8px;
+  }
+
   .element-edit-context {
     display: flex;
     flex-direction: column;

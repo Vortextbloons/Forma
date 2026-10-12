@@ -48,6 +48,8 @@ const ALIASES: Record<string, string> = {
   search_web: "web_search",
   question: "ask_user_question",
   ask_user: "ask_user_question",
+  ask_question: "ask_user_question",
+  propose_design: "ask_user_question",
   delegate: "subagent",
   run_agent: "subagent",
   subagent_run: "subagent",

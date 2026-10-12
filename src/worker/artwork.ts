@@ -4,8 +4,9 @@ import { CancellationError, ModelError, ProtocolError, RuntimeError, serializeEr
 import type { WorkerResult } from "rig/ipc";
 import { FORMA_EVENTS } from "../forma/events.ts";
 import { applyDesignPrompt, generatePrompt, planPrompt, refinePrompt } from "../forma/prompts.ts";
-import { collectVisualReferences, viewArtworkTool, viewImageTool, type VisualReferences } from "../forma/visuals.ts";
+import { collectVisualReferences, normalizePromptImages, viewArtworkTool, viewImageTool, IMAGES_UNSUPPORTED, MAX_IMAGES, type PromptImage, type VisualReferences } from "../forma/visuals.ts";
 import { projectRuns, type ProjectRun } from "../forma/runtime.ts";
+import { loadedGroupTools, prepareSessionTools } from "../tools/lazy.ts";
 import { deletePage, duplicatePage, movePage, restorePage } from "../projects/pages.ts";
 import { effectiveSize } from "../projects/size.ts";
 import { openProject, setOutline, updateProject } from "../projects/store.ts";
@@ -83,7 +84,11 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
           details: { pageIds: project.pages },
         });
       }
-      const message = asString(params.message, "message");
+      const chatImages = await normalizePromptImages(params.images);
+      const message = asOptionalString(params.message) ?? "";
+      if (!message && chatImages.length === 0) {
+        throw new ProtocolError(`Missing or invalid parameter "message" (expected non-empty string)`);
+      }
       const element = params.element === undefined ? undefined : z.object({
         selector: z.string().min(1).max(2000),
         html: z.string().max(4000),
@@ -94,7 +99,12 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
       if (mode !== "plan" && mode !== "build") {
         throw new ProtocolError(`Invalid refinement mode "${mode}"`);
       }
-      const images = await collectVisualReferences(dir, project, scope === "page" ? pageId : undefined);
+      const images = await collectVisualReferences(
+        dir,
+        project,
+        scope === "page" ? pageId : undefined,
+        Math.max(0, MAX_IMAGES - chatImages.length),
+      );
       const result = await runArtwork(ctx, {
         kind: "refine",
         dir,
@@ -103,6 +113,7 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
         prompt: refinePrompt(project, scope, pageId, message, mode, element),
         mode,
         references: images,
+        chatImages,
         allowedPageIds: scope === "page" && pageId ? [pageId] : undefined,
         imageMode: "optional",
       });
@@ -202,6 +213,7 @@ interface ArtworkRunOptions {
   prompt: string;
   mode: "plan" | "build";
   references: VisualReferences;
+  chatImages?: PromptImage[];
   allowedPageIds?: string[];
   imageMode: "required" | "optional";
 }
@@ -216,6 +228,7 @@ interface ProjectSession {
 
 async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promise<WorkerResult> {
   const handle = await ctx.getOrCreateSession(options.sessionId);
+  prepareSessionTools(handle);
   if (ctx.runs.get(handle.id) || projectRuns.has(handle.id)) {
     throw new ProtocolError(
       `Session "${handle.id}" already has a running prompt; abort it first`,
@@ -224,6 +237,10 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
   if (options.model) await ctx.runtime.models.select(options.model, handle.id);
   const session = handle.piSession as ProjectSession;
   const supportsImages = session.model?.input.includes("image") === true;
+  const chatImages = options.chatImages ?? [];
+  if (chatImages.length > 0 && !supportsImages) {
+    throw new ModelError(IMAGES_UNSUPPORTED, { details: { reason: "images-unsupported" } });
+  }
   let images = options.references.images;
   if (images.length > 0) {
     if (!supportsImages) {
@@ -236,6 +253,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
       images = [];
     }
   }
+  const attachments = [...chatImages, ...images];
   const project = await openProject(options.dir);
   const total = expectedPages(project);
   const tools = session.getActiveToolNames();
@@ -250,11 +268,15 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
     supportsImages
       ? "You can view reference images with view_image using their ids from read_project. After creating or editing artwork, use view_artwork to inspect the rendered page visually; omit pageId to check the deck's consistency."
       : "The current model cannot view images. Use reference text and image paths without claiming to have seen them.",
-    supportsImages ? `Attached reference images, in order: ${JSON.stringify(options.references.labels)}\nReferences not attached: ${JSON.stringify(options.references.skipped)}` : "",
+    supportsImages ? [
+      chatImages.length > 0 ? `The user attached ${chatImages.length} image${chatImages.length === 1 ? "" : "s"} to this message; they come first among the attached images. Treat them as visual input for the request.` : "",
+      `Attached reference images, in order: ${JSON.stringify(options.references.labels)}`,
+      `References not attached: ${JSON.stringify(options.references.skipped)}`,
+    ].filter(Boolean).join("\n") : "",
   ].join("\n\n");
   loader.getAppendSystemPrompt = () => [...appendPrompt.call(loader), projectContext];
   session.setActiveToolsByName(options.mode === "plan"
-    ? tools.filter((name) => !["submit_page", "create_page", "write_file", "edit_file", "update_page", "restore_page"].includes(name))
+    ? tools.filter((name) => !["submit_page", "create_page", "write_file", "edit_file", "update_page", "restore_page", "delete_page"].includes(name))
     : tools);
   if (supportsImages) session.agent.state.tools = [...session.agent.state.tools, viewImageTool(options.dir), viewArtworkTool(options.dir)];
   const projectRun: ProjectRun = { mode: options.mode, artworkChanged: false, allowedPageIds: options.allowedPageIds, changedPageIds: new Set(), allowOutline: options.kind !== "artwork" && options.kind !== "design" };
@@ -273,7 +295,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
       try {
         await ctx.runtime.prompt(prompt, {
           sessionId: handle.id,
-          ...(attempt === 0 && images.length > 0 ? { images } : {}),
+          ...(attempt === 0 && attachments.length > 0 ? { images: attachments } : {}),
         });
       } catch (error) {
         run.markAbortedIfAbortError(error);
@@ -282,6 +304,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
       result = await run.result;
       if (!result.ok || options.mode === "plan" || (!projectRun.artworkChanged && options.kind === "refine")) break;
       const current = await openProject(options.dir);
+      if (!current.settings.designApproved && !projectRun.artworkChanged) break;
       const fullCheck = options.kind === "artwork" || options.kind === "design" || project.pages.length === 0;
       let reports: ValidationReport[];
       if (fullCheck) {
@@ -307,7 +330,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
       ctx.formaEvents.emit(FORMA_EVENTS.validationReady, { issues, pages: reports.reduce((count, report) => count + report.pages, 0), ...(renderError ? { renderError } : {}) }, handle.id);
       if (issues.length === 0 && !renderError) {
         if (projectRun.artworkChanged && (fullCheck || project.artworkRevision === project.settingsRevision || project.pages.every((id) => projectRun.changedPageIds?.has(id)))) {
-          await commitArtwork(options.dir, project.settingsRevision);
+          await commitArtwork(options.dir, current.settingsRevision);
         }
         break;
       }
@@ -323,7 +346,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
   } finally {
     projectRuns.delete(handle.id);
     loader.getAppendSystemPrompt = appendPrompt;
-    session.setActiveToolsByName(tools);
+    session.setActiveToolsByName([...new Set([...tools, ...loadedGroupTools(handle.id)])]);
   }
   const error = result.ok === false ? result.error : undefined;
   ctx.formaEvents.emit(

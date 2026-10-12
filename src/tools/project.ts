@@ -3,7 +3,7 @@ import { RuntimeError, type RigTool, type ToolContext } from "rig";
 import { loadExtraction } from "../extraction/index.ts";
 import { FORMA_EVENTS } from "../forma/events.ts";
 import { formaEnv, projectRuns } from "../forma/runtime.ts";
-import { pageRefs, readPage, restorePage, updatePage, writePage } from "../projects/pages.ts";
+import { deletePage, pageRefs, readPage, restorePage, updatePage, writePage } from "../projects/pages.ts";
 import { openProject, setOutline } from "../projects/store.ts";
 import { effectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
@@ -84,6 +84,7 @@ export const projectTools: Array<RigTool<z.ZodTypeAny, unknown>> = [
   editFileTool(),
   updatePageTool(),
   restorePageTool(),
+  deletePageTool(),
   readPageTool(),
   inspectPageTool(),
 ];
@@ -125,6 +126,8 @@ function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
           slideCount: project.settings.slideCount,
           ...resolveSearchSettings(project.settings, await getSearchDefaults()),
           designProfile: project.settings.designProfile,
+          designApproved: project.settings.designApproved,
+          designName: project.settings.designName,
         },
         ...(project.settings.designProfile ? { designInstructions: DESIGN_INSTRUCTIONS } : {}),
         pageSize: { width: size.width, height: size.height, unit: size.unit },
@@ -286,6 +289,7 @@ function submitPageTool(): RigTool<typeof submitPageInput, unknown> {
       if (run?.mode === "plan") throw new RuntimeError("Switch to Build to create artwork.");
       const dir = dirOf(ctx);
       const before = await openProject(dir);
+      if (!before.settings.designApproved) throw new RuntimeError("Propose a design and wait for approval before creating artwork.");
       assertPageScope(ctx, input.pageId ?? before.pages[input.index - 1] ?? before.outline?.[input.index - 1]?.id);
       const { project, pageId } = await writePage(dir, {
         pageId: input.pageId,
@@ -338,6 +342,7 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
       assertPageScope(ctx, input.pageId);
       const dir = dirOf(ctx);
       const before = await openProject(dir);
+      if (!before.settings.designApproved) throw new RuntimeError("Propose a design and wait for approval before changing artwork.");
       const { project, pageId } = await updatePage(dir, input.pageId, {
         title: input.title,
         html: input.html,
@@ -361,6 +366,23 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         ctx,
       );
       return { ok: true, pageId, index: index + 1 };
+    },
+  };
+}
+
+function deletePageTool(): RigTool<typeof pageIdInput, unknown> {
+  return {
+    name: "delete_page",
+    description: "Delete a page and its source files. Remaining pages keep their order; their indexes shift up.",
+    input: pageIdInput,
+    async execute(input, ctx) {
+      const run = projectRuns.get(ctx.session.id);
+      if (run?.mode === "plan") throw new RuntimeError("Switch to Build to delete artwork.");
+      assertPageScope(ctx, input.pageId);
+      const project = await deletePage(dirOf(ctx), input.pageId);
+      if (run) run.artworkChanged = true;
+      emit(FORMA_EVENTS.pageDeleted, { pageId: input.pageId, total: project.pages.length }, ctx);
+      return { ok: true, pageId: input.pageId, total: project.pages.length };
     },
   };
 }

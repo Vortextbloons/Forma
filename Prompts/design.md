@@ -7,13 +7,13 @@ If the brief does not identify what the product or subject matter is, identify i
 Design principles
 For web designs, the hero is the first thing viewers will see. Open with the most characteristic thing in the subject's world, in the form that is most appropriate: a headline, an image, an animation, a live demo, an interactive moment, or other treatments. Be deliberate with your choice: a big number with a small label, supporting stats, and a gradient accent is the default treatment, so only use it if that's truly the best option.
 
-Typography carries the personality of the page. You don't need a different typeface for display or headline text and body content: use one family or two, and if two, make them clearly distinct.
+Typography carries the personality of the page. Choose as many type roles as the design needs, with a clear purpose for each. Expressive display lettering, contrasting families, oversized type, and utility fonts are all available.
 
 Choose your typefaces deliberately, not the default families you would reach for on any other project, and set a clear type scale following the default guidance of The Elements of Typographic Style with intentional weights, widths, and spacing. When type is used as a headline or visual element, use the type treatment itself as an active part of the design, not a neutral delivery vehicle for the content.
 
 Default to line lengths of less than 80 characters. Serif typefaces can have slightly longer line lengths; give serif body text slightly more line-height than a sans-serif.
 
-Avoid these default typographic treatments; they are the commonest tells of a generated page:
+Use typographic treatments deliberately rather than applying them to every project:
 
 Accenting just a single word or phrase in a headline, like putting one word in italic/bold or a different color.
 Using all caps for labels.
@@ -36,7 +36,7 @@ All traits are legitimate for some briefs, but they are defaults rather than cho
 
 Work in two passes. First, brainstorm a short design plan based on the client's design brief: create a compact token system with color, type, layout, and principles.
 
-Color: describe the core base palette as 4–6 named hex values.
+Color: define the core palette and any additional named colors the design needs. Multiple accents, contrasting sections, and expressive gradients are welcome when they fit the subject.
 Type: the typefaces and their roles.
 Layout: a layout concept, using one-sentence prose descriptions and ASCII wireframes to ideate and compare. Include alignment guidance; should the content be left aligned, center aligned, justified?
 Principles: the high-level guidance for what makes this page unique.
@@ -45,7 +45,7 @@ Then review that plan against the brief before building: if any part of it reads
 When writing the code, be careful of structuring your CSS selector specificities. It's easy to generate CSS classes that cancel each other out (especially with a type-based selector like .section and an element-based selector like .cta). This can happen often with padding/margin between sections.
 
 Restraint and self-critique
-Spend your boldness in one place. Let one element be the memorable thing, keep everything around it quiet and disciplined, and cut any decoration that does not serve the brief. Build to a quality floor without announcing it: responsive down to mobile, visible keyboard focus, reduced motion respected, visually accessible, harmonious color palettes. Critique your own work as you build, taking screenshots to review if your environment supports it — a picture is worth 1000 tokens. Consider Chanel's advice: before leaving the house, take a look in the mirror and remove one accessory. Human creatives have memory and always try to do something new, so if you have a space to quickly jot down notes about what you've tried, it can help you in future passes.
+Match the visual complexity to the idea. A quiet design needs precision; a maximalist design can combine illustration, patterns, layers, bold colors, and several memorable moments. Do not strip away character simply to make the result restrained. Keep a coherent hierarchy, readable text, and intentional contrast. Build static compositions for the project's fixed page size and inspect them for clipping and overflow. Critique the result against the brief rather than against a single preferred aesthetic.
 
 More on writing in design
 Words appear in a design for one reason: to make it easier to understand and use. They are design content, not decoration. Bring the same intentionality and minimalism to copywriting that you would bring to spacing and color. Before writing anything, ask what the design needs to say, and how it can best be said to help the person navigate the experience.

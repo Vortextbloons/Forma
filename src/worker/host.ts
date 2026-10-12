@@ -83,6 +83,17 @@ export class WorkerAgentHost implements AgentHost {
     }
   }
 
+  rejectForSession(sessionId: string, error: unknown): void {
+    for (const pending of [...this.#pending.values()]) {
+      if (pending.interaction.sessionId !== sessionId) continue;
+      this.#pending.delete(pending.interaction.id);
+      const kind = pending.interaction.kind;
+      const result = kind === "question" ? "Cancelled" : kind === "confirmation" ? false : { decision: "deny", scope: "once" };
+      this.#bus.post("interaction.resolved", { interactionId: pending.interaction.id, kind, result }, { sessionId });
+      pending.reject(error);
+    }
+  }
+
   pendingForSession(sessionId: string): Array<{ id: string; kind: string; summary: string }> {
     const out: Array<{ id: string; kind: string; summary: string }> = [];
     for (const pending of this.#pending.values()) {

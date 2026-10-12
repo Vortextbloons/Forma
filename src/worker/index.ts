@@ -24,6 +24,8 @@ import { createFormaEventSink } from "../forma/events.ts";
 import { projectRuns, setFormaEnv } from "../forma/runtime.ts";
 import { closeOcrWorker } from "../extraction/ocr.ts";
 import { closeBrowser } from "../rendering/browser.ts";
+import { closeDdgsHelpers } from "../search/ddgs.ts";
+import { clearSessionTools } from "../tools/lazy.ts";
 import {
   buildDispatcher,
   dispatchCommand,
@@ -203,12 +205,13 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
     const capabilities = await runtime.capabilities();
 
     const formaEvents = createFormaEventSink((message) => writer.write(message), runtime.projectId);
-    setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents });
+    setFormaEnv({ projectDir: runtime.projectDir, events: formaEvents, host });
 
     if (previous) {
       previous.host.rejectAll(new CancellationError("Project switched"));
       previous.runs.rejectAll(new CancellationError("Project switched"));
       projectRuns.clear();
+      clearSessionTools();
       try {
         await previous.runtime.close();
       } catch (error) {
@@ -269,6 +272,7 @@ async function run(projectDir: string, logLevel: WorkerArgs["logLevel"], deps: B
     active?.runs.rejectAll(new CancellationError("Worker is shutting down"));
     await closeBrowser().catch(() => undefined);
     await closeOcrWorker().catch(() => undefined);
+    closeDdgsHelpers();
     try {
       await active?.runtime.close();
     } catch (error) {

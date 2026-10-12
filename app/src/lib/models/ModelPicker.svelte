@@ -5,8 +5,6 @@
   import Icon from "../components/Icon.svelte";
   import type { ModelInfo } from "../rig/types";
 
-  let { onselect }: { onselect?: () => void } = $props();
-
   const connected = $derived.by(() => {
     const ids = new Set(modelStore.models.map((model) => model.provider));
     const list: Array<{ id: string; name: string }> = [];
@@ -131,13 +129,11 @@
   async function chooseAuto(): Promise<void> {
     await modelStore.select("auto");
     projectStore.savePreferences();
-    onselect?.();
   }
 
   async function choose(model: ModelInfo): Promise<void> {
     await modelStore.select(refOf(model));
     projectStore.savePreferences();
-    onselect?.();
   }
 </script>
 
@@ -205,7 +201,7 @@
           >
             <span class="model-option-name">{model.name ?? model.id}</span>
             {#if model.contextWindow}
-              <span class="model-option-meta">{Math.round(model.contextWindow / 1000)}k</span>
+              <span class="model-option-meta">{model.contextWindow >= 1_000_000 ? `${Number((model.contextWindow / 1_000_000).toFixed(1))}m` : `${Math.round(model.contextWindow / 1000)}k`}</span>
             {/if}
           </button>
         {:else}

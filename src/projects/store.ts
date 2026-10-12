@@ -15,6 +15,7 @@ import {
   type ContextItem,
   type ContextRole,
   type ProjectFile,
+  type ProjectPreferences,
   type ProjectSettings,
   type SourceRecord,
 } from "./schema.ts";
@@ -25,6 +26,7 @@ export interface CreateProjectInput {
   prompt: string;
   mode: ProjectFile["mode"];
   settings: ProjectSettings;
+  preferences?: Pick<Partial<ProjectPreferences>, "model" | "thinkingLevel">;
 }
 
 export interface CreatedProject {
@@ -128,7 +130,7 @@ export async function createProject(input: CreateProjectInput): Promise<CreatedP
       context: [],
       sources: [],
       conversation: { sessionIds: [] },
-      preferences: projectPreferencesSchema.parse({}),
+      preferences: projectPreferencesSchema.parse({ ...input.preferences }),
     };
     await mkdir(dir, { recursive: true });
     await mkdir(join(dir, "pages"), { recursive: true });
@@ -211,6 +213,7 @@ export async function deleteProject(dir: string): Promise<string> {
     });
   }
   await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  projectCache.delete(projectFilePath(target));
   return target;
 }
 
@@ -404,6 +407,7 @@ export interface SourceInput {
   author?: string;
   authorUrl?: string;
   query?: string;
+  licenseStatus?: SourceRecord["licenseStatus"];
 }
 
 export async function addSource(
