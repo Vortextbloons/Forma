@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Built-in web and image search** — Forma ships with search included, so research and photo imports work without API keys or a separate Python install. Exa and Pexels remain available as API-key providers in Settings under Web & images.
 - **Photo reuse notice** — imported built-in photos record their source page and show “Reuse rights unverified” in References.
+- **Brand icon tools** — `find_brand_icon` searches the simple-icons catalog and `import_brand_icon` drops the SVG into project assets.
+- **Chart tool** — `create_chart` renders ECharts SVG charts into project assets from plain JSON options (external URLs and callbacks are rejected).
+- **Design proposal tool** — the agent can propose a full design profile; chat shows it as a preview card you can apply from the question composer.
+- **Rich question prompts** — agent questions render in a dedicated composer with option cards, multi-select, custom answers, and auth-URL support.
+- **Lazy tool groups** — research, photo, and brand tools load on demand via a `load_tools` request instead of sitting in the agent's context the whole session.
+- **Chat info panel** — editable project name and brief with output, density, style, and dimension overview in the right panel.
+- **Design dialogs** — dedicated dialogs for design proposals and mashup/preview flows.
+- **Shared markdown renderer** — chat messages use a common rig markdown pipeline with tests.
 
 ---
 
