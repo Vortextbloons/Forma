@@ -4,7 +4,21 @@ All notable changes to [Forma](https://github.com/Vortextbloons/Forma) are docum
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.1] - 2026-10-12
+
+### Changed
+
+- **Flexible slide counts** — the agent now decides how many slides fit the brief, honoring any slide count you request; the slide-count stepper in the chat info panel and the slide-count field in Design settings were removed, and the header and info panel show the actual page count instead.
+
+### Fixed
+
+- **Automatic slide counts** — projects without an outline no longer reject pages beyond the saved slide count, and expected-page totals in artwork validation and page progress reflect current pages instead of a stale setting.
+- **Artwork context** — the internal slide-count setting is no longer sent to the model in the project context.
+- **Question composer animation** — removed the stray vertical offset from the entrance keyframe.
+
+---
+
+## [0.5.0] - 2026-10-12
 
 ### Added
 
@@ -165,7 +179,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Desktop services** — file service and worker service bridging the Go host to the embedded runtime.
 - **Build scaffolding** — Windows-focused Wails taskfiles, icons, and dev/build PowerShell scripts.
 
-[Unreleased]: https://github.com/Vortextbloons/Forma/compare/dc19eed...HEAD
+[Unreleased]: https://github.com/Vortextbloons/Forma/compare/f052b29...HEAD
+[0.5.1]: https://github.com/Vortextbloons/Forma/commit/f052b29
+[0.5.0]: https://github.com/Vortextbloons/Forma/commit/0a9b03b
 [0.4.5]: https://github.com/Vortextbloons/Forma/commit/dc19eed
 [0.4.1]: https://github.com/Vortextbloons/Forma/commit/cfa6cea
 [0.4.0]: https://github.com/Vortextbloons/Forma/commit/05d6795
