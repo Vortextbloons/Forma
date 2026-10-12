@@ -92,17 +92,15 @@
   </div>
   {#if !settings.designApproved}
     <p class="muted small">AI will preview a design for approval before building. You can ask for changes until it feels right.</p>
-  {:else}
-    <DesignPreview {profile} name={settings.designName} />
   {/if}
+  <DesignPreview {profile} name={settings.designApproved ? settings.designName : "AI chooses"} />
   {#if !settings.designProfile}
     <p class="muted small">Enable a shared profile to give every page the same palette and typography.</p>
     <button class="btn" type="button" onclick={() => update({})}>Enable shared profile</button>
   {/if}
   {/if}
   {#if section !== "chooser"}
-  <details>
-    <summary class="field-label">Edit colors, fonts, and spacing</summary>
+  <p class="section-title">Colors, fonts, and spacing</p>
   <div class="palette">
     {#each colors as color (color.key)}
       <label class="color-field">
@@ -151,10 +149,8 @@
     {#each DESIGN_FONTS as font (font)}<option value={font}></option>{/each}
   </datalist>
   <p class="muted small">Choose a suggestion or enter any font installed on this computer.</p>
-  <details>
-    <summary class="field-label">Type and spacing</summary>
-    <p class="muted small">Sizes scale with page width; values are pixels on a 1920px-wide page.</p>
-    <div class="profile-grid">
+  <p class="muted small">Sizes scale with page width; values are pixels on a 1920px-wide page.</p>
+  <div class="profile-grid">
       {#each sizes as size (size.key)}
         <label class="field">
           <span class="field-label">{size.label}</span>
@@ -164,12 +160,10 @@
         </label>
       {/each}
     </div>
-  </details>
   <label class="field">
     <span class="field-label">Visual direction</span>
     <textarea class="input textarea" rows="2" placeholder="For example: vivid collage, oversized typography, layered gradients" value={profile.direction} onchange={(event) => update({ direction: event.currentTarget.value })}></textarea>
   </label>
-  </details>
   <div class="theme-row">
     <label class="field">
       <span class="field-label">Save as a reusable theme</span>
@@ -189,10 +183,8 @@
   .theme-row .btn { flex-shrink: 0; }
   .profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .palette { display: grid; gap: 8px; }
-  details > :global(*) + :global(*) { margin-top: 12px; }
+  .section-title { margin: 0; font: 700 10px var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
   .color-field { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 10px; font-size: 12px; }
   .color-field input { width: 32px; height: 28px; padding: 0; border: 0; background: transparent; cursor: pointer; }
   .extra-color-field { grid-template-columns: 32px 1fr auto auto; }
-  summary { cursor: pointer; }
-  details[open] summary { margin-bottom: 12px; }
 </style>

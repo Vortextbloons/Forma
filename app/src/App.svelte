@@ -12,6 +12,7 @@
 
   let showSettings = $state(false);
   let showDesign = $state(false);
+  let designView = $state<"settings" | "profile">("settings");
   let settingsTab = $state<"providers" | "search" | "project" | "assets">("providers");
   const banner = $derived(notificationStore.items[0]);
 
@@ -38,7 +39,9 @@
       settingsTab = "assets";
       showSettings = true;
     };
-    const onOpenDesign = (): void => {
+    const onOpenDesign = (event: Event): void => {
+      const detail = (event as CustomEvent<{ view?: "settings" | "profile" } | undefined>).detail;
+      designView = detail?.view === "profile" ? "profile" : "settings";
       showDesign = true;
     };
     window.addEventListener("rig:open-provider-settings", onOpenProviders);
@@ -76,7 +79,8 @@
   {#if projectStore.current}
     <WorkspaceScreen
       onOpenSettings={() => {
-        showDesign = true;
+        settingsTab = "providers";
+        showSettings = true;
       }}
       onCloseProject={() => projectStore.closeProject()}
     />
@@ -91,6 +95,7 @@
 
   {#if showDesign}
     <DesignDialog
+      view={designView}
       onclose={() => (showDesign = false)}
       onOpenSettings={() => {
         showDesign = false;

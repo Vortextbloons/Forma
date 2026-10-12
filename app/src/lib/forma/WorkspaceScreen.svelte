@@ -40,7 +40,7 @@
     {#if effectiveLayout === "full" && !previewOpen}
       <ChatInfoPanel />
     {/if}
-    <RightPanel />
+    <RightPanel layout={effectiveLayout} />
   </div>
 </div>
 

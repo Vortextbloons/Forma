@@ -55,9 +55,6 @@
   <button class="btn preview-toggle" type="button" aria-pressed={previewOpen} onclick={onTogglePreview}>
     <Icon name="external" size={14} /> {previewOpen ? "Back to chat" : project?.pages.length ? "View artwork" : project?.outline?.length ? "View plan" : "Preview"}
   </button>
-  <button class="btn btn-ghost" type="button" aria-label="Project settings" onclick={onOpenSettings}>
-    <Icon name="gear" size={14} /> <span class="project-settings-label">Project settings</span>
-  </button>
   <button
     class="btn"
     type="button"
@@ -66,6 +63,9 @@
     onclick={onOpenExport}
   >
     <Icon name="download" size={14} /> Export
+  </button>
+  <button class="btn btn-ghost" type="button" aria-label="Settings" onclick={onOpenSettings}>
+    <Icon name="gear" size={14} /> <span class="settings-label">Settings</span>
   </button>
 
 </header>

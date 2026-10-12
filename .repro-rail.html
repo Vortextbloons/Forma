@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; }
+  .forma-workspace { display: flex; flex: 1; width: 100%; min-width: 0; background: #20242b; }
+  .forma-right-panel { display: flex; flex: 1; min-width: 0; }
+  .panel-content { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+
+  /* from forma.css */
+  .chat-panel { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+  .chat-panel.has-rail { flex-direction: row; }
+  .chat-body { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+  .chat-slide-rail {
+    display: flex;
+    order: -1;
+    width: 150px;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding: 10px;
+    border-right: 1px solid #333;
+    box-sizing: border-box;
+  }
+  .chat-full .chat-slide-rail { display: flex; order: 0; border-right: 0; border-left: 1px solid #333; }
+  .chat-slide-thumb {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+  .page-thumb-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: var(--thumb-ratio, 16 / 9);
+    overflow: hidden;
+    border: 1px solid rgb(0 0 0 / 0.1);
+    border-radius: 6px;
+    background: #fff;
+    box-sizing: border-box;
+  }
+  .page-frame { display: block; border: 0; transform-origin: top left; }
+</style>
+</head>
+<body>
+  <div class="forma-workspace chat-full">
+    <div class="forma-right-panel">
+      <div class="panel-content">
+        <div class="chat-panel has-rail">
+          <div class="chat-body" style="color:#fff;">chat body content</div>
+          <aside class="chat-slide-rail">
+            <div class="chat-slide-item">
+              <button class="chat-slide-thumb" type="button">
+                <div class="page-thumb-frame" style="--thumb-ratio:1920/1080;">
+                  <iframe class="page-frame" style="width:1920px;height:1080px;transform:scale(0.0677);"></iframe>
+                </div>
+              </button>
+              <button class="icon-btn">X</button>
+            </div>
+            <div class="chat-slide-item">
+              <button class="chat-slide-thumb" type="button">
+                <div class="page-thumb-frame" style="--thumb-ratio:1920/1080;">
+                  <iframe class="page-frame" style="width:1920px;height:1080px;transform:scale(0.0677);"></iframe>
+                </div>
+              </button>
+              <button class="icon-btn">X</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </div>
+  <pre id="out" style="position:fixed;right:0;top:0;background:#fff;color:#000;padding:8px;z-index:9;font-size:11px;"></pre>
+  <script>
+    const panel = document.querySelector('.chat-panel');
+    const body = document.querySelector('.chat-body');
+    const rail = document.querySelector('.chat-slide-rail');
+    const frame = document.querySelector('.page-thumb-frame');
+    const report = () => {
+      const r = (el) => { const b = el.getBoundingClientRect(); return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; };
+      document.getElementById('out').textContent =
+        'panel(x,y,w,h)=' + r(panel) + '\nbody=' + r(body) + '\nrail=' + r(rail) + '\nframe=' + r(frame) +
+        '\nsameRow=' + (Math.abs(body.getBoundingClientRect().top - rail.getBoundingClientRect().top) < 2);
+    };
+    new ResizeObserver(report).observe(panel);
+    report();
+  </script>
+</body>
+</html>

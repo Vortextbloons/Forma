@@ -3,7 +3,7 @@
   import { messageStore } from "../stores/messageStore.svelte";
   import type { QuestionInteraction } from "../types";
   import type { ToolRendererProps } from "./registry";
-  import DesignPreview from "../../forma/DesignPreview.svelte";
+  import DesignProposalCard from "../../conversation/DesignProposalCard.svelte";
   import type { DesignProposal } from "../../../../../src/tools/design.ts";
   import { designProfileSchema } from "../../../../../src/projects/design.ts";
 
@@ -17,12 +17,14 @@
     if (linkedInteraction?.kind === "question") return linkedInteraction.question;
     return toolQuestion;
   });
+  const linkedInteraction = $derived(
+    linked?.interaction?.kind === "question"
+      ? (linked.interaction as QuestionInteraction & { designProposal?: DesignProposal })
+      : undefined,
+  );
   const proposal = $derived.by(() => {
-    const linkedInteraction = linked?.interaction;
     const candidate =
-      (linkedInteraction?.kind === "question"
-        ? (linkedInteraction as QuestionInteraction & { designProposal?: DesignProposal }).designProposal
-        : undefined) ??
+      linkedInteraction?.designProposal ??
       (tool?.toolName === "propose_design" ? (toolInput as unknown as DesignProposal) : undefined);
     if (!candidate) return undefined;
     const parsed = designProfileSchema.safeParse(candidate.profile);
@@ -52,9 +54,16 @@
     <div class="question-body">
       <div class="question-text">{question}</div>
       {#if proposal}
-        <DesignPreview profile={proposal.profile} name={proposal.name} rationale={proposal.rationale} />
-      {/if}
-      {#if answered}
+        {#if answered}
+          <div class="question-answer">
+            <span class="muted">answered: </span>{answerText || "—"}
+          </div>
+        {:else if linkedInteraction}
+          <DesignProposalCard {sessionId} interaction={linkedInteraction} />
+        {:else}
+          <p class="muted small">Review the design in the conversation below.</p>
+        {/if}
+      {:else if answered}
         <div class="question-answer">
           <span class="muted">answered: </span>{answerText || "—"}
         </div>

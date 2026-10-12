@@ -33,11 +33,13 @@
   let busy = $state(false);
   let menuOpen = $state(false);
   let attachMenuOpen = $state(false);
+  let targetMenuOpen = $state(false);
   let attachments = $state<Attachment[]>([]);
   let dropActive = $state(false);
   let previewUrl = $state<string | null>(null);
   let menuWrap: HTMLDivElement | undefined = $state();
   let attachWrap: HTMLDivElement | undefined = $state();
+  let targetWrap: HTMLDivElement | undefined = $state();
   let textarea: HTMLTextAreaElement | undefined = $state();
   let fileInput: HTMLInputElement | undefined = $state();
   let attachmentSeq = 0;
@@ -54,6 +56,17 @@
     const title = project.pageMeta[target.pageId]?.title;
     return `Slide ${index + 1}${title ? ` · ${title}` : ""}`;
   });
+  const slideTarget = $derived.by(() => {
+    const project = projectStore.current?.project;
+    const pageId = projectStore.refineTargetPageId;
+    if (!project || !pageId || project.settings.output !== "slides") return null;
+    const index = project.pages.indexOf(pageId);
+    if (index === -1) return null;
+    return { pageId, index, title: project.pageMeta[pageId]?.title ?? "" };
+  });
+  const slideTargetLabel = $derived(
+    slideTarget ? `Slide ${slideTarget.index + 1}${slideTarget.title ? ` · ${slideTarget.title}` : ""}` : "",
+  );
   const modelLabel = $derived(
     modelStore.selectedModel === "auto"
       ? "Auto model"
@@ -68,6 +81,8 @@
   const designSettings = $derived(projectStore.current?.project.settings);
   const designApproved = $derived(designSettings?.designApproved ?? false);
   const designLabel = $derived(designApproved ? (designSettings?.designName ?? "Custom") : "AI chooses");
+  const isSlides = $derived(projectStore.current?.project.settings.output === "slides");
+  const slides = $derived(projectStore.current?.project.pages ?? []);
 
   $effect(() => {
     void draft;
@@ -96,10 +111,26 @@
     return () => window.removeEventListener("pointerdown", close, true);
   });
 
+  $effect(() => {
+    if (!targetMenuOpen) return;
+    const close = (event: PointerEvent): void => {
+      if (targetWrap && !targetWrap.contains(event.target as Node)) targetMenuOpen = false;
+    };
+    window.addEventListener("pointerdown", close, true);
+    return () => window.removeEventListener("pointerdown", close, true);
+  });
+
   function onWindowKeydown(event: KeyboardEvent): void {
     if (event.key !== "Escape") return;
     attachMenuOpen = false;
+    targetMenuOpen = false;
     previewUrl = null;
+  }
+
+  function pickSlideTarget(pageId: string | null): void {
+    if (pageId) projectStore.toggleRefineTarget(pageId);
+    else if (projectStore.refineTargetPageId) projectStore.toggleRefineTarget(projectStore.refineTargetPageId);
+    targetMenuOpen = false;
   }
 
   function imageInputSupport(): boolean | undefined {
@@ -288,6 +319,14 @@
       <p class="selection-context-text" title={target.element.text}>{target.element.text || "Selected shape"}</p>
       <span class="selection-context-page">{elementPageLabel}</span>
     </div>
+  {:else if slideTarget}
+    <div class="selection-context" aria-live="polite">
+      <div class="selection-context-heading">
+        <Icon name="file" size={14} />
+        <strong>Editing {slideTargetLabel} only</strong>
+        <button class="icon-btn" type="button" aria-label="Edit all slides instead" title="Edit all slides" onclick={() => pickSlideTarget(null)}><Icon name="x" size={14} /></button>
+      </div>
+    </div>
   {/if}
   {#if attachments.length > 0}
     <div class="composer-attachments">
@@ -319,7 +358,7 @@
     class="input textarea composer-textarea"
     placeholder={sessionId
       ? projectStore.current
-        ? target.element ? "Describe a change to this element…" : mode === "plan" ? "Explore an idea or plan a change…" : "Describe what to build or change…"
+        ? target.element ? "Describe a change to this element…" : slideTarget ? "Describe a change to this slide…" : mode === "plan" ? "Explore an idea or plan a change…" : "Describe what to build or change…"
         : "Describe a task…"
       : "Preparing conversation…"}
     rows="1"
@@ -365,6 +404,33 @@
         <button type="button" class:active={mode === "build"} aria-pressed={mode === "build"} disabled={running} onclick={() => projectStore.updateBrief({ mode: "create" })}>Build</button>
       </div>
     {/if}
+    {#if projectStore.current && isSlides && slides.length > 0}
+      <div class="composer-menu-wrap" bind:this={targetWrap}>
+        <button
+          class="composer-target"
+          class:composer-target-active={slideTarget}
+          type="button"
+          aria-expanded={targetMenuOpen}
+          aria-haspopup="true"
+          title={slideTarget ? "This message will only change this slide" : "Messages can change the whole presentation"}
+          onclick={() => (targetMenuOpen = !targetMenuOpen)}
+        >
+          <Icon name="file" size={13} />
+          <span class="composer-target-label">{slideTarget ? slideTargetLabel : "All slides"}</span>
+          <Icon name="chevron-down" size={12} />
+        </button>
+        {#if targetMenuOpen}
+          <div class="composer-menu composer-target-menu" role="menu" aria-label="Slides this message can change">
+            <button class="composer-menu-item" class:active={!slideTarget} type="button" role="menuitem" onclick={() => pickSlideTarget(null)}>All slides</button>
+            {#each slides as pageId, i (pageId)}
+              <button class="composer-menu-item" class:active={slideTarget?.pageId === pageId} type="button" role="menuitem" onclick={() => pickSlideTarget(pageId)}>
+                {i + 1} · {projectStore.current.project.pageMeta[pageId]?.title || `Slide ${i + 1}`}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
     <div class="composer-menu-wrap" bind:this={menuWrap}>
       <button
         class="composer-model"
@@ -392,13 +458,13 @@
       <button class="btn btn-ghost" type="button" onclick={() => window.dispatchEvent(new CustomEvent("forma:open-references"))}>
         <Icon name="plus" size={13} /> Project materials
       </button>
-      <button class="btn btn-ghost composer-design" type="button" title="Change project design" onclick={() => window.dispatchEvent(new CustomEvent("forma:open-design"))}>
+      <button class="btn btn-ghost composer-design" type="button" title="Color palette and typography" onclick={() => window.dispatchEvent(new CustomEvent("forma:open-design", { detail: { view: "profile" } }))}>
         {#if designApproved && designSettings?.designProfile}
           <DesignMashup profile={designSettings.designProfile} height={18} width={40} />
         {:else}
           <span class="composer-design-empty" aria-hidden="true"></span>
         {/if}
-        Design: {designLabel}
+        Design profile: {designLabel}
       </button>
     {/if}
     <ContextIndicator />
@@ -449,6 +515,45 @@
 <style>
   .composer-design {
     gap: 9px;
+  }
+  .composer-target {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .composer-target:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .composer-target-active,
+  .composer-target-active:hover {
+    border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    color: var(--accent);
+  }
+  .composer-target-label {
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .composer-target-menu {
+    min-width: 220px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .composer-menu-item.active {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    color: var(--accent);
+    font-weight: 700;
   }
   .composer-design-empty {
     width: 26px;

@@ -4,21 +4,22 @@
   import QuestionComposer from "../conversation/QuestionComposer.svelte";
   import Icon from "../components/Icon.svelte";
   import PagePreview from "./PagePreview.svelte";
-  import DesignMashup from "./DesignMashup.svelte";
+  import PageIcon from "./PageIcon.svelte";
   import { messageStore } from "../rig/stores/messageStore.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { projectStore } from "./projectStore.svelte";
   import type { ChatTarget } from "./projectStore.svelte";
+  import { effectiveSize } from "../../../../src/projects/size.ts";
+
+  let { layout = "side" }: { layout?: "full" | "side" } = $props();
 
   const sessionId = $derived(sessionStore.activeSessionId);
   const project = $derived(projectStore.current?.project);
   const pages = $derived(project?.pages ?? []);
   const selectedElement = $derived(projectStore.selectedElement);
   const isPoster = $derived(project?.settings.output === "poster");
-  const showRail = $derived(pages.length > 0);
-  const designApproved = $derived(project?.settings.designApproved ?? false);
-  const designProfile = $derived(project?.settings.designProfile);
-  const designLabel = $derived(designApproved ? (project?.settings.designName ?? "Custom") : "AI chooses");
+  const showRail = $derived(layout === "full" && pages.length > 0);
+  const size = $derived(project ? effectiveSize(project.settings) : null);
 
   const targetPageId = $derived(projectStore.refineTargetPageId);
   const empty = $derived(messageStore.bySession(sessionId ?? "").length === 0);
@@ -72,6 +73,14 @@
     }
   }
 
+  const target = $derived<ChatTarget>(
+    selectedElement
+      ? { scope: "page", pageId: selectedElement.pageId, element: selectedElement }
+      : targetPageId && !isPoster
+        ? { scope: "page", pageId: targetPageId }
+        : { scope: "project" },
+  );
+
   let thumbTimer: number | undefined;
 
   function onThumbClick(pageId: string): void {
@@ -90,14 +99,6 @@
     window.clearTimeout(thumbTimer);
     previewPageId = pageId;
   }
-
-  const target = $derived<ChatTarget>(
-    selectedElement
-      ? { scope: "page", pageId: selectedElement.pageId, element: selectedElement }
-      : targetPageId && !isPoster
-        ? { scope: "page", pageId: targetPageId }
-        : { scope: "project" },
-  );
 </script>
 
 <div class="chat-panel" class:has-rail={showRail}>
@@ -105,13 +106,11 @@
   <div class="chat-header" bind:this={historyEl}>
     <strong>Chat</strong>
     {#if project}
-      <button class="btn btn-sm btn-ghost chat-design" type="button" title="Change project design" onclick={() => window.dispatchEvent(new CustomEvent("forma:open-design"))}>
-        {#if designApproved && designProfile}
-          <DesignMashup profile={designProfile} height={16} width={34} />
-        {:else}
-          <span class="chat-design-empty" aria-hidden="true"></span>
+      <button class="btn btn-sm btn-ghost chat-design" type="button" title="Style, density, and aspect ratio" onclick={() => window.dispatchEvent(new CustomEvent("forma:open-design", { detail: { view: "settings" } }))}>
+        {#if size}
+          <PageIcon width={size.width} height={size.height} size={14} />
         {/if}
-        {designLabel}
+        Design settings
       </button>
     {/if}
     <span class="spacer"></span>
@@ -226,12 +225,6 @@
   .chat-design {
     gap: 8px;
     flex-shrink: 0;
-  }
-  .chat-design-empty {
-    width: 22px;
-    height: 12px;
-    border: 1.5px dashed var(--border-strong);
-    border-radius: 999px;
   }
   .element-feedback-hint {
     margin: 0;

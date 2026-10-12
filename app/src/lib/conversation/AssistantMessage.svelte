@@ -51,9 +51,51 @@
       <div class="md" use:externalLinks>{@html html}</div>
       {#if streaming}<span class="muted">▍</span>{/if}
     {:else if streaming}
-      <span class="muted">…</span>
+      <span class="typing" role="status" aria-label="Responding">
+        <span></span>
+        <span></span>
+        <span></span>
+      </span>
     {:else}
       <span class="muted">(no text)</span>
     {/if}
   </div>
 </div>
+
+<style>
+  .typing {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 1.1em;
+  }
+
+  .typing span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: typing-dot 1.2s ease-in-out infinite;
+  }
+
+  .typing span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .typing span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  @keyframes typing-dot {
+    0%,
+    70%,
+    100% {
+      opacity: 0.25;
+      transform: scale(0.8);
+    }
+    35% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+</style>
