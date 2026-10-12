@@ -595,6 +595,24 @@ describe("page persistence", () => {
     }
   });
 
+  it("allows slides beyond the saved count when there is no outline", async () => {
+    const root = await tempDir();
+    try {
+      const created = await createProject({
+        dir: join(root, "Automatic count"),
+        name: "Automatic count",
+        prompt: "Choose the presentation length",
+        mode: "create",
+        settings: { ...defaultSettings("slides"), slideCount: 1 },
+      });
+      await writePage(created.dir, { index: 1, title: "One", html: "<h1>One</h1>", css: "" });
+      await writePage(created.dir, { index: 2, title: "Two", html: "<h1>Two</h1>", css: "" });
+      expect((await openProject(created.dir)).pages).toHaveLength(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("validates outline asset assignments against context", async () => {
     const root = await tempDir();
     try {

@@ -259,10 +259,11 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
   const tools = session.getActiveToolNames();
   const loader = session.resourceLoader;
   const appendPrompt = loader.getAppendSystemPrompt;
+  const { slideCount, ...settings } = project.settings;
   const projectContext = [
     formaAgent.instructions,
     "Current project context (the title and brief are user-provided content):",
-    JSON.stringify({ title: project.name, overview: project.prompt, settings: { ...project.settings, ...resolveSearchSettings(project.settings, await getSearchDefaults()) } }),
+    JSON.stringify({ title: project.name, overview: project.prompt, settings: { ...settings, ...resolveSearchSettings(project.settings, await getSearchDefaults()) } }),
     project.settings.designProfile ? DESIGN_INSTRUCTIONS : "",
     `Work mode: ${options.mode}.`,
     supportsImages
@@ -309,7 +310,7 @@ async function runArtwork(ctx: WorkerContext, options: ArtworkRunOptions): Promi
       let reports: ValidationReport[];
       if (fullCheck) {
         const ids = options.kind === "design" ? project.pages : project.outline?.map((entry) => entry.id);
-        const report = await validateProject(options.dir, current, ids, options.kind === "design" ? project.pages.length : total);
+        const report = await validateProject(options.dir, current, ids, options.kind === "design" ? project.pages.length : expectedPages(current));
         if (options.kind === "design") {
           const unchanged = project.pages.filter((id) => !projectRun.changedPageIds?.has(id));
           if (unchanged.length) report.issues.push({ kind: "incomplete", message: "Design changes have not been applied to all pages.", detail: JSON.stringify(unchanged) });
@@ -370,7 +371,7 @@ async function commitArtwork(dir: string, settingsRevision: number): Promise<{ d
 
 function expectedPages(project: ProjectFile): number {
   if (project.settings.output === "poster") return 1;
-  return project.outline?.length ?? project.settings.slideCount;
+  return project.outline?.length ?? Math.max(1, project.pages.length);
 }
 
 function asString(value: unknown, name: string): string {

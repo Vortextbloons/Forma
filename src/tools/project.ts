@@ -103,7 +103,7 @@ function emit(type: string, data: Record<string, unknown>, ctx: ToolContext): vo
 
 function totalPages(project: ProjectFile): number {
   if (project.settings.output === "poster") return 1;
-  return project.outline?.length ?? project.settings.slideCount;
+  return project.outline?.length ?? project.pages.length;
 }
 
 function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
@@ -123,7 +123,6 @@ function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
         settings: {
           style: project.settings.style,
           density: project.settings.density,
-          slideCount: project.settings.slideCount,
           ...resolveSearchSettings(project.settings, await getSearchDefaults()),
           designProfile: project.settings.designProfile,
           designApproved: project.settings.designApproved,
@@ -303,7 +302,7 @@ function submitPageTool(): RigTool<typeof submitPageInput, unknown> {
       const index = project.pages.indexOf(pageId);
       if (run) run.artworkChanged = true;
       run?.changedPageIds?.add(pageId);
-      const total = totalPages(before);
+      const total = totalPages(project);
       ctx.progress.report({
         message: `Page ${index + 1}/${total} ready`,
         current: index + 1,

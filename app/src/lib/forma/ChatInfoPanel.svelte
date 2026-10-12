@@ -38,25 +38,6 @@
     }
   }
 
-  function saveSlideCount(event: Event): void {
-    const input = event.currentTarget as HTMLInputElement;
-    if (!project) return;
-    const value = Number(input.value);
-    if (Number.isFinite(value) && value >= 1) {
-      projectStore.updateSettings({ ...project.settings, slideCount: Math.round(value) });
-    } else {
-      input.value = String(project.settings.slideCount);
-    }
-  }
-
-  function stepSlides(delta: number): void {
-    if (!project) return;
-    const next = Math.max(1, project.settings.slideCount + delta);
-    if (next !== project.settings.slideCount) {
-      projectStore.updateSettings({ ...project.settings, slideCount: next });
-    }
-  }
-
   function openDesign(): void {
     window.dispatchEvent(new CustomEvent("forma:open-design", { detail: { view: "settings" } }));
   }
@@ -96,27 +77,7 @@
         {#if isSlides}
           <div class="spec-row">
             <span class="spec-label">Slides</span>
-            <div class="spec-stepper">
-              <button
-                type="button"
-                aria-label="Fewer slides"
-                disabled={project.settings.slideCount <= 1}
-                onclick={() => stepSlides(-1)}
-              >
-                <Icon name="minus" size={12} />
-              </button>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={project.settings.slideCount}
-                onchange={saveSlideCount}
-                aria-label="Slide count"
-              />
-              <button type="button" aria-label="More slides" onclick={() => stepSlides(1)}>
-                <Icon name="plus" size={12} />
-              </button>
-            </div>
+            <span class="spec-value spec-mono">{project.outline?.length ?? (project.pages.length || "Auto")}</span>
           </div>
         {:else}
           <div class="spec-row">
@@ -298,49 +259,7 @@
   .spec-row-edit:focus-visible :global(svg) {
     opacity: 1;
   }
-  .spec-stepper {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: var(--surface-2);
-  }
-  .spec-stepper button {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 26px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .spec-stepper button:hover:not(:disabled) {
-    background: var(--surface-3);
-    color: var(--text);
-  }
-  .spec-stepper button:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .spec-stepper input {
-    width: 30px;
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    font: 600 12px var(--font-mono);
-    text-align: center;
-    appearance: textfield;
-    -moz-appearance: textfield;
-  }
-  .spec-stepper input::-webkit-outer-spin-button,
-  .spec-stepper input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-  .spec-row-edit:focus-visible,
-  .spec-stepper button:focus-visible {
+  .spec-row-edit:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }

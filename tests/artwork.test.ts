@@ -186,7 +186,7 @@ describe("forma artwork pipeline", () => {
 
   it("repairs an incomplete deck before marking its artwork current", async () => {
     const harness = await setup({
-      slideCount: 2,
+      outline: [{ title: "One", points: ["One"] }, { title: "Two", points: ["Two"] }],
       responses: [
         fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "One", html: "<p>One</p>" })]),
         fauxAssistantMessage("Done", { stopReason: "stop" }),
@@ -208,7 +208,7 @@ describe("forma artwork pipeline", () => {
 
   it("keeps an unresolved partial deck without marking it current", async () => {
     const harness = await setup({
-      slideCount: 2,
+      outline: [{ title: "One", points: ["One"] }, { title: "Two", points: ["Two"] }],
       responses: [
         fauxAssistantMessage([fauxToolCall("submit_page", { index: 1, title: "One", html: "<p>One</p>" })]),
         fauxAssistantMessage("Done", { stopReason: "stop" }),
@@ -602,7 +602,7 @@ describe("forma artwork pipeline", () => {
           expect(context.systemPrompt).toContain('"title":"Updated title"');
           expect(context.systemPrompt).toContain('"overview":"Updated overview"');
           expect(context.systemPrompt).not.toContain('"title":"Deck"');
-          expect(context.systemPrompt).toContain('"slideCount":3');
+          expect(context.systemPrompt).not.toContain('"slideCount"');
           expect(context.systemPrompt).toContain("Work mode: build");
           expect(context.tools?.map((tool: { name: string }) => tool.name)).toContain("submit_page");
           return fauxAssistantMessage("Three slides would work", { stopReason: "stop" });

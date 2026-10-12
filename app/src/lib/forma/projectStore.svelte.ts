@@ -465,7 +465,7 @@ function expectedPages(): number {
   const project = current?.project;
   if (!project) return 0;
   if (project.settings.output === "poster") return 1;
-  return project.outline?.length ?? project.settings.slideCount;
+  return project.outline?.length ?? project.pages.length;
 }
 
 async function startArtwork(

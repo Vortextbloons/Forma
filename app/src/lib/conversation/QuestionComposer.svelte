@@ -182,7 +182,6 @@
   @keyframes qcomposer-in {
     from {
       opacity: 0;
-      transform: translateY(6px);
     }
   }
 

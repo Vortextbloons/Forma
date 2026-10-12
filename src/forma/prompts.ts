@@ -18,7 +18,7 @@ export function planPrompt(project: ProjectFile): string {
     ].join("\n");
   }
   return [
-    `Plan this presentation: ${project.settings.slideCount} slides unless the brief asks for something else.`,
+    "Plan this presentation. Choose the number of slides that best fits the brief, honoring any slide count the user requests.",
     "Call read_project first, then submit_outline exactly once with the complete ordered outline.",
     "Each entry needs a title, the key points to show, a short visual direction, and the context item ids it should use.",
     "Do not create artwork yet.",
@@ -50,7 +50,7 @@ export function generatePrompt(project: ProjectFile): string {
     ].join("\n");
   }
   return [
-    `Create the artwork now (${project.settings.slideCount} slides).`,
+    "Create the artwork now. Choose the number of slides that best fits the brief, honoring any slide count the user requests.",
     "Call read_project first. Then create one page per slide with create_page in order, starting at index 1, and write its HTML and CSS source files with write_file. Read and edit existing page files instead of recreating them.",
     `Each page is ${sizeText}; fill it exactly.`,
     "When done, call inspect_page on the pages and fix any reported layout problems.",
@@ -69,7 +69,7 @@ export function refinePrompt(
   if (project.pages.length === 0) {
     lines.push(
       "The project has no artwork yet. Help the user develop the brief and outline, or create the artwork when requested in Build mode.",
-      "Read the current project first. For slides, follow the current outline when one exists; otherwise use the requested slide count. For posters, create exactly one page.",
+      "Read the current project first. For slides, follow the current outline when one exists; otherwise choose the number of slides that best fits the brief, honoring any slide count the user requests. For posters, create exactly one page.",
     );
   } else if (element && pageId) {
     lines.push(

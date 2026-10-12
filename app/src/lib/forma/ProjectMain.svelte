@@ -43,7 +43,7 @@
       STYLE_LABELS[settings.style],
       DENSITY_LABELS[settings.density],
       settings.output === "slides"
-        ? `${settings.slideCount} slides`
+        ? ((project.outline?.length ?? project.pages.length) > 0 ? `${project.outline?.length ?? project.pages.length} slides` : "Slides")
         : settings.posterKind === "digital"
           ? "Digital poster"
           : "Print poster",

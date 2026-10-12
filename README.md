@@ -19,7 +19,7 @@ slide or canvas, you write a short brief and Forma generates the pages for you,
 then lets you refine them through conversation until they look right.
 
 Start a project by picking a format — **slides** or a **poster** — and setting
-the basics: slide count and size, or poster type (screen or print) with sizes
+the basics: slide size, or poster type (screen or print) with sizes
 from A4 up to tabloid, plus orientation. You can also describe the look you're
 going for, and Forma searches the web for images to use.
 

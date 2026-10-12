@@ -83,8 +83,8 @@ export async function writePage(
   if (index > project.pages.length + 1) {
     throw new RuntimeError(`Pages must be submitted sequentially (next: ${project.pages.length + 1}).`);
   }
-  const maximum = project.settings.output === "poster" ? 1 : project.outline?.length ?? project.settings.slideCount;
-  if (index > maximum && !project.pages.includes(pageId)) {
+  const maximum = project.settings.output === "poster" ? 1 : project.outline?.length;
+  if (maximum !== undefined && index > maximum && !project.pages.includes(pageId)) {
     throw new RuntimeError(`This project expects ${maximum} pages; there is no page ${index}.`);
   }
   if (project.pages.includes(pageId)) await savePreviousPage(dir, pageId, project);

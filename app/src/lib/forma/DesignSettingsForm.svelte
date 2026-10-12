@@ -80,21 +80,6 @@
 {#snippet dimensions()}
   {#if settings.output === "slides"}
     <div class="field">
-      <span class="field-label">Slide count</span>
-      <input
-        class="input input-narrow"
-        type="number"
-        min="1"
-        step="1"
-        value={settings.slideCount}
-        onchange={(event) => {
-          const value = numberFrom(event);
-          if (value !== null) emit({ slideCount: Math.round(value) });
-        }}
-      />
-    </div>
-
-    <div class="field">
       <span class="field-label">Slide size</span>
       <div class="tile-grid" role="group" aria-label="Slide size">
         <button
