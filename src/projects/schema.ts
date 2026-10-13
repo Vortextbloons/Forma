@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RuntimeError } from "rig";
-import { defaultDesignProfile, designProfileSchema } from "./design.ts";
+import { defaultDesignProfile, designGuidelinesSchema, designProfileSchema } from "./design.ts";
 
 export const PROJECT_FORMAT_VERSION = 1;
 export const PROJECT_FILE = "project.json";
@@ -61,6 +61,7 @@ export const projectSettingsSchema = z.object({
   designProfile: designProfileSchema.optional(),
   designApproved: z.boolean().default(true),
   designName: z.string().trim().default("Custom"),
+  designGuidelines: designGuidelinesSchema.default({}),
 });
 
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;

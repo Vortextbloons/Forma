@@ -1,5 +1,6 @@
 <script lang="ts">
   import UserMessage from "./UserMessage.svelte";
+  import Logo from "../components/Logo.svelte";
   import AssistantMessage from "./AssistantMessage.svelte";
   import InteractionCard from "./InteractionCard.svelte";
   import ToolCall from "../tools/ToolCall.svelte";
@@ -96,7 +97,7 @@
     {#if timeline.length === 0}
       <div class="messages-empty">
         <div class="messages-empty-inner">
-          <div class="messages-empty-mark">›_</div>
+          <Logo size={34} withWordmark={false} />
           <div class="messages-empty-title">Chat about this project</div>
           <div class="messages-empty-copy">Ask a question or describe a change you want to make.</div>
         </div>

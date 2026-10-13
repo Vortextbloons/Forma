@@ -14,7 +14,8 @@
     pageId,
     mode = "main",
     onsubmit,
-  }: { pageId: string; mode?: "main" | "thumb"; onsubmit?: () => void } = $props();
+    onwheel,
+  }: { pageId: string; mode?: "main" | "thumb"; onsubmit?: () => void; onwheel?: (deltaY: number) => void } = $props();
 
   const project = $derived(projectStore.current?.project);
   const size = $derived(project ? effectiveSize(project.settings) : null);
@@ -62,6 +63,12 @@
   async function selectElement(event: MessageEvent): Promise<void> {
     if (mode !== "main" || !frame || event.source !== frame.contentWindow) return;
     const data = event.data;
+    if (data?.type === "forma:page-wheel" && data.pageId === pageId && typeof data.deltaY === "number") {
+      const stage = frame.closest(".preview-stage");
+      if (stage && projectStore.zoom !== "fit" && (stage.scrollHeight > stage.clientHeight || stage.scrollWidth > stage.clientWidth)) return;
+      onwheel?.(data.deltaY);
+      return;
+    }
     if (data?.type !== "forma:element-selected" || data.pageId !== pageId) return;
     if (typeof data.selector !== "string" || typeof data.html !== "string" || typeof data.text !== "string") return;
     const bounds = data.bounds;
@@ -110,6 +117,13 @@
       event.preventDefault();
       void applyFeedback();
     }
+  }
+
+  function stageWheel(event: WheelEvent): void {
+    if (event.ctrlKey || !onwheel || project?.settings.output !== "slides") return;
+    const stage = event.currentTarget as HTMLElement;
+    if (projectStore.zoom !== "fit" && (stage.scrollHeight > stage.clientHeight || stage.scrollWidth > stage.clientWidth)) return;
+    onwheel(event.deltaY * (event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? stage.clientHeight : 1));
   }
 
   function syncSelection(): void {
@@ -172,7 +186,7 @@
     {/if}
   </div>
 {:else if size}
-  <div class="preview-stage" bind:clientWidth={width} bind:clientHeight={height} onscroll={closeFeedback}>
+  <div class="preview-stage" bind:clientWidth={width} bind:clientHeight={height} onscroll={closeFeedback} onwheel={stageWheel}>
     {#if html}
       <div class="preview-frame-wrap" style={`width:${framedWidth}px;height:${framedHeight}px;`}>
         <iframe

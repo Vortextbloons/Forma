@@ -28,6 +28,8 @@ import {
 } from "../src/projects/pages.ts";
 import { resolveProjectsHome } from "../src/projects/home.ts";
 import { defaultSettings } from "../src/projects/schema.ts";
+import { designGuidelineInstructions } from "../src/projects/design.ts";
+import { applyDesignPrompt } from "../src/forma/prompts.ts";
 import { repairSessionIndex } from "../src/projects/sessions.ts";
 import { collectVisualReferences } from "../src/forma/visuals.ts";
 import { listThemes, saveTheme } from "../src/projects/themes.ts";
@@ -57,6 +59,7 @@ describe("project persistence", () => {
       settings.designProfile!.fonts.heading = "Georgia";
       settings.designProfile!.fonts.utility = "Consolas";
       settings.designProfile!.direction = "Strong headlines and spacious layouts";
+      settings.designGuidelines = { ...settings.designGuidelines, layoutVariety: "varied", custom: "Wide margins" };
       const theme = await saveTheme("Studio", settings);
       settings.designProfile!.colors.accent = "#112233";
       const [saved] = await listThemes();
@@ -64,6 +67,7 @@ describe("project persistence", () => {
       expect(saved!.designProfile.colors.accent).toBe("#ca2468");
       expect(saved).not.toHaveProperty("slideCount");
       expect(saved).not.toHaveProperty("research");
+      expect(saved).not.toHaveProperty("designGuidelines");
       const targetSettings = defaultSettings("poster");
       const target = await createProject({ dir: join(root, "Target"), name: "Target", prompt: "Keep the brief", mode: "plan", settings: { ...targetSettings, style: saved!.style, density: saved!.density, designProfile: saved!.designProfile } });
       const reopened = await openProject(target.dir);
@@ -628,6 +632,125 @@ describe("page persistence", () => {
       ).rejects.toThrow(/Unknown asset/i);
       const project = await openProject(created.dir);
       expect(project.outline).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("design guidelines", () => {
+  it("saves and reopens design guidelines with the project", async () => {
+    const root = await tempDir();
+    try {
+      const settings = defaultSettings();
+      settings.designGuidelines = {
+        photoHeavy: true,
+        preferDiagrams: true,
+        bigHeadlines: true,
+        avoidCards: true,
+        onlySuppliedImages: true,
+        layoutVariety: "varied",
+        decoration: "rich",
+        contentFormat: "visual",
+        designFreedom: "experimental",
+        custom: "Leave a wide margin for annotations.",
+      };
+      const { dir } = await createProject({
+        dir: join(root, "Guidelines"),
+        name: "Guidelines",
+        prompt: "A deck with guidelines",
+        mode: "plan",
+        settings,
+      });
+      expect((await openProject(dir)).settings.designGuidelines).toEqual(settings.designGuidelines);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults design guidelines for projects saved before they existed", async () => {
+    const root = await tempDir();
+    try {
+      const { dir } = await createProject({
+        dir: join(root, "Legacy"),
+        name: "Legacy",
+        prompt: "",
+        mode: "plan",
+        settings: defaultSettings(),
+      });
+      const legacy = JSON.parse(await readFile(projectFilePath(dir), "utf8")) as {
+        settings: { designGuidelines?: unknown };
+      };
+      delete legacy.settings.designGuidelines;
+      await writeFile(projectFilePath(dir), JSON.stringify(legacy));
+      const reopened = await openProject(dir);
+      expect(reopened.settings.designGuidelines).toEqual(defaultSettings().designGuidelines);
+      expect(reopened.formatVersion).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("turns checked, selected, custom, and image guidelines into prompt instructions", () => {
+    const defaults = defaultSettings().designGuidelines;
+    const base = designGuidelineInstructions(defaults);
+    expect(base).toContain("Project design guidelines");
+    expect(base).toContain("Vary layouts moderately");
+    expect(base).toContain("Use balanced decoration");
+    expect(base).toContain("Compose freely");
+    expect(base).not.toContain("Present information");
+    expect(base).not.toContain("photography");
+    expect(base).not.toContain("diagrams");
+    expect(base).not.toContain("headlines");
+    expect(base).not.toContain("cards");
+    expect(base).not.toContain("supplied images");
+
+    const selected = designGuidelineInstructions({
+      ...defaults,
+      photoHeavy: true,
+      preferDiagrams: true,
+      bigHeadlines: true,
+      avoidCards: true,
+      onlySuppliedImages: true,
+      layoutVariety: "varied",
+      decoration: "minimal",
+      contentFormat: "bullets",
+      designFreedom: "experimental",
+      custom: "Use a recurring footer strip.",
+    });
+    expect(selected).toContain("Make relevant photography a major visual element on most pages.");
+    expect(selected).toContain("Favor diagrams for processes, relationships, and comparisons.");
+    expect(selected).toContain("Use prominent headlines and strong differences in text size.");
+    expect(selected).toContain("Use spacing, alignment, and dividers instead of enclosing content in cards.");
+    expect(selected).toContain("Use supplied images exclusively; do not search for additional photography.");
+    expect(selected).toContain("give each page a distinct composition");
+    expect(selected).toContain("Use minimal decoration");
+    expect(selected).toContain("concise bullet points");
+    expect(selected).toContain("Experiment boldly");
+    expect(selected).toContain("Use a recurring footer strip.");
+  });
+
+  it("applies guidelines to existing artwork while preserving content and page order", async () => {
+    const root = await tempDir();
+    try {
+      const settings = defaultSettings();
+      settings.designGuidelines = {
+        ...settings.designGuidelines,
+        bigHeadlines: true,
+        custom: "Keep captions short.",
+      };
+      const { dir } = await createProject({
+        dir: join(root, "Apply"),
+        name: "Apply",
+        prompt: "",
+        mode: "create",
+        settings,
+      });
+      const prompt = applyDesignPrompt(await openProject(dir));
+      expect(prompt).toContain("Project design guidelines");
+      expect(prompt).toContain("Use prominent headlines and strong differences in text size.");
+      expect(prompt).toContain("Keep captions short.");
+      expect(prompt).toContain("preserving each page's content and the overall page order");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

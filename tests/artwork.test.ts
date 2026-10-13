@@ -51,6 +51,15 @@ it("selects the clicked element from a sandboxed preview without changing its so
     expect((selection as { bounds: unknown }).bounds).toEqual(bounds);
     await page.evaluate(() => document.querySelector("iframe")!.contentWindow!.postMessage({ type: "forma:selection", selector: null }, "*"));
     await frame!.waitForFunction(() => (document.body.lastElementChild as HTMLElement).style.display === "none");
+    for (const [deltaY, deltaMode, expected] of [[120, 0, 120], [-3, 1, -120], [1, 2, 150]]) {
+      await frame!.evaluate((deltaY, deltaMode) => {
+        document.dispatchEvent(new WheelEvent("wheel", { deltaY, deltaMode }));
+      }, deltaY!, deltaMode!);
+      await page.waitForFunction((deltaY) => {
+        const message = (window as unknown as { selection: { type: string; pageId: string; deltaY: number } }).selection;
+        return message.type === "forma:page-wheel" && message.pageId === "page-one" && message.deltaY === deltaY;
+      }, {}, expected!);
+    }
   } finally {
     await page.close();
   }
@@ -604,6 +613,8 @@ describe("forma artwork pipeline", () => {
           expect(context.systemPrompt).not.toContain('"title":"Deck"');
           expect(context.systemPrompt).not.toContain('"slideCount"');
           expect(context.systemPrompt).toContain("Work mode: build");
+          expect(context.systemPrompt).toContain("Project design guidelines");
+          expect(context.systemPrompt).toContain("Leave a wide right margin for annotations.");
           expect(context.tools?.map((tool: { name: string }) => tool.name)).toContain("submit_page");
           return fauxAssistantMessage("Three slides would work", { stopReason: "stop" });
         },
@@ -617,6 +628,7 @@ describe("forma artwork pipeline", () => {
         project.name = "Updated title";
         project.prompt = "Updated overview";
         project.settings.slideCount = 3;
+        project.settings.designGuidelines.custom = "Leave a wide right margin for annotations.";
         project.settingsRevision = 1;
       });
       const second = await harness.send("artwork.refine", { dir: harness.dir, sessionId: session.id, scope: "project", mode: "build", message: "How many slides?" });

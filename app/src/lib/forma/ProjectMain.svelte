@@ -56,12 +56,34 @@
     if (!selectedPageId || !project) return "";
     return project.pageMeta[selectedPageId]?.title ?? "";
   });
+
+  let wheelAccum = 0;
+  let wheelLocked = false;
+  let wheelTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  function wheelStep(deltaY: number): void {
+    if (project?.settings.output !== "slides" || pages.length < 2) return;
+    if (!wheelLocked) {
+      wheelAccum += deltaY;
+      if (Math.abs(wheelAccum) >= 100) {
+        const next = selectedIndex + (wheelAccum > 0 ? 1 : -1);
+        if (next >= 0 && next < pages.length) projectStore.selectPage(pages[next]!);
+        wheelLocked = true;
+        wheelAccum = 0;
+      }
+    }
+    clearTimeout(wheelTimeout);
+    wheelTimeout = setTimeout(() => {
+      wheelLocked = false;
+      wheelAccum = 0;
+    }, 200);
+  }
 </script>
 
 <main class="project-main">
   {#if project && size && pages.length > 0 && selectedPageId && selectedIndex >= 0}
     <section class="stage" style={`--page-ratio:${(size.width / size.height).toFixed(4)}`}>
-      <PagePreview pageId={selectedPageId} />
+      <PagePreview pageId={selectedPageId} onwheel={wheelStep} />
       {#if project.settings.output === "slides"}
         <div class="stage-navigation">
           <button class="icon-btn" type="button" aria-label="Previous slide" title="Previous slide" disabled={selectedIndex === 0} onclick={() => projectStore.selectPage(pages[selectedIndex - 1]!)}>

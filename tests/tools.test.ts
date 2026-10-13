@@ -10,10 +10,14 @@ import { researchTools } from "../src/tools/research.ts";
 import { brandTools } from "../src/tools/brand.ts";
 import { loadToolsTool, loadedGroupTools, prepareSessionTools, TOOL_GROUPS } from "../src/tools/lazy.ts";
 import { chartTools } from "../src/tools/chart.ts";
+import { diagramTools } from "../src/tools/diagram.ts";
+import { iconTools } from "../src/tools/icons.ts";
+import { mathTools } from "../src/tools/math.ts";
 import { projectRuns, setFormaEnv } from "../src/forma/runtime.ts";
 import { scheduleExtraction } from "../src/extraction/index.ts";
 import { writePage, readPage } from "../src/projects/pages.ts";
 import { composePage } from "../src/rendering/compose.ts";
+import { renderArtworkPreview } from "../src/rendering/validate.ts";
 import { runExport } from "../src/rendering/export.ts";
 import { projectTools } from "../src/tools/project.ts";
 import { createProject, importContextNote, openProject, updateProject } from "../src/projects/store.ts";
@@ -34,6 +38,10 @@ const importPhoto = researchTools.find((tool) => tool.name === "import_photo")!;
 const findBrandIcon = brandTools.find((tool) => tool.name === "find_brand_icon")!;
 const importBrandIcon = brandTools.find((tool) => tool.name === "import_brand_icon")!;
 const createChart = chartTools.find((tool) => tool.name === "create_chart")!;
+const createDiagram = diagramTools.find((tool) => tool.name === "create_diagram")!;
+const findIcon = iconTools.find((tool) => tool.name === "find_icon")!;
+const importIcon = iconTools.find((tool) => tool.name === "import_icon")!;
+const renderMath = mathTools.find((tool) => tool.name === "render_math")!;
 const submitOutline = projectTools.find((tool) => tool.name === "submit_outline")!;
 const submitPage = projectTools.find((tool) => tool.name === "submit_page")!;
 
@@ -290,6 +298,23 @@ describe("search tool gating", () => {
       await expect(importer.run({ photoId: "1" })).rejects.toThrow(/turned off/i);
     });
     expect(calls).toBe(0);
+  });
+
+  it("keeps image search permissions authoritative over design guidelines", async () => {
+    const guidelines = defaultSettings().designGuidelines;
+    const photoHeavy = await makeProject("guidelines-photo-heavy", { imageSearch: false, designGuidelines: { ...guidelines, photoHeavy: true } });
+    const suppliedOnly = await makeProject("guidelines-supplied-only", { imageSearch: true, designGuidelines: { ...guidelines, onlySuppliedImages: true } });
+    const readProject = projectTools.find((tool) => tool.name === "read_project")!;
+    const { calls } = await withFetchSpy(async () => {
+      await expect(createToolHarness(findPhotos, { cwd: photoHeavy }).run({ query: "mountains" })).rejects.toThrow(/turned off/i);
+      await expect(createToolHarness(findPhotos, { cwd: suppliedOnly }).run({ query: "mountains" })).rejects.toThrow(/supplied images/i);
+      await expect(createToolHarness(importPhoto, { cwd: suppliedOnly }).run({ photoId: "1" })).rejects.toThrow(/supplied images/i);
+    });
+    expect(calls).toBe(0);
+    const exposed = (await createToolHarness(readProject, { cwd: suppliedOnly }).run({})) as {
+      settings: { designGuidelines: { onlySuppliedImages: boolean } };
+    };
+    expect(exposed.settings.designGuidelines.onlySuppliedImages).toBe(true);
   });
 
   it("stores search keys protected on disk and reports masked status", async () => {
@@ -901,10 +926,297 @@ describe("chart tool", () => {
   }, 120_000);
 });
 
+describe("diagram tool", () => {
+  const flowchart = "flowchart TD\n  A[Start] --> B{Ready?}\n  B -->|yes| C[Ship]\n  B -->|no| D[Revise]";
+
+  it("renders a flowchart to an svg context asset with mermaid source metadata", async () => {
+    const dir = await makeProject("diagram-flow");
+    const created = (await createToolHarness(createDiagram, { cwd: dir }).run({
+      name: "Order flow",
+      mermaid: flowchart,
+    })) as { contextId: string; name: string; asset: string; source: string };
+    expect(created.asset).toBe(`assets/${created.contextId}.svg`);
+    expect(created.source).toBe(`assets/${created.contextId}.mmd`);
+    expect(created.name).toBe("Order flow");
+    const svg = await readFile(join(dir, created.asset), "utf8");
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain("Start");
+    expect(svg).toContain("Ship");
+    expect(svg).toContain("#2563eb");
+    expect(svg).toContain("#172033");
+    expect(svg).not.toContain("<script");
+    const source = await readFile(join(dir, created.source), "utf8");
+    expect(source).toBe(`${flowchart}\n`);
+    const item = (await openProject(dir)).context.find((entry) => entry.id === created.contextId);
+    expect(item).toMatchObject({
+      name: "Order flow",
+      asset: created.asset,
+      mime: "image/svg+xml",
+      role: "optional",
+      status: "ready",
+    });
+    expect(item?.size).toBeGreaterThan(0);
+  }, 120_000);
+
+  it("renders a sequence diagram", async () => {
+    const dir = await makeProject("diagram-sequence");
+    const created = (await createToolHarness(createDiagram, { cwd: dir }).run({
+      name: "Handshake",
+      mermaid: "sequenceDiagram\n  Alice->>Bob: Hello\n  Bob-->>Alice: Hi",
+    })) as { asset: string };
+    const svg = await readFile(join(dir, created.asset), "utf8");
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain("Alice");
+    expect(svg).toContain("Bob");
+  }, 120_000);
+
+  it("applies the design profile palette and font", async () => {
+    const profile = defaultDesignProfile();
+    const dir = await makeProject("diagram-theme", {
+      designProfile: {
+        ...profile,
+        colors: { ...profile.colors, accent: "#92344a", text: "#202020", surface: "#eeede8" },
+        fonts: { heading: "Georgia", body: "Georgia" },
+      },
+    });
+    const created = (await createToolHarness(createDiagram, { cwd: dir }).run({
+      name: "Theme flow",
+      mermaid: "flowchart LR\n  A[Alpha] --> B[Beta]",
+    })) as { asset: string };
+    const svg = await readFile(join(dir, created.asset), "utf8");
+    expect(svg).toContain("#92344a");
+    expect(svg).toContain("#202020");
+    expect(svg.toLowerCase()).toContain("georgia");
+  }, 120_000);
+
+  it("rejects invalid Mermaid syntax without creating an asset", async () => {
+    const dir = await makeProject("diagram-invalid");
+    const harness = createToolHarness(createDiagram, { cwd: dir });
+    await expect(harness.run({ name: "Broken", mermaid: "flowchart TD\n  A -->" })).rejects.toThrow(/could not be rendered/i);
+    await expect(harness.run({ name: "Unknown type", mermaid: "notamermaid\n  x --> y" })).rejects.toThrow(/could not be rendered/i);
+    expect((await openProject(dir)).context).toHaveLength(0);
+  }, 120_000);
+
+  it("renders and exports diagrams in a page preview with networking disabled", async () => {
+    const profile = defaultDesignProfile();
+    const dir = await makeProject("diagram-render", {
+      designProfile: {
+        ...profile,
+        colors: { background: "#12243a", surface: "#203952", text: "#f4f8fc", muted: "#b0c1d3", accent: "#ffbd59" },
+      },
+    });
+    const flow = (await createToolHarness(createDiagram, { cwd: dir }).run({
+      name: "Pipeline",
+      mermaid: "flowchart LR\n  A[Ingest] --> B[Process] --> C[Publish]",
+    })) as { contextId: string; asset: string };
+    const sequence = (await createToolHarness(createDiagram, { cwd: dir }).run({
+      name: "Handshake",
+      mermaid: "sequenceDiagram\n  Alice->>Bob: Hello\n  Bob-->>Alice: Hi",
+    })) as { contextId: string; asset: string };
+    const page = await writePage(dir, {
+      index: 1,
+      title: "Diagrams",
+      html: `<img src="../${flow.asset}" alt="Pipeline" style="position:absolute;left:60px;top:60px;width:1200px;height:460px"><img src="../${sequence.asset}" alt="Handshake" style="position:absolute;left:60px;top:560px;width:1200px;height:460px">`,
+      css: "",
+    });
+    const exported = await withFetchSpy(async () => {
+      const composed = await composePage(dir, page.pageId, { width: 1920, height: 1080, unit: "px" });
+      expect(composed.missing).toEqual([]);
+      expect(composed.html).toContain("data:image/svg+xml;base64,");
+      return runExport({
+        dir,
+        project: await openProject(dir),
+        format: "png",
+        pageIds: [page.pageId],
+        destination: join(root, "diagram.png"),
+        scale: 1,
+      });
+    });
+    expect(exported.calls).toBe(0);
+    const image = await loadImage(await readFile(exported.result.files[0]!));
+    const context = createCanvas(image.width, image.height).getContext("2d");
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, image.width, image.height).data;
+    let diagramPixels = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] === 32 && pixels[i + 1] === 57 && pixels[i + 2] === 82 && pixels[i + 3] === 255) diagramPixels += 1;
+    }
+    expect(diagramPixels).toBeGreaterThan(100);
+  }, 120_000);
+});
+
+describe("Lucide icon tools", () => {
+  interface IconSearchResult {
+    results: Array<{ name: string; slug: string }>;
+  }
+
+  it("searches names and slugs case-insensitively, prioritizing exact matches, capped at five", async () => {
+    const dir = await makeProject("icon-search");
+    const search = async (query: string) =>
+      (await createToolHarness(findIcon, { cwd: dir }).run({ query })) as IconSearchResult;
+    for (const query of ["arrow-right", "Arrow Right"]) {
+      const { results } = await search(query);
+      expect(results[0]).toEqual({ name: "Arrow Right", slug: "arrow-right" });
+    }
+    const partial = await search("arrow");
+    expect(partial.results).toHaveLength(5);
+    expect(partial.results.every((result) => result.slug.includes("arrow"))).toBe(true);
+    const capped = await search("circle");
+    expect(capped.results).toHaveLength(5);
+  });
+
+  it("imports a slug as an svg context asset with the requested stroke", async () => {
+    const dir = await makeProject("icon-import");
+    const imported = (await createToolHarness(importIcon, { cwd: dir }).run({
+      slug: "arrow-right",
+      color: "#8032a8",
+      strokeWidth: 3,
+    })) as { contextId: string; name: string; asset: string };
+    expect(imported.asset).toBe(`assets/${imported.contextId}.svg`);
+    const svg = await readFile(join(dir, imported.asset), "utf8");
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain('stroke="#8032a8"');
+    expect(svg).toContain('stroke-width="3"');
+    expect(svg).not.toContain("currentColor");
+    const item = (await openProject(dir)).context.find((entry) => entry.id === imported.contextId);
+    expect(item).toMatchObject({
+      name: "Arrow Right icon",
+      asset: imported.asset,
+      mime: "image/svg+xml",
+      role: "optional",
+      status: "ready",
+    });
+    expect(item?.size).toBeGreaterThan(0);
+  });
+
+  it("rejects unknown slugs and unsafe colors", async () => {
+    const dir = await makeProject("icon-invalid");
+    const harness = createToolHarness(importIcon, { cwd: dir });
+    await expect(harness.run({ slug: "not-an-icon" })).rejects.toThrow(/no icon/i);
+    await expect(harness.run({ slug: "arrow-right", color: 'red"; fill:blue' })).rejects.toThrow();
+    await expect(harness.run({ slug: "arrow-right", strokeWidth: 99 })).rejects.toThrow();
+    expect((await openProject(dir)).context).toHaveLength(0);
+  });
+
+  it("renders and exports an imported icon", async () => {
+    const dir = await makeProject("icon-render");
+    const imported = (await createToolHarness(importIcon, { cwd: dir }).run({
+      slug: "arrow-right",
+      color: "#8032a8",
+      strokeWidth: 3,
+    })) as { contextId: string; asset: string };
+    const page = await writePage(dir, {
+      index: 1,
+      title: "Icon",
+      html: `<img src="../${imported.asset}" alt="Arrow right" style="position:absolute;left:200px;top:200px;width:600px;height:600px">`,
+      css: "",
+    });
+    const composed = await composePage(dir, page.pageId, { width: 1920, height: 1080, unit: "px" });
+    expect(composed.missing).toEqual([]);
+    expect(composed.html).toContain("data:image/svg+xml;base64,");
+    const exported = await runExport({
+      dir,
+      project: await openProject(dir),
+      format: "png",
+      pageIds: [page.pageId],
+      destination: join(root, "icon.png"),
+      scale: 1,
+    });
+    const image = await loadImage(await readFile(exported.files[0]!));
+    const context = createCanvas(image.width, image.height).getContext("2d");
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, image.width, image.height).data;
+    let iconPixels = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] === 128 && pixels[i + 1] === 50 && pixels[i + 2] === 168 && pixels[i + 3] === 255) iconPixels += 1;
+    }
+    expect(iconPixels).toBeGreaterThan(100);
+  }, 120_000);
+});
+
+describe("math tool", () => {
+  it("renders inline math to static KaTeX HTML", async () => {
+    const dir = await makeProject("math-inline");
+    const result = (await createToolHarness(renderMath, { cwd: dir }).run({ tex: "\\frac{a}{b}" })) as {
+      display: string;
+      html: string;
+    };
+    expect(result.display).toBe("inline");
+    expect(result.html).toContain('class="katex"');
+    expect(result.html).toContain("<mfrac>");
+    expect(result.html).not.toContain("<script");
+  });
+
+  it("renders display matrices inside a display wrapper", async () => {
+    const dir = await makeProject("math-display");
+    const result = (await createToolHarness(renderMath, { cwd: dir }).run({
+      tex: "\\begin{bmatrix}1 & 2 \\\\ 3 & 4\\end{bmatrix}",
+      display: "display",
+    })) as { html: string };
+    expect(result.html).toContain("katex-display");
+    expect(result.html).toContain("<mtable");
+  });
+
+  it("reports LaTeX parse errors to the agent", async () => {
+    const dir = await makeProject("math-invalid");
+    await expect(createToolHarness(renderMath, { cwd: dir }).run({ tex: "\\frac{" })).rejects.toThrow(
+      /could not be rendered/i,
+    );
+    await expect(createToolHarness(renderMath, { cwd: dir }).run({ tex: "\\notacommand" })).rejects.toThrow(
+      /could not be rendered/i,
+    );
+  });
+
+  it("composes and exports inline equations, fractions, and matrices without network", async () => {
+    const dir = await makeProject("math-render");
+    const inline = (await createToolHarness(renderMath, { cwd: dir }).run({ tex: "E = mc^2" })) as { html: string };
+    const fraction = (await createToolHarness(renderMath, { cwd: dir }).run({ tex: "\\frac{a}{b}" })) as { html: string };
+    const matrix = (await createToolHarness(renderMath, { cwd: dir }).run({
+      tex: "\\begin{bmatrix}1 & 2 \\\\ 3 & 4\\end{bmatrix}",
+      display: "display",
+    })) as { html: string };
+    const page = await writePage(dir, {
+      index: 1,
+      title: "Math",
+      html: `<div style="position:absolute;left:120px;top:120px;width:1600px;font-size:64px">${inline.html} and ${fraction.html}</div><div style="position:absolute;left:120px;top:520px;font-size:64px">${matrix.html}</div>`,
+      css: "",
+    });
+    const { result, calls } = await withFetchSpy(async () => {
+      const composed = await composePage(dir, page.pageId, { width: 1920, height: 1080, unit: "px" });
+      expect(composed.missing).toEqual([]);
+      expect(composed.html).toContain("@font-face");
+      expect(composed.html).toContain("data:font/woff2;base64,");
+      expect(composed.html).not.toContain("url(fonts/");
+      expect(composed.html).toContain("katex-display");
+      const preview = await renderArtworkPreview(dir, await openProject(dir), page.pageId);
+      expect(preview.issues).toEqual([]);
+      expect(preview.data.length).toBeGreaterThan(0);
+      return runExport({
+        dir,
+        project: await openProject(dir),
+        format: "png",
+        pageIds: [page.pageId],
+        destination: join(root, "math.png"),
+        scale: 1,
+      });
+    });
+    expect(calls).toBe(0);
+    const image = await loadImage(await readFile(result.files[0]!));
+    const context = createCanvas(image.width, image.height).getContext("2d");
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, image.width, image.height).data;
+    let darkPixels = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i]! < 200 && pixels[i + 1]! < 200 && pixels[i + 2]! < 200 && pixels[i + 3] === 255) darkPixels += 1;
+    }
+    expect(darkPixels).toBeGreaterThan(100);
+  }, 120_000);
+});
+
 describe("lazy tool loading", () => {
   const loadTools = loadToolsTool();
   const deferred: string[] = Object.values(TOOL_GROUPS).flat();
-  const allToolNames = [...projectTools, ...researchTools, ...brandTools, ...designTools]
+  const allToolNames = [...projectTools, ...researchTools, ...brandTools, ...chartTools, ...diagramTools, ...iconTools, ...mathTools, ...designTools]
     .map((tool) => tool.name)
     .concat("read", "search", "load_tools", "question", "todo");
   const coreNames = allToolNames.filter((name) => !deferred.includes(name));
@@ -968,6 +1280,19 @@ describe("lazy tool loading", () => {
     await createToolHarness(loadTools, { session: { id: "b" } }).run({ group: "brands" });
     expect(b.getActiveToolNames()).toContain("find_brand_icon");
     expect(a.getActiveToolNames()).not.toContain("find_brand_icon");
+  });
+
+  it("activates the icon and math groups", async () => {
+    const session = fakeSession(coreNames);
+    prepareSessionTools({ id: "specialist", piSession: session });
+    const harness = createToolHarness(loadTools, { session: { id: "specialist" } });
+    const icons = (await harness.run({ group: "icons" })) as { group: string; tools: string[]; added: string[] };
+    expect(icons).toEqual({ group: "icons", tools: ["find_icon", "import_icon"], added: ["find_icon", "import_icon"] });
+    const math = (await harness.run({ group: "math" })) as { group: string; tools: string[]; added: string[] };
+    expect(math).toEqual({ group: "math", tools: ["render_math"], added: ["render_math"] });
+    const diagrams = (await harness.run({ group: "diagrams" })) as { group: string; tools: string[]; added: string[] };
+    expect(diagrams).toEqual({ group: "diagrams", tools: ["create_diagram"], added: ["create_diagram"] });
+    expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["find_icon", "import_icon", "render_math", "create_diagram"]));
   });
 
   it("keeps loaded groups available for artwork cleanup to restore", async () => {

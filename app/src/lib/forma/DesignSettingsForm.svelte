@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ProjectSettings } from "./types";
-  import { DENSITY_LABELS, STYLE_LABELS } from "./types";
+  import { CONTENT_FORMAT_LABELS, DECORATION_LABELS, DENSITY_LABELS, DESIGN_FREEDOM_LABELS, LAYOUT_VARIETY_LABELS, STYLE_LABELS } from "./types";
   import { formatDimensions } from "./sizes";
   import PageIcon from "./PageIcon.svelte";
 
@@ -42,6 +42,10 @@
 
   function emit(patch: Partial<ProjectSettings>): void {
     onchange({ ...settings, ...patch });
+  }
+
+  function emitGuidelines(patch: Partial<ProjectSettings["designGuidelines"]>): void {
+    emit({ designGuidelines: { ...settings.designGuidelines, ...patch } });
   }
 
   function selectSlidePreset(preset: "16:9" | "4:3" | "custom"): void {
@@ -360,5 +364,90 @@
         {/each}
       </div>
     </div>
+    <div class="guidelines">
+      <span class="field-label">Design guidelines</span>
+      <div class="guideline-checks">
+        <label class="toggle-row">
+          <input type="checkbox" checked={settings.designGuidelines.photoHeavy} onchange={(event) => emitGuidelines({ photoHeavy: event.currentTarget.checked })} />
+          <span>Photo-heavy</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" checked={settings.designGuidelines.preferDiagrams} onchange={(event) => emitGuidelines({ preferDiagrams: event.currentTarget.checked })} />
+          <span>Prefer diagrams</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" checked={settings.designGuidelines.bigHeadlines} onchange={(event) => emitGuidelines({ bigHeadlines: event.currentTarget.checked })} />
+          <span>Big headlines</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" checked={settings.designGuidelines.avoidCards} onchange={(event) => emitGuidelines({ avoidCards: event.currentTarget.checked })} />
+          <span>Avoid cards</span>
+        </label>
+        <label class="toggle-row">
+          <input type="checkbox" checked={settings.designGuidelines.onlySuppliedImages} onchange={(event) => emitGuidelines({ onlySuppliedImages: event.currentTarget.checked })} />
+          <span>Only use my images</span>
+        </label>
+      </div>
+      <div class="guideline-selects">
+        <label class="inline-field">
+          <span>Layout variety</span>
+          <select class="input" value={settings.designGuidelines.layoutVariety} onchange={(event) => emitGuidelines({ layoutVariety: (event.currentTarget as HTMLSelectElement).value as ProjectSettings["designGuidelines"]["layoutVariety"] })}>
+            {#each Object.entries(LAYOUT_VARIETY_LABELS) as [value, label] (value)}
+              <option {value}>{label}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="inline-field">
+          <span>Decoration</span>
+          <select class="input" value={settings.designGuidelines.decoration} onchange={(event) => emitGuidelines({ decoration: (event.currentTarget as HTMLSelectElement).value as ProjectSettings["designGuidelines"]["decoration"] })}>
+            {#each Object.entries(DECORATION_LABELS) as [value, label] (value)}
+              <option {value}>{label}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="inline-field">
+          <span>Content format</span>
+          <select class="input" value={settings.designGuidelines.contentFormat} onchange={(event) => emitGuidelines({ contentFormat: (event.currentTarget as HTMLSelectElement).value as ProjectSettings["designGuidelines"]["contentFormat"] })}>
+            {#each Object.entries(CONTENT_FORMAT_LABELS) as [value, label] (value)}
+              <option {value}>{label}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="inline-field">
+          <span>Design freedom</span>
+          <select class="input" value={settings.designGuidelines.designFreedom} onchange={(event) => emitGuidelines({ designFreedom: (event.currentTarget as HTMLSelectElement).value as ProjectSettings["designGuidelines"]["designFreedom"] })}>
+            {#each Object.entries(DESIGN_FREEDOM_LABELS) as [value, label] (value)}
+              <option {value}>{label}</option>
+            {/each}
+          </select>
+        </label>
+      </div>
+      <label class="inline-field">
+        <span>Custom guidelines</span>
+        <textarea class="input textarea" rows="3" placeholder="Anything else the artwork should follow" value={settings.designGuidelines.custom} onchange={(event) => emitGuidelines({ custom: event.currentTarget.value })}></textarea>
+      </label>
+    </div>
   {/if}
 </div>
+
+<style>
+  .guidelines {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .guideline-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .guideline-selects {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .guidelines select,
+  .guidelines textarea {
+    width: 100%;
+  }
+</style>

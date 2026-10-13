@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
+  import Logo from "../components/Logo.svelte";
   import ProviderManager from "../models/ProviderManager.svelte";
   import ModelPicker from "../models/ModelPicker.svelte";
   import AssetsPanel from "./AssetsPanel.svelte";
@@ -171,7 +172,7 @@
     tabindex="-1"
   >
     <div class="modal-head">
-      <span class="modal-title">Settings</span>
+      <span class="settings-title"><Logo size={20} /> <span class="modal-title">Settings</span></span>
       <button class="icon-btn" type="button" title="Close" aria-label="Close settings" disabled={updating} onclick={onclose}>
         <Icon name="x" size={16} />
       </button>

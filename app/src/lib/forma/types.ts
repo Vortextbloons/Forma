@@ -12,14 +12,26 @@ import type {
 } from "../../../../src/projects/schema.ts";
 import type { ExtractedPage } from "../../../../src/extraction/types.ts";
 import type { StoredExtraction } from "../../../../src/extraction/index.ts";
+import type {
+  ContentFormat,
+  DecorationLevel,
+  DesignFreedom,
+  DesignGuidelines,
+  LayoutVariety,
+} from "../../../../src/projects/design.ts";
 import type { ExportFormat, ExportResult } from "../../../../src/rendering/export.ts";
 import type { ValidationIssue, ValidationReport } from "../../../../src/rendering/validate.ts";
 import type { SearchCredentialStatus, SearchProviderId } from "../../../../src/settings/credentials.ts";
 
 export type {
+  ContentFormat,
   ContextItem,
   ContextRole,
+  DecorationLevel,
   Density,
+  DesignFreedom,
+  DesignGuidelines,
+  LayoutVariety,
   OutputKind,
   PageMeta,
   ProjectFile,
@@ -92,6 +104,31 @@ export const DENSITY_LABELS: Record<Density, string> = {
   balanced: "Balanced",
   concise: "Concise",
   detailed: "Detailed",
+};
+
+export const LAYOUT_VARIETY_LABELS: Record<LayoutVariety, string> = {
+  consistent: "Consistent",
+  balanced: "Balanced",
+  varied: "Varied",
+};
+
+export const DECORATION_LABELS: Record<DecorationLevel, string> = {
+  minimal: "Minimal",
+  balanced: "Balanced",
+  rich: "Rich",
+};
+
+export const CONTENT_FORMAT_LABELS: Record<ContentFormat, string> = {
+  auto: "Auto",
+  bullets: "Bullets",
+  prose: "Short prose",
+  visual: "Visual explanations",
+};
+
+export const DESIGN_FREEDOM_LABELS: Record<DesignFreedom, string> = {
+  close: "Close to theme",
+  flexible: "Flexible",
+  experimental: "Experimental",
 };
 
 export const OUTPUT_LABELS: Record<OutputKind, string> = {

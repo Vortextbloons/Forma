@@ -1,4 +1,5 @@
 import { effectiveSize } from "../projects/size.ts";
+import { designGuidelineInstructions } from "../projects/design.ts";
 import type { ProjectFile } from "../projects/schema.ts";
 
 export interface SelectedElement {
@@ -116,8 +117,9 @@ export function applyDesignPrompt(project: ProjectFile): string {
   return [
     "The user changed the design settings and wants the existing artwork updated to match.",
     `Current settings: style ${settings.style}, density ${settings.density}, output ${settings.output}, page size ${size.width}x${size.height}${size.unit}.`,
-    "Read the pages with read_page, then edit their HTML and CSS source files with edit_file so they follow the new style and density.",
-    "Keep the content, slide order, and titles. Do not add or remove pages.",
+    designGuidelineInstructions(settings.designGuidelines),
+    "Read the pages with read_page, then edit their HTML and CSS source files with edit_file so they follow the new style, density, and design guidelines.",
+    "Apply the new settings while preserving each page's content and the overall page order. Do not add or remove pages.",
     "Call inspect_page after updating and fix any reported layout problems.",
   ].join("\n");
 }

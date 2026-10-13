@@ -1,5 +1,6 @@
 <script lang="ts">
   import NewProjectForm from "./NewProjectForm.svelte";
+  import Logo from "../components/Logo.svelte";
   import Icon from "../components/Icon.svelte";
   import ProjectsDialog from "./ProjectsDialog.svelte";
 
@@ -10,7 +11,7 @@
 
 <div class="start-screen">
   <header class="start-header">
-    <span class="forma-wordmark">Forma</span>
+    <Logo />
     <span class="spacer"></span>
     <button class="btn btn-ghost" type="button" onclick={onOpenSettings}>
       <Icon name="gear" size={14} /> Settings

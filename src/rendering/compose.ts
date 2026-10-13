@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { readPage } from "../projects/pages.ts";
 import { openProject } from "../projects/store.ts";
 import { designStyles, type DesignProfile } from "../projects/design.ts";
@@ -65,8 +66,36 @@ export async function composePage(
     html = replaceRef(html, ref, dataUri);
     css = replaceRef(css, ref, dataUri);
   }
+  const katex = KATEX_MARKUP.test(html) ? await katexStyles() : "";
   const project = await openProject(dir);
-  return { html: document(html, css, size, project.settings.designProfile), missing };
+  return { html: document(html, `${katex}${katex ? "\n" : ""}${css}`, size, project.settings.designProfile), missing };
+}
+
+const KATEX_MARKUP = /class="[^"]*\bkatex\b/;
+const KATEX_FONT_SOURCES =
+  /url\(fonts\/([A-Za-z0-9_-]+)\.woff2\) format\("woff2"\),url\(fonts\/[A-Za-z0-9_-]+\.woff\) format\("woff"\),url\(fonts\/[A-Za-z0-9_-]+\.ttf\) format\("truetype"\)/g;
+
+let katexStylePromise: Promise<string> | undefined;
+
+function katexStyles(): Promise<string> {
+  katexStylePromise ??= buildKatexStyles();
+  return katexStylePromise;
+}
+
+async function buildKatexStyles(): Promise<string> {
+  const require = createRequire(import.meta.url);
+  const cssPath = require.resolve("katex/dist/katex.min.css");
+  const fontsDir = join(dirname(cssPath), "fonts");
+  const css = await readFile(cssPath, "utf8");
+  const fonts = new Map<string, string>();
+  for (const match of css.matchAll(/url\(fonts\/([A-Za-z0-9_-]+)\.woff2\)/g)) {
+    const name = match[1]!;
+    if (fonts.has(name)) continue;
+    fonts.set(name, (await readFile(join(fontsDir, `${name}.woff2`))).toString("base64"));
+  }
+  return css.replace(KATEX_FONT_SOURCES, (source, name: string) =>
+    fonts.has(name) ? `url(data:font/woff2;base64,${fonts.get(name)}) format("woff2")` : source,
+  );
 }
 
 function replaceRef(text: string, ref: string, replacement: string): string {

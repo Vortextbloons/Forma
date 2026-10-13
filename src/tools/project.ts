@@ -127,6 +127,7 @@ function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
           designProfile: project.settings.designProfile,
           designApproved: project.settings.designApproved,
           designName: project.settings.designName,
+          designGuidelines: project.settings.designGuidelines,
         },
         ...(project.settings.designProfile ? { designInstructions: DESIGN_INSTRUCTIONS } : {}),
         pageSize: { width: size.width, height: size.height, unit: size.unit },

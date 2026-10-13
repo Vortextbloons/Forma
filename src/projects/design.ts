@@ -35,15 +35,92 @@ export function defaultDesignProfile(): DesignProfile {
   return designProfileSchema.parse({});
 }
 
+export const LAYOUT_VARIETIES = ["consistent", "balanced", "varied"] as const;
+export const DECORATION_LEVELS = ["minimal", "balanced", "rich"] as const;
+export const CONTENT_FORMATS = ["auto", "bullets", "prose", "visual"] as const;
+export const DESIGN_FREEDOMS = ["close", "flexible", "experimental"] as const;
+
+export type LayoutVariety = (typeof LAYOUT_VARIETIES)[number];
+export type DecorationLevel = (typeof DECORATION_LEVELS)[number];
+export type ContentFormat = (typeof CONTENT_FORMATS)[number];
+export type DesignFreedom = (typeof DESIGN_FREEDOMS)[number];
+
+export const designGuidelinesSchema = z.object({
+  photoHeavy: z.boolean().default(false),
+  preferDiagrams: z.boolean().default(false),
+  bigHeadlines: z.boolean().default(false),
+  avoidCards: z.boolean().default(false),
+  onlySuppliedImages: z.boolean().default(false),
+  layoutVariety: z.enum(LAYOUT_VARIETIES).default("balanced"),
+  decoration: z.enum(DECORATION_LEVELS).default("balanced"),
+  contentFormat: z.enum(CONTENT_FORMATS).default("auto"),
+  designFreedom: z.enum(DESIGN_FREEDOMS).default("flexible"),
+  custom: z.string().trim().default(""),
+});
+
+export type DesignGuidelines = z.infer<typeof designGuidelinesSchema>;
+
+export function defaultDesignGuidelines(): DesignGuidelines {
+  return designGuidelinesSchema.parse({});
+}
+
+const LAYOUT_VARIETY_INSTRUCTIONS: Record<LayoutVariety, string> = {
+  consistent: "Keep layouts consistent: repeat the same composition structure from page to page.",
+  balanced: "Vary layouts moderately: keep a shared structure while changing the composition between pages.",
+  varied: "Vary layouts strongly: give each page a distinct composition.",
+};
+
+const DECORATION_INSTRUCTIONS: Record<DecorationLevel, string> = {
+  minimal: "Use minimal decoration: rely on typography, spacing, and color instead of textures, shapes, or layers.",
+  balanced: "Use balanced decoration: purposeful accents that support the content without crowding it.",
+  rich: "Use rich decoration: extensive textures, shapes, and layered visuals.",
+};
+
+const CONTENT_FORMAT_INSTRUCTIONS: Record<ContentFormat, string> = {
+  auto: "",
+  bullets: "Present information as concise bullet points.",
+  prose: "Present information as short prose rather than bullet points.",
+  visual: "Present information as visual explanations using diagrams, charts, and annotated graphics.",
+};
+
+const DESIGN_FREEDOM_INSTRUCTIONS: Record<DesignFreedom, string> = {
+  close: "Stay close to the applied theme: keep compositions conventional while preserving the approved colors and fonts.",
+  flexible: "Compose freely while preserving the approved colors and fonts.",
+  experimental: "Experiment boldly with composition, scale, and structure while preserving the approved colors and fonts.",
+};
+
+export function designGuidelineInstructions(guidelines: DesignGuidelines): string {
+  const instructions: string[] = [];
+  if (guidelines.photoHeavy) instructions.push("Make relevant photography a major visual element on most pages.");
+  if (guidelines.preferDiagrams) instructions.push("Favor diagrams for processes, relationships, and comparisons.");
+  if (guidelines.bigHeadlines) instructions.push("Use prominent headlines and strong differences in text size.");
+  if (guidelines.avoidCards) instructions.push("Use spacing, alignment, and dividers instead of enclosing content in cards.");
+  if (guidelines.onlySuppliedImages) instructions.push("Use supplied images exclusively; do not search for additional photography.");
+  instructions.push(LAYOUT_VARIETY_INSTRUCTIONS[guidelines.layoutVariety]);
+  instructions.push(DECORATION_INSTRUCTIONS[guidelines.decoration]);
+  const contentFormat = CONTENT_FORMAT_INSTRUCTIONS[guidelines.contentFormat];
+  if (contentFormat) instructions.push(contentFormat);
+  instructions.push(DESIGN_FREEDOM_INSTRUCTIONS[guidelines.designFreedom]);
+  const custom = guidelines.custom.trim();
+  if (custom) instructions.push(`Additional guidelines: ${custom}`);
+  return [
+    "Project design guidelines (override the general style guidance where these instructions cover the same topic):",
+    ...instructions.map((instruction) => `- ${instruction}`),
+  ].join("\n");
+}
+
 export const BUILT_IN_THEMES = [
   { id: "builtin-studio", name: "Studio", style: "balance", density: "balanced", designProfile: designProfileSchema.parse({ colors: { background: "#ffffff", surface: "#eef2f6", text: "#182435", muted: "#5e6d80", accent: "#2459c4" }, direction: "Clear hierarchy, generous whitespace, and restrained blue accents." }) },
   { id: "builtin-ink", name: "Ink", style: "editorial", density: "balanced", designProfile: designProfileSchema.parse({ colors: { background: "#faf9f6", surface: "#eeede8", text: "#202020", muted: "#66645f", accent: "#92344a" }, fonts: { heading: "Georgia", body: "Segoe UI" }, radius: 0, direction: "Editorial typography, crisp rules, and deliberate alignment." }) },
   { id: "builtin-signal", name: "Signal", style: "bold", density: "concise", designProfile: designProfileSchema.parse({ colors: { background: "#12243a", surface: "#203952", text: "#f4f8fc", muted: "#b0c1d3", accent: "#ffbd59" }, fonts: { heading: "Bahnschrift", body: "Segoe UI" }, headingSize: 88, radius: 8, direction: "Large confident headlines, dark blue surfaces, and warm amber emphasis." }) },
 ] as const;
 
+export function fontStack(font: string): string {
+  return `"${font}", ${["Georgia", "Times New Roman", "Cambria", "Palatino Linotype", "Garamond"].includes(font) ? "serif" : ["Consolas", "Courier New"].includes(font) ? "monospace" : "sans-serif"}`;
+}
+
 export function designStyles(profile: DesignProfile, size: EffectiveSize): string {
   const length = (value: number) => `${value * size.width / 1920}${size.unit}`;
-  const fontStack = (font: string) => `"${font}", ${["Georgia", "Times New Roman", "Cambria", "Palatino Linotype", "Garamond"].includes(font) ? "serif" : ["Consolas", "Courier New"].includes(font) ? "monospace" : "sans-serif"}`;
   const additionalColors = Object.entries(profile.colors).filter(([name]) => !["background", "surface", "text", "muted", "accent"].includes(name)).map(([name, value]) => `  --forma-color-${name}: ${value};`).join("\n");
   return `.forma-page {
   --forma-background: ${profile.colors.background};

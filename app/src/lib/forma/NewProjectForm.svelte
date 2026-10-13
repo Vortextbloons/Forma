@@ -1,10 +1,12 @@
 <script lang="ts">
   import DesignSettingsForm from "./DesignSettingsForm.svelte";
   import DesignProfileForm from "./DesignProfileForm.svelte";
+  import DesignMashup from "./DesignMashup.svelte";
   import Icon from "../components/Icon.svelte";
   import PageIcon from "./PageIcon.svelte";
   import ConnectionCard from "./ConnectionCard.svelte";
   import { defaultProjectSettings } from "./defaults";
+  import { defaultDesignProfile } from "../../../../src/projects/design.ts";
   import { projectStore } from "./projectStore.svelte";
   import type { OutputKind, ProjectSettings } from "./types";
 
@@ -17,6 +19,10 @@
   let creating = $state(false);
   let error = $state("");
   let showOptions = $state(false);
+  let showPalette = $state(false);
+
+  const profile = $derived(settings.designProfile ?? defaultDesignProfile());
+  const designLabel = $derived(settings.designApproved ? settings.designName : "AI chooses");
 
   function setKind(next: OutputKind): void {
     kind = next;
@@ -112,7 +118,14 @@
 
       <DesignSettingsForm section="chooser" {settings} onchange={(next) => (settings = next)} />
 
-      <DesignProfileForm section="chooser" {settings} onchange={(next) => (settings = next)} disabled={creating} />
+      <div class="field">
+        <span class="field-label">Design</span>
+        <button class="palette-entry" type="button" aria-haspopup="dialog" onclick={() => (showPalette = true)}>
+          <DesignMashup {profile} height={28} width={64} />
+          <span class="palette-entry-name">{designLabel}</span>
+          <Icon name="chevron-right" size={14} />
+        </button>
+      </div>
 
       <button class="btn options-button" type="button" onclick={() => (showOptions = true)}>
         <Icon name="gear" size={14} /> More options
@@ -145,10 +158,55 @@
   </div>
 {/if}
 
-<svelte:window onkeydown={(event) => { if (event.key === "Escape") showOptions = false; }} />
+{#if showPalette}
+  <div
+    class="modal-overlay"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) showPalette = false;
+    }}
+  >
+    <div class="modal options-modal" role="dialog" aria-modal="true" aria-label="Design palette" tabindex="-1">
+      <div class="modal-head">
+        <span class="modal-title">Design palette</span>
+        <button class="icon-btn" type="button" title="Close" aria-label="Close design palette" onclick={() => (showPalette = false)}>
+          <Icon name="x" size={16} />
+        </button>
+      </div>
+      <div class="modal-body options-modal-body">
+        <DesignProfileForm section="full" {settings} onchange={(next) => (settings = next)} disabled={creating} />
+      </div>
+    </div>
+  </div>
+{/if}
+
+<svelte:window onkeydown={(event) => { if (event.key === "Escape") { showOptions = false; showPalette = false; } }} />
 
 <style>
   .options-modal-body {
     flex-direction: column;
+  }
+  .palette-entry {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-2);
+    cursor: pointer;
+    text-align: left;
+    transition: background .14s, border-color .14s;
+  }
+  .palette-entry:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+  }
+  .palette-entry-name {
+    flex: 1;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 650;
   }
 </style>

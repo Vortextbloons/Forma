@@ -1,6 +1,7 @@
 <script lang="ts">
   import Messages from "../conversation/Messages.svelte";
   import Composer from "../conversation/Composer.svelte";
+  import Logo from "../components/Logo.svelte";
   import QuestionComposer from "../conversation/QuestionComposer.svelte";
   import Icon from "../components/Icon.svelte";
   import PagePreview from "./PagePreview.svelte";
@@ -99,6 +100,28 @@
     window.clearTimeout(thumbTimer);
     previewPageId = pageId;
   }
+
+  let wheelAccum = 0;
+  let wheelLocked = false;
+  let wheelTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  function previewWheel(deltaY: number): void {
+    if (isPoster || !previewPageId || pages.length < 2) return;
+    if (!wheelLocked) {
+      wheelAccum += deltaY;
+      if (Math.abs(wheelAccum) >= 100) {
+        const next = pages.indexOf(previewPageId) + (wheelAccum > 0 ? 1 : -1);
+        if (next >= 0 && next < pages.length) previewPageId = pages[next]!;
+        wheelLocked = true;
+        wheelAccum = 0;
+      }
+    }
+    clearTimeout(wheelTimeout);
+    wheelTimeout = setTimeout(() => {
+      wheelLocked = false;
+      wheelAccum = 0;
+    }, 200);
+  }
 </script>
 
 <div class="chat-panel" class:has-rail={showRail}>
@@ -140,10 +163,10 @@
   {/if}
   {#if empty && project}
     <div class="chat-welcome">
+      <Logo size={30} withWordmark={false} />
       <span class="creation-kicker">{isPoster ? "POSTER STUDIO" : "PRESENTATION STUDIO"}</span>
       <h1>{project.name}</h1>
-      <p>{project.prompt}</p>
-      <span class="muted small">Ask Forma to build from your brief, or choose Plan in the composer to work through ideas first.</span>
+      <p>Describe what to build or change. Forma keeps the artwork in sync.</p>
     </div>
   {/if}
   {#if sessionId}
@@ -212,7 +235,7 @@
         <Icon name="x" size={16} />
       </button>
       <div class="chat-lightbox-stage">
-        <PagePreview pageId={previewPageId} onsubmit={() => (previewPageId = null)} />
+        <PagePreview pageId={previewPageId} onwheel={previewWheel} onsubmit={() => (previewPageId = null)} />
       </div>
       <p class="chat-lightbox-caption">{titleOf(previewPageId)}</p>
     </div>

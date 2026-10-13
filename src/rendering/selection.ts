@@ -36,6 +36,11 @@ export function elementSelectionScript(pageId: string): string {
     if (selected) mark(selected);
     else highlight.style.display = 'none';
   });
+  document.addEventListener('wheel', (event) => {
+    if (event.ctrlKey) return;
+    const deltaY = event.deltaY * (event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? window.innerHeight : 1);
+    parent.postMessage({ type:'forma:page-wheel', pageId:${JSON.stringify(pageId)}, deltaY }, '*');
+  }, { passive: true });
 })();
 </script>`;
 }

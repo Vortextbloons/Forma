@@ -54,6 +54,11 @@ async function requireResearch(ctx: ToolContext): Promise<SearchDefaults> {
 
 async function requireImageSearch(ctx: ToolContext): Promise<SearchDefaults> {
   const project = await openProject(dirOf(ctx));
+  if (project.settings.designGuidelines.onlySuppliedImages) {
+    throw new RuntimeError(
+      'This project is set to use supplied images only. Uncheck "Only use my images" in Design guidelines before finding photos.',
+    );
+  }
   const settings = resolveSearchSettings(project.settings, await getSearchDefaults());
   if (!settings.imageSearch) {
     throw new RuntimeError(

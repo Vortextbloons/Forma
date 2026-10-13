@@ -207,6 +207,8 @@ async function checkLayout(
           for (let parent: Element | null = element; parent; parent = parent.parentElement) {
             const style = getComputedStyle(parent);
             if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+            if (style.clip && style.clip !== "auto") return false;
+            if (style.clipPath.replace(/\s+/g, "") === "inset(50%)") return false;
             if (style.overflowX === "hidden" || style.overflowY === "hidden" || style.overflow === "clip") {
               const clip = parent.getBoundingClientRect();
               if (bounds.right <= clip.left || bounds.left >= clip.right || bounds.bottom <= clip.top || bounds.top >= clip.bottom) return false;
@@ -227,6 +229,8 @@ async function checkLayout(
           const style = getComputedStyle(element);
           if (style.overflowY !== "hidden" && style.overflowX !== "hidden") continue;
           if (!element.textContent?.trim()) continue;
+          if (style.clip && style.clip !== "auto") continue;
+          if (style.clipPath.replace(/\s+/g, "") === "inset(50%)") continue;
           const heightOver = element.scrollHeight - element.clientHeight;
           const widthOver = element.scrollWidth - element.clientWidth;
           if (heightOver > 2 || widthOver > 2) {

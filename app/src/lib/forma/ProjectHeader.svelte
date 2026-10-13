@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "../components/Icon.svelte";
+  import Logo from "../components/Logo.svelte";
   import { projectStore } from "./projectStore.svelte";
 
   let {
@@ -43,7 +44,7 @@
   >
     <Icon name="arrow-left" size={15} />
   </button>
-  <span class="forma-wordmark">Forma</span>
+  <Logo size={20} />
   <span class="header-sep">·</span>
   <span class="header-project" title={project?.name ?? ""}>{project?.name ?? ""}</span>
   <span class="save-state" class:error={projectStore.saveStatus === "error"}>{savedLabel}</span>
@@ -56,7 +57,7 @@
     <Icon name="external" size={14} /> {previewOpen ? "Back to chat" : project?.pages.length ? "View artwork" : project?.outline?.length ? "View plan" : "Preview"}
   </button>
   <button
-    class="btn"
+    class="btn btn-accent"
     type="button"
     disabled={!project?.pages.length || busy}
     title={project?.pages.length ? "Export the artwork" : "Generate the artwork before exporting"}

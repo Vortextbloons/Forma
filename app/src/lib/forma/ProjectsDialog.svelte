@@ -1,5 +1,6 @@
 <script lang="ts">
   import { sendCommand } from "../rig/bridge";
+  import Logo from "../components/Logo.svelte";
   import { effectiveSize } from "../../../../src/projects/size.ts";
   import Icon from "../components/Icon.svelte";
   import { projectStore } from "./projectStore.svelte";
@@ -149,7 +150,10 @@
 
     <div class="modal-body projects-body">
       {#if projectStore.projects.length === 0}
-        <p class="muted small">Your first project starts with a title and an idea. Saved projects will appear here.</p>
+        <div class="projects-empty">
+          <Logo size={32} withWordmark={false} />
+          <p class="muted small">Your first project starts with a title and an idea. Saved projects will appear here.</p>
+        </div>
       {:else if filtered.length === 0}
         <p class="muted small">No projects match “{query}”.</p>
       {:else}
