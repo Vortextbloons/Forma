@@ -4,6 +4,33 @@ All notable changes to [Forma](https://github.com/Vortextbloons/Forma) are docum
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-13
+
+### Added
+
+- **Design guidelines** — photo-heavy, diagram preference, headline scale, card avoidance, supplied-images-only, layout variety, decoration level, content format, design freedom, and custom notes in Design settings; the agent receives them when generating or applying design changes.
+- **Design palette on new project** — the creation flow opens a palette dialog with mashup preview instead of inline profile controls.
+- **Diagram tool** — `create_diagram` renders Mermaid flowcharts, sequences, timelines, and related diagram types to themed SVG assets (lazy-loaded with `load_tools`).
+- **Lucide icon tools** — `find_icon` and `import_icon` search the Lucide catalog and import tinted SVGs into project assets.
+- **Math tool** — `render_math` turns LaTeX into KaTeX HTML for inline or display equations.
+- **Forma logo** — shared logo component and app icon asset used across start and project screens.
+- **Worker diagnostics** — Settings → App & worker shows process details, provider capability chips, a scrolling activity log, and built-in search diagnostics with a test search action.
+- **Packaged worker bundle** — release builds esbuild the worker, prefer the bundled entry at startup, and load the pi coding agent from its prebuilt bundle for faster worker boot.
+
+### Changed
+
+- **Workspace layout** — chat always uses the full-width layout; the Full chat / Side chat toggle was removed and the slide thumbnail rail stays beside chat.
+- **Release installer** — bundles `chrome-headless-shell` instead of full Chrome, prunes duplicate OCR and library payloads, and drops the checked-in Tesseract data file in favor of the npm language pack.
+- **Mermaid rendering** — diagram export uses a vendored Mermaid bundle instead of the full `mermaid` npm package.
+- **OCR loading** — Tesseract initializes on first use so worker startup stays lighter.
+- **Settings checkboxes** — custom checkbox styling aligned with Forma surfaces.
+
+### Fixed
+
+- **Diagram assets in releases** — Mermaid ships beside the worker bundle so packaged builds can render diagrams offline.
+
+---
+
 ## [0.5.1] - 2026-10-12
 
 ### Changed
@@ -179,7 +206,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Desktop services** — file service and worker service bridging the Go host to the embedded runtime.
 - **Build scaffolding** — Windows-focused Wails taskfiles, icons, and dev/build PowerShell scripts.
 
-[Unreleased]: https://github.com/Vortextbloons/Forma/compare/f052b29...HEAD
+[Unreleased]: https://github.com/Vortextbloons/Forma/compare/c85e7f2...HEAD
+[0.6.0]: https://github.com/Vortextbloons/Forma/commit/c85e7f2
 [0.5.1]: https://github.com/Vortextbloons/Forma/commit/f052b29
 [0.5.0]: https://github.com/Vortextbloons/Forma/commit/0a9b03b
 [0.4.5]: https://github.com/Vortextbloons/Forma/commit/dc19eed
