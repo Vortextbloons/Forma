@@ -148,9 +148,13 @@ func (s *WorkerService) Start() {
 	}
 
 	cmd := exec.Command(nodeBin, entry, "--project", projectDir, "--log-level", logLevel)
+	hideConsoleWindow(cmd)
 	cmd.Dir = projectDir
 	if exe, err := os.Executable(); err == nil {
-		chrome := filepath.Join(filepath.Dir(exe), "runtime", "chrome", "chrome.exe")
+		chrome := filepath.Join(filepath.Dir(exe), "runtime", "chrome", "chrome-headless-shell.exe")
+		if !fileExists(chrome) {
+			chrome = filepath.Join(filepath.Dir(exe), "runtime", "chrome", "chrome.exe")
+		}
 		if os.Getenv("FORMA_CHROME_PATH") == "" && fileExists(chrome) {
 			cmd.Env = append(os.Environ(), "FORMA_CHROME_PATH="+chrome)
 		}

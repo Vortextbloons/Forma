@@ -4,4 +4,4 @@ package services
 
 import "os/exec"
 
-func hideUpdateWindow(command *exec.Cmd) {}
+func hideConsoleWindow(command *exec.Cmd) {}

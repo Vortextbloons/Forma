@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { RuntimeError, type RigTool, type ToolContext } from "rig";
@@ -59,7 +58,7 @@ async function renderDiagram(source: string, themeVariables: Record<string, stri
   try {
     await page.setRequestInterception(true);
     page.on("request", (request) => void request.abort().catch(() => undefined));
-    const bundle = await readFile(createRequire(import.meta.url).resolve("mermaid/dist/mermaid.min.js"), "utf8");
+    const bundle = await readFile(new URL("./mermaid.min.js", import.meta.url), "utf8");
     await page.setContent(
       `<!doctype html><html><head><meta charset="utf-8"><style>body { margin: 0; }</style></head><body><script>${bundle.replace(/<\/script/gi, "<\\/script")}</script></body></html>`,
       { waitUntil: "load" },

@@ -4,6 +4,7 @@ dist/
 .env
 .env.local
 *.log
+eng.traineddata
 
 # wails3 build artifacts
 desktop/bin/

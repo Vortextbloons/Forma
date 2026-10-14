@@ -107,6 +107,7 @@ func (s *WorkspaceService) RevealInFolder(path string) error {
 // runDetached starts a helper without waiting for it (fire and forget).
 func runDetached(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
+	hideConsoleWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s: %w", name, err)
 	}

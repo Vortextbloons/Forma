@@ -101,14 +101,37 @@ try {
     Copy-Item -LiteralPath (Join-Path $ProjectDir 'app\package.json') -Destination (Join-Path $RuntimeDir 'app')
     Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $RuntimeDir 'node.exe')
     $env:PUPPETEER_CACHE_DIR = Join-Path $ReleaseDir 'browser-cache'
-    Invoke-Checked 'npx.cmd' @('puppeteer', 'browsers', 'install', 'chrome')
-    $Chrome = node --input-type=module -e "import puppeteer from 'puppeteer'; console.log(await puppeteer.executablePath());"
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $Chrome)) { throw 'Bundled Chrome was not found.' }
-    Copy-Item -LiteralPath (Split-Path -Parent $Chrome) -Destination (Join-Path $RuntimeDir 'chrome') -Recurse
+    Invoke-Checked 'npx.cmd' @('puppeteer', 'browsers', 'install', 'chrome-headless-shell')
+    $ChromeShell = Get-ChildItem -LiteralPath $env:PUPPETEER_CACHE_DIR -Recurse -Filter 'chrome-headless-shell.exe' | Select-Object -First 1
+    if (-not $ChromeShell) { throw 'Bundled Chrome was not found.' }
+    Copy-Item -LiteralPath $ChromeShell.Directory.FullName -Destination (Join-Path $RuntimeDir 'chrome') -Recurse
+    Remove-Item -LiteralPath $env:PUPPETEER_CACHE_DIR -Recurse -Force
 } finally { Pop-Location }
 
 Push-Location $RuntimeDir
 try { Invoke-Checked 'npm.cmd' @('ci', '--omit=dev') } finally { Pop-Location }
+
+$PrunePaths = @(
+    'node_modules\echarts\dist',
+    'node_modules\echarts\types',
+    'node_modules\pdf-lib\dist',
+    'node_modules\pdf-lib\es',
+    'node_modules\pdf-lib\src',
+    'node_modules\pdf-lib\ts3.4',
+    'node_modules\@tesseract.js-data\eng\4.0.0_best_int',
+    'node_modules\tesseract.js-core\tesseract-core.wasm.js',
+    'node_modules\tesseract.js-core\tesseract-core.wasm',
+    'node_modules\tesseract.js-core\tesseract-core-simd.wasm.js',
+    'node_modules\tesseract.js-core\tesseract-core-simd.wasm',
+    'node_modules\tesseract.js-core\tesseract-core-relaxedsimd.wasm.js',
+    'node_modules\tesseract.js-core\tesseract-core-relaxedsimd.wasm'
+)
+foreach ($PrunePath in $PrunePaths) {
+    $FullPath = Join-Path $RuntimeDir $PrunePath
+    if (Test-Path -LiteralPath $FullPath) {
+        Remove-Item -LiteralPath $FullPath -Recurse -Force
+    }
+}
 
 Add-DdgsRuntime
 

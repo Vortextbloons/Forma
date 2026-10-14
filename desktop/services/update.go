@@ -226,7 +226,7 @@ func (s *UpdateService) Install() error {
 		bytes[i*2+1] = byte(value >> 8)
 	}
 	command := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", base64.StdEncoding.EncodeToString(bytes))
-	hideUpdateWindow(command)
+	hideConsoleWindow(command)
 	command.Dir = temporary
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start update installer: %w", err)
