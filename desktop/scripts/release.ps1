@@ -111,6 +111,8 @@ try {
 Push-Location $RuntimeDir
 try { Invoke-Checked 'npm.cmd' @('ci', '--omit=dev') } finally { Pop-Location }
 
+Invoke-Checked 'node' @((Join-Path $DesktopDir 'build\bundle-worker.mjs'), $RuntimeDir)
+
 $PrunePaths = @(
     'node_modules\echarts\dist',
     'node_modules\echarts\types',

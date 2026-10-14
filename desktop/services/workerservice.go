@@ -37,9 +37,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -147,7 +149,14 @@ func (s *WorkerService) Start() {
 		logLevel = "info"
 	}
 
-	cmd := exec.Command(nodeBin, entry, "--project", projectDir, "--log-level", logLevel)
+	args := []string{entry, "--project", projectDir, "--log-level", logLevel}
+	if loader := filepath.Join(filepath.Dir(entry), "pi-bundle-loader.mjs"); fileExists(loader) {
+		// Route the pi SDK to its bundled build: the unbundled entry loads
+		// ~1500 modules and dominates worker boot time.
+		args = append([]string{"--import", fileURL(loader)}, args...)
+	}
+
+	cmd := exec.Command(nodeBin, args...)
 	hideConsoleWindow(cmd)
 	cmd.Dir = projectDir
 	if exe, err := os.Executable(); err == nil {
@@ -395,9 +404,10 @@ func (s *WorkerService) writeLine(line string) error {
 // resolveWorkerEntry finds the worker module. Order:
 //  1. explicit override (RIG_WORKER_ENTRY)
 //  2. FORMA_WORKER_ENTRY
-//  3. project-owned worker next to the app binary (dev checkout / packaged)
-//  4. project-owned worker inside the project dir
-//  5. stock rig worker
+//  3. bundled worker next to the app binary (packaged release)
+//  4. project-owned worker next to the app binary (dev checkout)
+//  5. project-owned worker inside the project dir
+//  6. stock rig worker
 func (s *WorkerService) resolveWorkerEntry(projectDir, override string) string {
 	if override != "" {
 		if fileExists(override) {
@@ -415,6 +425,7 @@ func (s *WorkerService) resolveWorkerEntry(projectDir, override string) string {
 	if err == nil {
 		exeDir := filepath.Dir(exe)
 		candidates := []string{
+			filepath.Join(exeDir, "runtime", "src", "worker", "index.js"),
 			filepath.Join(exeDir, "runtime", "src", "worker", "index.ts"),
 			filepath.Join(exeDir, "..", "..", "src", "worker", "index.ts"),
 			filepath.Join(exeDir, "worker", "index.js"),
@@ -531,6 +542,16 @@ func (s *WorkerService) fail(message string, fatal bool) {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// fileURL converts an absolute path to a file:// URL (spaces and other
+// special characters percent-encoded), suitable for node --import.
+func fileURL(path string) string {
+	slash := filepath.ToSlash(path)
+	if !strings.HasPrefix(slash, "/") {
+		slash = "/" + slash
+	}
+	return (&url.URL{Scheme: "file", Path: slash}).String()
 }
 
 func truncate(text string, max int) string {

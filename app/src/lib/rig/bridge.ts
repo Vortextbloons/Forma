@@ -1017,6 +1017,22 @@ class MockBridge extends BaseBridge {
         this.settleResult(id, true, { credentials: { ...this.mockSearch } });
         break;
       }
+      case "diagnostics.get":
+        this.settleResult(id, true, {
+          worker: { pid: 4242, nodeVersion: "26.0.0", platform: "win32 x64", rigVersion: "0.2.0-mock" },
+          ddgs: {
+            python: "C:\\forma\\desktop\\bin\\ddgs\\Scripts\\python.exe",
+            script: "C:\\forma\\src\\search\\ddgs\\helper.py",
+            pythonFound: true,
+            scriptFound: true,
+          },
+        });
+        break;
+      case "diagnostics.testSearch":
+        this.later(700, () =>
+          this.settleResult(id, true, { count: 3, first: "Design — overview of systems and practice" }),
+        );
+        break;
       case "artwork.plan":
       case "artwork.generate":
       case "artwork.refine":

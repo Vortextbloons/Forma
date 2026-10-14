@@ -7,19 +7,13 @@
     onOpenSettings,
     onCloseProject,
     onOpenExport,
-    compact,
-    layout,
     previewOpen,
-    onLayoutChange,
     onTogglePreview,
   }: {
     onOpenSettings: () => void;
     onCloseProject: () => void;
     onOpenExport: () => void;
-    compact: boolean;
-    layout: "full" | "side";
     previewOpen: boolean;
-    onLayoutChange: (layout: "full" | "side") => void;
     onTogglePreview: () => void;
   } = $props();
 
@@ -49,10 +43,6 @@
   <span class="header-project" title={project?.name ?? ""}>{project?.name ?? ""}</span>
   <span class="save-state" class:error={projectStore.saveStatus === "error"}>{savedLabel}</span>
   <span class="spacer"></span>
-  <div class="segmented layout-switch" role="group" aria-label="Chat layout">
-    <button type="button" class:active={layout === "full"} aria-pressed={layout === "full"} onclick={() => onLayoutChange("full")}><Icon name="message" size={14} /> Full chat</button>
-    <button type="button" disabled={compact} class:active={layout === "side"} aria-pressed={layout === "side"} onclick={() => onLayoutChange("side")}><Icon name="panel-right" size={14} /> Side chat</button>
-  </div>
   <button class="btn preview-toggle" type="button" aria-pressed={previewOpen} onclick={onTogglePreview}>
     <Icon name="external" size={14} /> {previewOpen ? "Back to chat" : project?.pages.length ? "View artwork" : project?.outline?.length ? "View plan" : "Preview"}
   </button>

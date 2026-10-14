@@ -12,8 +12,12 @@ import {
 import type { RigEventBus } from "rig/events";
 import type { SerializedIpcError, SessionInfo, WorkerResult } from "rig/ipc";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { resolveDdgsCommand, searchDdgsText } from "../search/ddgs.ts";
 import type { WorkerAgentHost } from "./host.ts";
 import type { PendingRunRegistry } from "./runs.ts";
 import { createArtworkHandlers } from "./artwork.ts";
@@ -553,7 +557,40 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const credentials = await searchCredentialStatus();
       return ok({ credentials });
     },
+
+    async "diagnostics.get"() {
+      const ddgs = resolveDdgsCommand();
+      return ok({
+        worker: {
+          pid: process.pid,
+          nodeVersion: process.version,
+          platform: `${process.platform} ${process.arch}`,
+          rigVersion: await readRigVersion(),
+        },
+        ddgs: {
+          python: ddgs.python,
+          script: ddgs.script,
+          pythonFound: existsSync(ddgs.python),
+          scriptFound: existsSync(ddgs.script),
+        },
+      });
+    },
+
+    async "diagnostics.testSearch"() {
+      const results = await searchDdgsText("design", 3);
+      return ok({ count: results.length, first: results[0]?.title });
+    },
   };
+}
+
+export async function readRigVersion(): Promise<string> {
+  try {
+    const require = createRequire(import.meta.url);
+    const path = require.resolve("rig/package.json");
+    const pkg = JSON.parse(await readFile(path, "utf8")) as { version?: unknown };
+    if (typeof pkg.version === "string" && pkg.version.length > 0) return pkg.version;
+  } catch {}
+  return "0.2.0";
 }
 
 export async function dispatchCommand(

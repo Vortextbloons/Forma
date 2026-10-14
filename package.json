@@ -23,11 +23,11 @@
     "build:release": "powershell -NoProfile -ExecutionPolicy Bypass -File desktop/scripts/release.ps1"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^1.0.10",
+    "@napi-rs/canvas": "^1.0.11",
     "@tesseract.js-data/eng": "^1.0.0",
     "echarts": "^6.1.0",
-    "katex": "^0.16.47",
-    "lucide-static": "^0.544.0",
+    "katex": "^0.19.0",
+    "lucide-static": "^1.56.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
     "pptxgenjs": "^4.0.1",
@@ -39,13 +39,22 @@
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
+    "esbuild": "^0.28.2",
     "jszip": "^3.10.1",
-    "typescript": "^5.9.0",
-    "vitest": "^4.1.0"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
   },
   "allowScripts": {
     "puppeteer@25.13.0": true,
     "esbuild@0.28.2": true,
     "tesseract.js@7.0.0": true
+  },
+  "overrides": {
+    "pptxgenjs": {
+      "image-size": "^2.0.4"
+    },
+    "pi-mcp-adapter": {
+      "@modelcontextprotocol/client": "^2.3.1"
+    }
   }
 }

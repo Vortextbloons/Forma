@@ -8,7 +8,7 @@
   import { workerStore } from "../rig/stores/workerStore.svelte";
   import { sessionStore } from "../rig/stores/sessionStore.svelte";
   import { notificationStore } from "../rig/stores/notificationStore.svelte";
-  import { restartWorker } from "../rig/bridge";
+  import { restartWorker, sendCommand } from "../rig/bridge";
   import { callNative, isNative } from "../rig/native";
   import { version } from "../../../../package.json";
   import { projectStore } from "./projectStore.svelte";
@@ -48,6 +48,59 @@
     { key: "research", label: "Web search" },
     { key: "imageSearch", label: "Image finder" },
   ];
+
+  interface WorkerDiagnostics {
+    worker: { pid: number; nodeVersion: string; platform: string; rigVersion: string };
+    ddgs: { python: string; script: string; pythonFound: boolean; scriptFound: boolean };
+  }
+
+  let diagnostics = $state<WorkerDiagnostics | null>(null);
+  let diagLoading = $state(false);
+  let diagError = $state("");
+  let searchTest = $state<"idle" | "running" | "done" | "failed">("idle");
+  let searchTestMessage = $state("");
+  let logBody = $state<HTMLElement | null>(null);
+
+  const capabilities = $derived(workerStore.readyInfo?.capabilities ?? null);
+
+  $effect(() => {
+    const visible = tab === "project" || tab === "search";
+    if (visible && workerStore.status === "ready") void loadDiagnostics();
+  });
+
+  $effect(() => {
+    void workerStore.logs.length;
+    logBody?.scrollTo({ top: logBody.scrollHeight });
+  });
+
+  async function loadDiagnostics(): Promise<void> {
+    diagLoading = true;
+    diagError = "";
+    try {
+      diagnostics = (await sendCommand("diagnostics.get")) as WorkerDiagnostics;
+    } catch (error) {
+      diagError = error instanceof Error ? error.message : String(error);
+    } finally {
+      diagLoading = false;
+    }
+  }
+
+  async function testSearch(): Promise<void> {
+    searchTest = "running";
+    searchTestMessage = "";
+    try {
+      const data = await sendCommand("diagnostics.testSearch") as { count: number; first?: string };
+      searchTest = "done";
+      searchTestMessage = `Returned ${data.count} result${data.count === 1 ? "" : "s"}${data.first ? ` — "${data.first}"` : ""}`;
+    } catch (error) {
+      searchTest = "failed";
+      searchTestMessage = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  function logTime(timestamp: string): string {
+    return new Date(timestamp).toLocaleTimeString(undefined, { hour12: false });
+  }
 
   onMount(() => {
     tab = initialTab;
@@ -351,6 +404,46 @@
               <p class="muted small"><span class="badge">Included · No API key needed</span></p>
             </div>
           {/if}
+          <div class="field">
+            <span class="field-label">Built-in search — how it works</span>
+            <p class="muted small">
+              The built-in provider runs a bundled Python helper (the ddgs package) that queries DuckDuckGo
+              for web pages and photos. No key or account needed. Searches run one at a time and time out
+              after 30 seconds.
+            </p>
+            {#if diagError}
+              <p class="error-text small">{diagError}</p>
+            {:else if diagnostics}
+              <div class="diag-grid">
+                <div class="diag-item">
+                  <span class="diag-key">Python runtime</span>
+                  <span class="diag-value mono" title={diagnostics.ddgs.python}>{diagnostics.ddgs.python}</span>
+                  <span class="badge" class:badge-ok={diagnostics.ddgs.pythonFound} class:badge-missing={!diagnostics.ddgs.pythonFound}>
+                    {diagnostics.ddgs.pythonFound ? "Found" : "Missing"}
+                  </span>
+                </div>
+                <div class="diag-item">
+                  <span class="diag-key">Helper script</span>
+                  <span class="diag-value mono" title={diagnostics.ddgs.script}>{diagnostics.ddgs.script}</span>
+                  <span class="badge" class:badge-ok={diagnostics.ddgs.scriptFound} class:badge-missing={!diagnostics.ddgs.scriptFound}>
+                    {diagnostics.ddgs.scriptFound ? "Found" : "Missing"}
+                  </span>
+                </div>
+              </div>
+              <div class="field-row">
+                <button class="btn" type="button" disabled={searchTest === "running"} onclick={() => void testSearch()}>
+                  {searchTest === "running" ? "Searching…" : "Test search"}
+                </button>
+                {#if searchTest === "done"}
+                  <span class="muted small">{searchTestMessage}</span>
+                {:else if searchTest === "failed"}
+                  <span class="error-text small">{searchTestMessage}</span>
+                {/if}
+              </div>
+            {:else}
+              <p class="muted small">{diagLoading ? "Reading worker diagnostics…" : "Diagnostics unavailable."}</p>
+            {/if}
+          </div>
           <p class="muted small">
             Keys are stored per user, outside projects, and protected with Windows DPAPI.
           </p>
@@ -371,24 +464,76 @@
           <div class="field">
             <span class="field-label">Worker</span>
             <div class="field-row">
-              <span class="badge badge-{workerStore.status}">{workerStore.status}</span>
+              <span class="badge badge-{workerStore.status}"><span class="dot"></span>{workerStore.status}</span>
               <button class="btn" type="button" disabled={updating} onclick={() => void restartWorker()}>Restart worker</button>
             </div>
-          </div>
-          <div class="field">
-            <span class="field-label">Project directory</span>
-            <div class="mono small">{workerStore.readyInfo?.projectDir ?? "—"}</div>
-          </div>
-          <div class="field">
-            <span class="field-label">Agent</span>
-            <div>{workerStore.readyInfo?.agentName ?? "—"}</div>
-          </div>
-          {#if workerStore.lastError}
-            <div class="field">
-              <span class="field-label">Last error</span>
-              <div class="error-text small">{workerStore.lastError.message}</div>
+            {#if diagError}
+              <p class="error-text small">Could not read worker diagnostics: {diagError}</p>
+            {/if}
+            <div class="diag-grid">
+              <div class="diag-item">
+                <span class="diag-key">Agent</span>
+                <span class="diag-value">{workerStore.readyInfo?.agentName ?? "—"}</span>
+              </div>
+              <div class="diag-item">
+                <span class="diag-key">Project directory</span>
+                <span class="diag-value mono" title={workerStore.readyInfo?.projectDir}>{workerStore.readyInfo?.projectDir ?? "—"}</span>
+              </div>
+              {#if diagnostics}
+                <div class="diag-item">
+                  <span class="diag-key">Process</span>
+                  <span class="diag-value mono">PID {diagnostics.worker.pid} · Node {diagnostics.worker.nodeVersion} · Rig {diagnostics.worker.rigVersion}</span>
+                </div>
+                <div class="diag-item">
+                  <span class="diag-key">Platform</span>
+                  <span class="diag-value mono">{diagnostics.worker.platform}</span>
+                </div>
+              {:else if diagLoading}
+                <div class="diag-item">
+                  <span class="diag-key">Process</span>
+                  <span class="diag-value muted">Reading…</span>
+                </div>
+              {/if}
+              <div class="diag-item">
+                <span class="diag-key">Restarts</span>
+                <span class="diag-value mono">{workerStore.restarts}</span>
+              </div>
             </div>
-          {/if}
+            {#if capabilities}
+              <div class="diag-chips">
+                <span class="badge">{capabilities.models} models</span>
+                {#each capabilities.providers as provider (provider)}
+                  <span class="badge">{provider}</span>
+                {/each}
+                {#if capabilities.git}<span class="badge">git</span>{/if}
+                {#if capabilities.worktrees}<span class="badge">worktrees</span>{/if}
+                {#if capabilities.web}<span class="badge">web</span>{/if}
+                {#if capabilities.desktop}<span class="badge">desktop</span>{/if}
+                {#each capabilities.mcp as server (server)}
+                  <span class="badge">mcp · {server}</span>
+                {/each}
+                {#each capabilities.subagents as subagent (subagent)}
+                  <span class="badge">subagent · {subagent}</span>
+                {/each}
+              </div>
+            {/if}
+            {#if workerStore.lastError}
+              <p class="error-text small">Last error: {workerStore.lastError.message}</p>
+            {/if}
+          </div>
+          <div class="field">
+            <span class="field-label">Worker activity</span>
+            <div class="worker-log" bind:this={logBody} role="log" aria-label="Worker activity">
+              {#each workerStore.logs.slice(-150) as entry (entry.id)}
+                <div class="worker-log-line worker-log-{entry.level}">
+                  <span class="worker-log-time">{logTime(entry.timestamp)}</span>
+                  <span class="worker-log-msg">{entry.message || "—"}</span>
+                </div>
+              {:else}
+                <span class="worker-log-empty">No worker activity yet.</span>
+              {/each}
+            </div>
+          </div>
         {/if}
       </div>
     </div>

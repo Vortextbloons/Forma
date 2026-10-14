@@ -1,7 +1,6 @@
 <script lang="ts">
   import Messages from "../conversation/Messages.svelte";
   import Composer from "../conversation/Composer.svelte";
-  import Logo from "../components/Logo.svelte";
   import QuestionComposer from "../conversation/QuestionComposer.svelte";
   import Icon from "../components/Icon.svelte";
   import PagePreview from "./PagePreview.svelte";
@@ -12,14 +11,12 @@
   import type { ChatTarget } from "./projectStore.svelte";
   import { effectiveSize } from "../../../../src/projects/size.ts";
 
-  let { layout = "side" }: { layout?: "full" | "side" } = $props();
-
   const sessionId = $derived(sessionStore.activeSessionId);
   const project = $derived(projectStore.current?.project);
   const pages = $derived(project?.pages ?? []);
   const selectedElement = $derived(projectStore.selectedElement);
   const isPoster = $derived(project?.settings.output === "poster");
-  const showRail = $derived(layout === "full" && pages.length > 0);
+  const showRail = $derived(pages.length > 0);
   const size = $derived(project ? effectiveSize(project.settings) : null);
 
   const targetPageId = $derived(projectStore.refineTargetPageId);
@@ -158,12 +155,9 @@
   </div>
   {#if selectedElement}
     <p class="element-feedback-hint muted small">Describe the change below. AI will apply your feedback to this element.</p>
-  {:else if pages.length > 0}
-    <p class="element-feedback-hint muted small">Click an element in the preview to give AI feedback.</p>
   {/if}
   {#if empty && project}
     <div class="chat-welcome">
-      <Logo size={30} withWordmark={false} />
       <span class="creation-kicker">{isPoster ? "POSTER STUDIO" : "PRESENTATION STUDIO"}</span>
       <h1>{project.name}</h1>
       <p>Describe what to build or change. Forma keeps the artwork in sync.</p>

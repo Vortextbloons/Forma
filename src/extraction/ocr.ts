@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import Tesseract from "tesseract.js";
+import type Tesseract from "tesseract.js";
 import { normalizeText } from "./types.ts";
 
 let workerPromise: Promise<Tesseract.Worker> | undefined;
@@ -14,11 +14,14 @@ export function tessdataDir(): string {
 }
 
 async function getWorker(): Promise<Tesseract.Worker> {
-  workerPromise ??= Tesseract.createWorker("eng", 1, {
-    langPath: tessdataDir(),
-    gzip: true,
-    cacheMethod: "write",
-  });
+  workerPromise ??= (async () => {
+    const { default: Tesseract } = await import("tesseract.js");
+    return Tesseract.createWorker("eng", 1, {
+      langPath: tessdataDir(),
+      gzip: true,
+      cacheMethod: "write",
+    });
+  })();
   return workerPromise;
 }
 

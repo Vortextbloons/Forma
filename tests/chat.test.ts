@@ -1,11 +1,15 @@
 import { readFile } from "node:fs/promises";
+import { transform } from "esbuild";
 import { compileModule } from "svelte/compiler";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
+
+async function transpile(source: string): Promise<string> {
+  return (await transform(source, { loader: "ts", format: "esm", target: "esnext" })).code;
+}
 
 async function loadMessages() {
   const source = await readFile(new URL("../app/src/lib/rig/stores/messageStore.svelte.ts", import.meta.url), "utf8");
-  const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).outputText;
+  const js = await transpile(source);
   const compiled = compileModule(js, { generate: "server" }).js.code
     .replace("'svelte/internal/server'", JSON.stringify(import.meta.resolve("svelte/internal/server")))
     .replace(/(["'])\.\.\/format\1/, JSON.stringify(new URL("../app/src/lib/rig/format.ts", import.meta.url).href));
@@ -105,7 +109,7 @@ async function loadProjectStore(
 ` + Object.keys(harness).map((name) => `export const ${name} = harness.${name};`).join("\n");
   const shimUrl = `data:text/javascript;base64,${Buffer.from(shim).toString("base64")}`;
   const source = await readFile(new URL("../app/src/lib/forma/projectStore.svelte.ts", import.meta.url), "utf8");
-  const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).outputText;
+  const js = await transpile(source);
   const compiled = compileModule(js, { generate: "server" }).js.code
     .replace(/(['"])svelte\/internal\/server\1/, JSON.stringify(import.meta.resolve("svelte/internal/server")))
     .replace(/(['"])\.\/types\1/, JSON.stringify(new URL("../app/src/lib/forma/types.ts", import.meta.url).href))

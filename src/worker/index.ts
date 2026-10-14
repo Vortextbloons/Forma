@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createRequire } from "node:module";
 import { readFile, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -30,6 +29,7 @@ import {
   buildDispatcher,
   dispatchCommand,
   isCommandFrame,
+  readRigVersion,
   type CommandFrame,
   type CommandHandler,
   type RuntimeInstance,
@@ -73,16 +73,6 @@ function parseArgs(argv: string[]): { ok: true; args: WorkerArgs } | { ok: false
   }
   if (!project) return { ok: false, message: "missing required --project <dir>" };
   return { ok: true, args: { project: resolve(project), logLevel } };
-}
-
-async function readRigVersion(): Promise<string> {
-  try {
-    const require = createRequire(import.meta.url);
-    const path = require.resolve("rig/package.json");
-    const pkg = JSON.parse(await readFile(path, "utf8")) as { version?: unknown };
-    if (typeof pkg.version === "string" && pkg.version.length > 0) return pkg.version;
-  } catch {}
-  return "0.2.0";
 }
 
 async function resolveProjectId(dir: string): Promise<string> {

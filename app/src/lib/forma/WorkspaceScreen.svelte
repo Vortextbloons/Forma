@@ -9,9 +9,6 @@
 
   let { onOpenSettings, onCloseProject }: { onOpenSettings: () => void; onCloseProject: () => void } = $props();
 
-  let windowWidth = $state(1440);
-  let layout = $state<"full" | "side">("full");
-  const effectiveLayout = $derived(windowWidth < 1100 ? "full" : layout);
   let previewOpen = $state(false);
   let showExport = $state(false);
 
@@ -19,17 +16,12 @@
   const isSlides = $derived(projectStore.current?.project.settings.output === "slides");
 </script>
 
-<svelte:window bind:innerWidth={windowWidth} />
-
-<div class="forma-workspace" class:chat-full={effectiveLayout === "full"} class:preview-open={previewOpen}>
+<div class="forma-workspace chat-full" class:preview-open={previewOpen}>
   <ProjectHeader
     {onOpenSettings}
     {onCloseProject}
     onOpenExport={() => (showExport = true)}
-    layout={effectiveLayout}
-    compact={windowWidth < 1100}
     {previewOpen}
-    onLayoutChange={(next) => { layout = next; previewOpen = false; }}
     onTogglePreview={() => (previewOpen = !previewOpen)}
   />
   <div class="workspace-body">
@@ -37,10 +29,10 @@
       <ThumbnailRail />
     {/if}
     <ProjectMain />
-    {#if effectiveLayout === "full" && !previewOpen}
+    {#if !previewOpen}
       <ChatInfoPanel />
     {/if}
-    <RightPanel layout={effectiveLayout} />
+    <RightPanel />
   </div>
 </div>
 

@@ -1,7 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { CancellationError, RuntimeError } from "rig";
-import { PDFDocument } from "pdf-lib";
 import { atomicWriteFile } from "../projects/atomic.ts";
 import { effectiveSize, type EffectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
@@ -91,6 +90,7 @@ async function exportChromium(
       }
     });
     const exact = pdfPointSize(size);
+    const { PDFDocument } = await import("pdf-lib");
     const merged = await PDFDocument.create();
     for (const buffer of buffers) {
       const document = await PDFDocument.load(buffer!);

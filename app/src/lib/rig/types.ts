@@ -56,6 +56,8 @@ export const FORMA_COMMAND_NAMES = [
   "settings.setSearchDefaults",
   "settings.setSearchKey",
   "settings.clearSearchKey",
+  "diagnostics.get",
+  "diagnostics.testSearch",
   "artwork.plan",
   "artwork.generate",
   "artwork.refine",
