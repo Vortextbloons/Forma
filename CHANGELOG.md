@@ -4,6 +4,27 @@ All notable changes to [Forma](https://github.com/Vortextbloons/Forma) are docum
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-18
+
+### Added
+
+- **Artwork editing** — a Preview / Edit switch above the stage opens a direct-manipulation editor: select an element, drag to move it, resize it with corner handles, and double-click text to edit it in place. Editing works per page and pauses while Forma is generating or exporting.
+- **Element inspector** — in Edit mode the right panel shows the selected element's position, size (aspect ratio locked for graphics), opacity, text size, color, alignment, and fill color, with undo and redo in the stage toolbar.
+- **Editing shortcuts** — arrow keys nudge the selected element, `Enter` commits inline text, `Esc` cancels or deselects, and `Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y` undo and redo up to 100 steps per page.
+- **Revision-checked page saves** — `artwork.readEditable` and `artwork.saveEditable` load and save page source with a content revision; autosave rejects stale writes, waits for in-flight saves, and keeps the page's artwork revision current so previews are not rebuilt after an edit.
+
+### Changed
+
+- **Export and page switches flush edits** — starting an export or switching pages saves pending editor changes first, and export refuses to start if a save fails.
+- **Print poster previews** — preview and export share one physical-to-CSS-pixel conversion, so mm/in posters preview at the same proportions as the exported file.
+- **Composer menus** — the model, attachment, and target menus share one outside-click handler.
+
+### Fixed
+
+- **Chart errors** — `create_chart` reports one clear error whether option setup or SVG rendering fails.
+
+---
+
 ## [0.6.0] - 2026-10-13
 
 ### Added
@@ -206,7 +227,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Desktop services** — file service and worker service bridging the Go host to the embedded runtime.
 - **Build scaffolding** — Windows-focused Wails taskfiles, icons, and dev/build PowerShell scripts.
 
-[Unreleased]: https://github.com/Vortextbloons/Forma/compare/c85e7f2...HEAD
+[Unreleased]: https://github.com/Vortextbloons/Forma/compare/e4aae2f...HEAD
+[0.7.0]: https://github.com/Vortextbloons/Forma/commit/e4aae2f
 [0.6.0]: https://github.com/Vortextbloons/Forma/commit/c85e7f2
 [0.5.1]: https://github.com/Vortextbloons/Forma/commit/f052b29
 [0.5.0]: https://github.com/Vortextbloons/Forma/commit/0a9b03b
