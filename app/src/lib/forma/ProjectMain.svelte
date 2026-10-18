@@ -88,10 +88,11 @@
     <section class="stage" style={`--page-ratio:${(size.width / size.height).toFixed(4)}`}>
       <div class="stage-toolbar">
         <div class="mode-switch" role="group" aria-label="Artwork mode">
-          <button type="button" class:active={!editMode} onclick={() => void editStore.exit()}>Preview</button>
+          <button type="button" class:active={!editMode} aria-pressed={!editMode} onclick={() => void editStore.exit()}>Preview</button>
           <button
             type="button"
             class:active={editMode}
+            aria-pressed={editMode}
             disabled={generating || projectStore.exporting}
             onclick={() => void editStore.enter()}
           >Edit</button>
@@ -199,23 +200,41 @@
 
   .mode-switch {
     display: flex;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    overflow: hidden;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
   }
 
   .mode-switch button {
-    padding: 4px 14px;
+    appearance: none;
+    min-width: 72px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 6px;
     font-size: 12px;
     font-weight: 600;
+    line-height: 18px;
     color: var(--muted);
     background: transparent;
     cursor: pointer;
   }
 
+  .mode-switch button:hover:not(:disabled):not(.active) {
+    color: var(--text);
+    background: var(--surface-2);
+  }
+
   .mode-switch button.active {
     color: var(--accent-contrast);
     background: var(--accent);
+    box-shadow: var(--shadow-1);
+  }
+
+  .mode-switch button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
 
   .mode-switch button:disabled:not(.active) {

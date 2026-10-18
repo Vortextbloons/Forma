@@ -130,6 +130,14 @@
   }
 </script>
 
+{#snippet issueItems(list: typeof blocking)}
+  <ul class="export-issues">
+    {#each list.slice(0, 5) as issue, index (index)}
+      <li>{issue.pageId ? `Slide ${pages.indexOf(issue.pageId) + 1}: ` : ""}{issue.message}</li>
+    {/each}
+  </ul>
+{/snippet}
+
 <div
   class="modal-overlay"
   role="presentation"
@@ -272,11 +280,7 @@
         {#if blocking.length > 0}
           <div class="export-block">
             <p class="export-block-title"><Icon name="alert" size={14} /> Export is blocked by {blocking.length} missing asset{blocking.length === 1 ? "" : "s"}.</p>
-            <ul class="export-issues">
-              {#each blocking.slice(0, 5) as issue, index (index)}
-                <li>{issue.pageId ? `Slide ${pages.indexOf(issue.pageId) + 1}: ` : ""}{issue.message}</li>
-              {/each}
-            </ul>
+            {@render issueItems(blocking)}
             <p class="muted small">Restore the files or remove them from the artwork, then check the layout again.</p>
           </div>
         {/if}
@@ -284,11 +288,7 @@
         {#if advisories.length > 0}
           <div class="export-advisory">
             <p class="export-block-title"><Icon name="alert" size={14} /> {advisories.length} layout issue{advisories.length === 1 ? "" : "s"} found.</p>
-            <ul class="export-issues">
-              {#each advisories.slice(0, 5) as issue, index (index)}
-                <li>{issue.pageId ? `Slide ${pages.indexOf(issue.pageId) + 1}: ` : ""}{issue.message}</li>
-              {/each}
-            </ul>
+            {@render issueItems(advisories)}
             <label class="export-ack">
               <input type="checkbox" bind:checked={acknowledged} />
               Export anyway

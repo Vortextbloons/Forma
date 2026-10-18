@@ -4,6 +4,7 @@ import { FORMA_EVENTS } from "../forma/events.ts";
 import { openProject } from "../projects/store.ts";
 import { runExport, type ExportFormat } from "../rendering/export.ts";
 import { resultErr, resultOk } from "./results.ts";
+import { asOptionalString, asString } from "./params.ts";
 import type { CommandHandler, WorkerContext } from "./commands.ts";
 
 const EXPORT_FORMATS = ["pdf", "png", "pptx"] as const;
@@ -124,15 +125,4 @@ function asDpi(value: unknown): number {
     throw new ProtocolError(`Invalid PNG resolution "${String(value)}" (expected 150 or 300)`);
   }
   return value;
-}
-
-function asString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new ProtocolError(`Missing or invalid parameter "${name}" (expected non-empty string)`);
-  }
-  return value;
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }

@@ -65,6 +65,7 @@ import {
   type ProjectSettings,
 } from "../projects/schema.ts";
 import { resultErr, resultOk } from "./results.ts";
+import { asOptionalString, asString } from "./params.ts";
 
 export type RuntimeInstance = Awaited<ReturnType<typeof import("rig").createRuntime>>;
 export type SessionHandle = NonNullable<ReturnType<RuntimeInstance["sessions"]["get"]>>;
@@ -614,17 +615,6 @@ export async function dispatchCommand(
 
 const ABORT_GRACE_MS = 2_000;
 
-function asString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new ProtocolError(`Missing or invalid parameter "${name}" (expected non-empty string)`);
-  }
-  return value;
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 function parseRemoteUrl(value: string): URL {
   let parsed: URL;
   try {
@@ -699,19 +689,11 @@ export function toProjectPayload(project: ProjectFile, dir: string) {
 export function toSessionInfo(handle: SessionHandle, host: WorkerAgentHost): SessionInfo {
   const snapshot = handle.snapshot();
   return {
-    id: snapshot.id,
-    name: snapshot.name,
-    status: snapshot.status,
-    model: snapshot.model,
-    thinkingLevel: snapshot.thinkingLevel,
+    ...snapshotToInfo(snapshot, host),
     workspaceMode: handle.workspaceMode as SessionInfo["workspaceMode"],
     workspaceDir: handle.workspaceDir,
     isWorktree: handle.isWorktree,
     branch: handle.branch,
-    createdAt: snapshot.createdAt,
-    updatedAt: snapshot.updatedAt,
-    runId: snapshot.runId,
-    pendingInteractions: host.pendingForSession(snapshot.id),
   };
 }
 

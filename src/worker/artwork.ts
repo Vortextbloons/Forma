@@ -18,6 +18,7 @@ import { resolveSearchSettings } from "../settings/search.ts";
 import { getSearchDefaults } from "../settings/credentials.ts";
 import { designGuidelineInstructions, DESIGN_INSTRUCTIONS } from "../projects/design.ts";
 import { resultErr, resultOk } from "./results.ts";
+import { asOptionalString, asString } from "./params.ts";
 import type { CommandHandler, WorkerContext } from "./commands.ts";
 
 type RunKind = "outline" | "artwork" | "refine" | "design";
@@ -35,42 +36,39 @@ const outlineInputSchema = z.array(
 export function createArtworkHandlers(ctx: WorkerContext): Record<string, CommandHandler> {
   const ok = (data?: unknown): WorkerResult => resultOk("", data);
   let editableSave: Promise<unknown> = Promise.resolve();
+  const direct = async (
+    params: Record<string, unknown>,
+    job: {
+      kind: RunKind;
+      mode: "plan" | "build";
+      imageMode: "required" | "optional";
+      promptFor: (project: ProjectFile) => string;
+    },
+  ): Promise<WorkerResult> => {
+    const dir = asString(params.dir, "dir");
+    const project = await openProject(dir);
+    const images = await collectVisualReferences(dir, project);
+    const result = await runArtwork(ctx, {
+      kind: job.kind,
+      dir,
+      sessionId: asOptionalString(params.sessionId),
+      model: asOptionalString(params.model),
+      prompt: job.promptFor(project),
+      mode: job.mode,
+      references: images,
+      imageMode: job.imageMode,
+    });
+    if (!result.ok) return result;
+    return ok({ project: await freshProject(dir) });
+  };
 
   return {
     async "artwork.plan"(params) {
-      const dir = asString(params.dir, "dir");
-      const project = await openProject(dir);
-      const images = await collectVisualReferences(dir, project);
-      const result = await runArtwork(ctx, {
-        kind: "outline",
-        dir,
-        sessionId: asOptionalString(params.sessionId),
-        model: asOptionalString(params.model),
-        prompt: planPrompt(project),
-        mode: "plan",
-        references: images,
-        imageMode: "required",
-      });
-      if (!result.ok) return result;
-      return ok({ project: await freshProject(dir) });
+      return direct(params, { kind: "outline", mode: "plan", imageMode: "required", promptFor: planPrompt });
     },
 
     async "artwork.generate"(params) {
-      const dir = asString(params.dir, "dir");
-      const project = await openProject(dir);
-      const images = await collectVisualReferences(dir, project);
-      const result = await runArtwork(ctx, {
-        kind: "artwork",
-        dir,
-        sessionId: asOptionalString(params.sessionId),
-        model: asOptionalString(params.model),
-        prompt: generatePrompt(project),
-        mode: "build",
-        references: images,
-        imageMode: "required",
-      });
-      if (!result.ok) return result;
-      return ok({ project: await freshProject(dir) });
+      return direct(params, { kind: "artwork", mode: "build", imageMode: "required", promptFor: generatePrompt });
     },
 
     async "artwork.refine"(params) {
@@ -124,21 +122,7 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
     },
 
     async "artwork.applyDesign"(params) {
-      const dir = asString(params.dir, "dir");
-      const project = await openProject(dir);
-      const images = await collectVisualReferences(dir, project);
-      const result = await runArtwork(ctx, {
-        kind: "design",
-        dir,
-        sessionId: asOptionalString(params.sessionId),
-        model: asOptionalString(params.model),
-        prompt: applyDesignPrompt(project),
-        mode: "build",
-        references: images,
-        imageMode: "optional",
-      });
-      if (!result.ok) return result;
-      return ok({ project: await freshProject(dir) });
+      return direct(params, { kind: "design", mode: "build", imageMode: "optional", promptFor: applyDesignPrompt });
     },
 
     async "artwork.updateOutline"(params) {
@@ -422,17 +406,6 @@ function expectedPages(project: ProjectFile): number {
 
 export function sourceRevision(source: { html: string; css: string }): string {
   return createHash("sha256").update(source.html).update("\u0000").update(source.css).digest("hex").slice(0, 32);
-}
-
-function asString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new ProtocolError(`Missing or invalid parameter "${name}" (expected non-empty string)`);
-  }
-  return value;
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function asNumber(value: unknown, name: string): number {

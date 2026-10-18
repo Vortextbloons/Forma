@@ -2,12 +2,11 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { CancellationError, RuntimeError } from "rig";
 import { atomicWriteFile } from "../projects/atomic.ts";
-import { effectiveSize, type EffectiveSize } from "../projects/size.ts";
+import { cssPixelSize, effectiveSize, type EffectiveSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
 import type { Page } from "puppeteer";
 import { launchBrowser, renderPage } from "./browser.ts";
 import { composePage } from "./compose.ts";
-import { cssPixelSize } from "./validate.ts";
 import { addEditableArtwork } from "./editable.ts";
 
 export type ExportFormat = "pdf" | "png" | "pptx";
@@ -73,21 +72,14 @@ async function exportChromium(
   if (request.format === "pdf") {
     const buffers = new Array<Uint8Array>(request.pageIds.length);
     const css = pdfCssSize(size);
-    let completed = 0;
-    await runWithPages(browser, request.pageIds.length, async (page, next) => {
-      while (next.value < request.pageIds.length) {
-        const index = next.value++;
-        throwIfAborted(request.signal);
-        await renderPage(page, composed.get(request.pageIds[index]!)!, cssPixelSize(size));
-        buffers[index] = await page.pdf({
-          width: `${css.width}px`,
-          height: `${css.height}px`,
-          printBackground: true,
-          margin: { top: "0", right: "0", bottom: "0", left: "0" },
-        });
-        completed += 1;
-        request.onProgress?.(completed, request.pageIds.length);
-      }
+    await renderExportPages(browser, request.pageIds.length, request.signal, request.onProgress, async (page, index) => {
+      await renderPage(page, composed.get(request.pageIds[index]!)!, cssPixelSize(size));
+      buffers[index] = await page.pdf({
+        width: `${css.width}px`,
+        height: `${css.height}px`,
+        printBackground: true,
+        margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      });
     });
     const exact = pdfPointSize(size);
     const { PDFDocument } = await import("pdf-lib");
@@ -109,29 +101,22 @@ async function exportChromium(
   const viewport = cssPixelSize(size);
   const scale = pngScale(request);
   const files: string[] = [];
-  let completed = 0;
-  await runWithPages(browser, request.pageIds.length, async (page, next) => {
-    while (next.value < request.pageIds.length) {
-      const index = next.value++;
-      throwIfAborted(request.signal);
-      await renderPage(page, composed.get(request.pageIds[index]!)!, viewport, scale);
-      const shot = await page.screenshot({
-        type: "png",
-        clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
-      });
-      if (request.directory) {
-        await mkdir(request.destination, { recursive: true });
-        const file = join(request.destination, `slide-${String(index + 1).padStart(2, "0")}.png`);
-        await atomicWriteFile(file, shot);
-        files.push(file);
-      } else {
-        const destination = ensureExtension(request.destination, ".png");
-        await mkdir(dirname(destination), { recursive: true });
-        await atomicWriteFile(destination, shot);
-        files.push(destination);
-      }
-      completed += 1;
-      request.onProgress?.(completed, request.pageIds.length);
+  await renderExportPages(browser, request.pageIds.length, request.signal, request.onProgress, async (page, index) => {
+    await renderPage(page, composed.get(request.pageIds[index]!)!, viewport, scale);
+    const shot = await page.screenshot({
+      type: "png",
+      clip: { x: 0, y: 0, width: viewport.width, height: viewport.height },
+    });
+    if (request.directory) {
+      await mkdir(request.destination, { recursive: true });
+      const file = join(request.destination, `slide-${String(index + 1).padStart(2, "0")}.png`);
+      await atomicWriteFile(file, shot);
+      files.push(file);
+    } else {
+      const destination = ensureExtension(request.destination, ".png");
+      await mkdir(dirname(destination), { recursive: true });
+      await atomicWriteFile(destination, shot);
+      files.push(destination);
     }
   });
   return { format: "png", files };
@@ -152,16 +137,9 @@ async function exportPptx(
   const slides = request.pageIds.map(() => presentation.addSlide());
 
   const browser = await launchBrowser();
-  let completed = 0;
-  await runWithPages(browser, request.pageIds.length, async (page, next) => {
-    while (next.value < request.pageIds.length) {
-      const index = next.value++;
-      throwIfAborted(request.signal);
-      await renderPage(page, composed.get(request.pageIds[index]!)!, viewport, PPTX_SCALE);
-      await addEditableArtwork(page, slides[index]!, viewport);
-      completed += 1;
-      request.onProgress?.(completed, request.pageIds.length);
-    }
+  await renderExportPages(browser, request.pageIds.length, request.signal, request.onProgress, async (page, index) => {
+    await renderPage(page, composed.get(request.pageIds[index]!)!, viewport, PPTX_SCALE);
+    await addEditableArtwork(page, slides[index]!, viewport);
   });
   const data = (await presentation.write({ outputType: "nodebuffer" })) as Buffer;
   const destination = ensureExtension(request.destination, ".pptx");
@@ -186,6 +164,25 @@ async function runWithPages(
       }
     }),
   );
+}
+
+async function renderExportPages(
+  browser: Awaited<ReturnType<typeof launchBrowser>>,
+  count: number,
+  signal: AbortSignal | undefined,
+  onProgress: ExportRequest["onProgress"],
+  render: (page: Page, index: number) => Promise<void>,
+): Promise<void> {
+  let completed = 0;
+  await runWithPages(browser, count, async (page, next) => {
+    while (next.value < count) {
+      const index = next.value++;
+      throwIfAborted(signal);
+      await render(page, index);
+      completed += 1;
+      onProgress?.(completed, count);
+    }
+  });
 }
 
 async function mapLimit<T, R>(items: readonly T[], limit: number, task: (item: T, index: number) => Promise<R>): Promise<R[]> {

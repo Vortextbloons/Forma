@@ -58,16 +58,10 @@ function createChartTool(): RigTool<typeof createChartInput, unknown> {
       });
       let svg: string;
       try {
-        try {
-          chart.setOption({ ...(input.options as Record<string, unknown>), animation: false } as never);
-        } catch (error) {
-          throw new RuntimeError(`The chart could not be rendered: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        try {
-          svg = chart.renderToSVGString();
-        } catch (error) {
-          throw new RuntimeError(`The chart could not be rendered: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        chart.setOption({ ...(input.options as Record<string, unknown>), animation: false } as never);
+        svg = chart.renderToSVGString();
+      } catch (error) {
+        throw new RuntimeError(`The chart could not be rendered: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
         chart.dispose();
       }

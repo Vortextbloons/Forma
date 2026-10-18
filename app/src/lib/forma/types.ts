@@ -137,13 +137,11 @@ export const OUTPUT_LABELS: Record<OutputKind, string> = {
 };
 
 export function parseProjectSnapshot(data: unknown): ProjectSnapshot {
-  const record = (data ?? {}) as { project?: { dir?: unknown; project?: unknown } };
-  const dir = typeof record.project?.dir === "string" ? record.project.dir : "";
-  const project = record.project?.project as ProjectFile | undefined;
-  if (!dir || !project || project.formatVersion !== 1 || !Array.isArray(project.context)) {
+  const entry = parseProjectEntry(((data ?? {}) as { project?: unknown }).project);
+  if (!entry) {
     throw new Error("The worker returned a malformed project payload");
   }
-  return { dir, project };
+  return entry;
 }
 
 export function parseProjectEntry(value: unknown): ProjectListEntry | null {

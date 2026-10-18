@@ -94,27 +94,12 @@
   });
 
   $effect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !attachMenuOpen && !targetMenuOpen) return;
     const close = (event: PointerEvent): void => {
-      if (menuWrap && !menuWrap.contains(event.target as Node)) menuOpen = false;
-    };
-    window.addEventListener("pointerdown", close, true);
-    return () => window.removeEventListener("pointerdown", close, true);
-  });
-
-  $effect(() => {
-    if (!attachMenuOpen) return;
-    const close = (event: PointerEvent): void => {
-      if (attachWrap && !attachWrap.contains(event.target as Node)) attachMenuOpen = false;
-    };
-    window.addEventListener("pointerdown", close, true);
-    return () => window.removeEventListener("pointerdown", close, true);
-  });
-
-  $effect(() => {
-    if (!targetMenuOpen) return;
-    const close = (event: PointerEvent): void => {
-      if (targetWrap && !targetWrap.contains(event.target as Node)) targetMenuOpen = false;
+      const target = event.target as Node;
+      if (menuOpen && menuWrap && !menuWrap.contains(target)) menuOpen = false;
+      if (attachMenuOpen && attachWrap && !attachWrap.contains(target)) attachMenuOpen = false;
+      if (targetMenuOpen && targetWrap && !targetWrap.contains(target)) targetMenuOpen = false;
     };
     window.addEventListener("pointerdown", close, true);
     return () => window.removeEventListener("pointerdown", close, true);

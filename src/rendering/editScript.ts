@@ -320,21 +320,25 @@ function editScriptBody(ctx: EditScriptContext): void {
     post({ type: "forma:edit-cancelled" });
   }
 
+  function applySingleOp(target: Element, op: EditOp): void {
+    const styled = target as HTMLElement;
+    if (op.kind === "move") styled.style.translate = `${round(op.x)}px ${round(op.y)}px`;
+    else if (op.kind === "resize") {
+      styled.style.width = op.width + "px";
+      styled.style.height = op.height + "px";
+    } else if (op.kind === "style") {
+      for (const property of Object.keys(op.styles)) styled.style.setProperty(property, op.styles[property] as string);
+    } else if (op.kind === "text") {
+      const node = target.childNodes[op.node];
+      if (node && node.nodeType === 3) node.nodeValue = op.value;
+    }
+  }
+
   function applyOps(ops: EditOp[]): void {
     for (const op of ops) {
       const el = elementAt(op.path);
       if (!el) continue;
-      const styled = el as HTMLElement;
-      if (op.kind === "move") styled.style.translate = `${round(op.x)}px ${round(op.y)}px`;
-      else if (op.kind === "resize") {
-        styled.style.width = op.width + "px";
-        styled.style.height = op.height + "px";
-      } else if (op.kind === "style") {
-        for (const property of Object.keys(op.styles)) styled.style.setProperty(property, op.styles[property] as string);
-      } else if (op.kind === "text") {
-        const node = el.childNodes[op.node];
-        if (node && node.nodeType === 3) node.nodeValue = op.value;
-      }
+      applySingleOp(el, op);
       if (detached) applyOpToDetached(op);
       if (selected === el) drawSelection();
       post({ type: "forma:edit-info", info: buildInfo(el, op.path) });
@@ -350,17 +354,7 @@ function editScriptBody(ctx: EditScriptContext): void {
       if (!next) return;
       node = next;
     }
-    const styled = node as HTMLElement;
-    if (op.kind === "move") styled.style.translate = `${round(op.x)}px ${round(op.y)}px`;
-    else if (op.kind === "resize") {
-      styled.style.width = op.width + "px";
-      styled.style.height = op.height + "px";
-    } else if (op.kind === "style") {
-      for (const property of Object.keys(op.styles)) styled.style.setProperty(property, op.styles[property] as string);
-    } else if (op.kind === "text") {
-      const target = node.childNodes[op.node];
-      if (target && target.nodeType === 3) target.nodeValue = op.value;
-    }
+    applySingleOp(node, op);
   }
 
   const VOID_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"];

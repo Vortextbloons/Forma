@@ -22,22 +22,17 @@
     "1080x1350": { width: 1080, height: 1350 },
     square: { width: 1080, height: 1080 },
   };
-  const PRINT_PRESETS: Record<string, { width: number; height: number; unit: "mm" | "in" }> = {
-    a4: { width: 210, height: 297, unit: "mm" },
-    a3: { width: 297, height: 420, unit: "mm" },
-    letter: { width: 8.5, height: 11, unit: "in" },
-    tabloid: { width: 11, height: 17, unit: "in" },
-  };
   const PRINT_OPTIONS: Array<{
     value: "a4" | "a3" | "letter" | "tabloid";
     label: string;
     width: number;
     height: number;
+    unit: "mm" | "in";
   }> = [
-    { value: "a4", label: "A4", width: 210, height: 297 },
-    { value: "a3", label: "A3", width: 297, height: 420 },
-    { value: "letter", label: "Letter", width: 8.5, height: 11 },
-    { value: "tabloid", label: "Tabloid", width: 11, height: 17 },
+    { value: "a4", label: "A4", width: 210, height: 297, unit: "mm" },
+    { value: "a3", label: "A3", width: 297, height: 420, unit: "mm" },
+    { value: "letter", label: "Letter", width: 8.5, height: 11, unit: "in" },
+    { value: "tabloid", label: "Tabloid", width: 11, height: 17, unit: "in" },
   ];
 
   function emit(patch: Partial<ProjectSettings>): void {
@@ -71,7 +66,7 @@
       emit({ posterSize: { ...settings.posterSize, preset } });
       return;
     }
-    const size = PRINT_PRESETS[preset]!;
+    const size = PRINT_OPTIONS.find((option) => option.value === preset)!;
     emit({ posterSize: { preset, width: size.width, height: size.height, unit: size.unit } });
   }
 

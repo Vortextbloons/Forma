@@ -122,13 +122,14 @@ func (s *WorkerService) Start() {
 	workerEntry := s.workerEntry
 	s.mu.Unlock()
 
+	exeDir := ""
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
 	nodeBin := s.nodeBin
-	if nodeBin == "" {
-		if exe, err := os.Executable(); err == nil {
-			bundled := filepath.Join(filepath.Dir(exe), "runtime", "node.exe")
-			if fileExists(bundled) {
-				nodeBin = bundled
-			}
+	if nodeBin == "" && exeDir != "" {
+		if bundled := filepath.Join(exeDir, "runtime", "node.exe"); fileExists(bundled) {
+			nodeBin = bundled
 		}
 	}
 	if nodeBin == "" {
@@ -159,10 +160,10 @@ func (s *WorkerService) Start() {
 	cmd := exec.Command(nodeBin, args...)
 	hideConsoleWindow(cmd)
 	cmd.Dir = projectDir
-	if exe, err := os.Executable(); err == nil {
-		chrome := filepath.Join(filepath.Dir(exe), "runtime", "chrome", "chrome-headless-shell.exe")
+	if exeDir != "" {
+		chrome := filepath.Join(exeDir, "runtime", "chrome", "chrome-headless-shell.exe")
 		if !fileExists(chrome) {
-			chrome = filepath.Join(filepath.Dir(exe), "runtime", "chrome", "chrome.exe")
+			chrome = filepath.Join(exeDir, "runtime", "chrome", "chrome.exe")
 		}
 		if os.Getenv("FORMA_CHROME_PATH") == "" && fileExists(chrome) {
 			cmd.Env = append(os.Environ(), "FORMA_CHROME_PATH="+chrome)
@@ -343,15 +344,7 @@ func (s *WorkerService) supervise(cmd *exec.Cmd) {
 // not running a failing result is synthesized for the id.
 func (s *WorkerService) SendCommand(id, name string, params map[string]any) {
 	if !s.ready.Load() {
-		s.Emit("rig:worker-error", map[string]any{"message": "worker is not ready"})
-		s.Emit("rig:result", map[string]any{
-			"id": id,
-			"ok": false,
-			"error": map[string]any{
-				"code":    "RUNTIME_ERROR",
-				"message": "worker is not running",
-			},
-		})
+		s.failCommand(id, "worker is not ready", "worker is not running")
 		return
 	}
 	frame := map[string]any{
@@ -362,16 +355,20 @@ func (s *WorkerService) SendCommand(id, name string, params map[string]any) {
 		"params": params,
 	}
 	if err := s.writeJSON(frame); err != nil {
-		s.Emit("rig:worker-error", map[string]any{"message": fmt.Sprintf("write command: %v", err)})
-		s.Emit("rig:result", map[string]any{
-			"id": id,
-			"ok": false,
-			"error": map[string]any{
-				"code":    "RUNTIME_ERROR",
-				"message": err.Error(),
-			},
-		})
+		s.failCommand(id, fmt.Sprintf("write command: %v", err), err.Error())
 	}
+}
+
+func (s *WorkerService) failCommand(id, workerMessage, resultMessage string) {
+	s.Emit("rig:worker-error", map[string]any{"message": workerMessage})
+	s.Emit("rig:result", map[string]any{
+		"id": id,
+		"ok": false,
+		"error": map[string]any{
+			"code":    "RUNTIME_ERROR",
+			"message": resultMessage,
+		},
+	})
 }
 
 // NewCommandID allocates the next command id (frontends may use it, though
@@ -421,9 +418,11 @@ func (s *WorkerService) resolveWorkerEntry(projectDir, override string) string {
 		}
 		log.Printf("FORMA_WORKER_ENTRY set but missing: %s", env)
 	}
-	exe, err := os.Executable()
-	if err == nil {
-		exeDir := filepath.Dir(exe)
+	exeDir := ""
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
+	if exeDir != "" {
 		candidates := []string{
 			filepath.Join(exeDir, "runtime", "src", "worker", "index.js"),
 			filepath.Join(exeDir, "runtime", "src", "worker", "index.ts"),
@@ -443,8 +442,8 @@ func (s *WorkerService) resolveWorkerEntry(projectDir, override string) string {
 			return candidate
 		}
 	}
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "..", "..", "node_modules", "rig", "dist", "worker", "index.js")
+	if exeDir != "" {
+		candidate := filepath.Join(exeDir, "..", "..", "node_modules", "rig", "dist", "worker", "index.js")
 		if fileExists(candidate) {
 			return candidate
 		}
@@ -496,22 +495,20 @@ func (s *WorkerService) handleLine(line []byte) {
 			s.Emit("rig:event", payload["event"])
 		}
 	case "result":
-		var payload map[string]any
-		if err := json.Unmarshal(line, &payload); err == nil {
-			s.Emit("rig:result", payload)
-		}
+		s.emitPayload(line, "rig:result")
 	case "log":
-		var payload map[string]any
-		if err := json.Unmarshal(line, &payload); err == nil {
-			s.Emit("rig:log", payload)
-		}
+		s.emitPayload(line, "rig:log")
 	case "error":
-		var payload map[string]any
-		if err := json.Unmarshal(line, &payload); err == nil {
-			s.Emit("rig:worker-error", payload)
-		}
+		s.emitPayload(line, "rig:worker-error")
 	default:
 		s.logInfo(fmt.Sprintf("unknown worker message type: %s", msg.Type))
+	}
+}
+
+func (s *WorkerService) emitPayload(line []byte, name string) {
+	var payload map[string]any
+	if err := json.Unmarshal(line, &payload); err == nil {
+		s.Emit(name, payload)
 	}
 }
 
