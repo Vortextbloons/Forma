@@ -2,6 +2,7 @@
   import Icon from "../components/Icon.svelte";
   import PagePreview from "./PagePreview.svelte";
   import { projectStore } from "./projectStore.svelte";
+  import { editStore } from "./editStore.svelte";
 
   const project = $derived(projectStore.current?.project);
   const pages = $derived(project?.pages ?? []);
@@ -42,7 +43,7 @@
           type="button"
           aria-label={`Select slide ${i + 1}: ${titleOf(pageId, i)}`}
           aria-current={selected === pageId ? "true" : undefined}
-          onclick={() => projectStore.selectPage(pageId)}
+          onclick={() => void editStore.selectPage(pageId)}
         >
           <PagePreview pageId={pageId} mode="thumb" />
         </button>

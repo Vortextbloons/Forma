@@ -7,7 +7,7 @@
   import { modelStore } from "../rig/stores/modelStore.svelte";
   import { providerStore } from "../rig/stores/providerStore.svelte";
   import { projectStore } from "./projectStore.svelte";
-  import { effectiveSize } from "../../../../src/projects/size.ts";
+  import { cssPixelSize, effectiveSize } from "../../../../src/projects/size.ts";
   import { elementSelectionScript } from "../../../../src/rendering/selection.ts";
 
   let {
@@ -18,7 +18,7 @@
   }: { pageId: string; mode?: "main" | "thumb"; onsubmit?: () => void; onwheel?: (deltaY: number) => void } = $props();
 
   const project = $derived(projectStore.current?.project);
-  const size = $derived(project ? effectiveSize(project.settings) : null);
+  const size = $derived(project ? cssPixelSize(effectiveSize(project.settings)) : null);
   const html = $derived(projectStore.composed[pageId]?.html ?? null);
 
   let width = $state(0);

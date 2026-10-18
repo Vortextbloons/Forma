@@ -2,8 +2,10 @@
   import Icon from "../components/Icon.svelte";
   import OutlineEditor from "./OutlineEditor.svelte";
   import PagePreview from "./PagePreview.svelte";
+  import EditCanvas from "./EditCanvas.svelte";
   import PageIcon from "./PageIcon.svelte";
   import { projectStore } from "./projectStore.svelte";
+  import { editStore } from "./editStore.svelte";
   import { DENSITY_LABELS, OUTPUT_LABELS, STYLE_LABELS, countLabel } from "./types";
   import { effectiveSize } from "../../../../src/projects/size.ts";
 
@@ -17,6 +19,7 @@
   const hasOutline = $derived((project?.outline?.length ?? 0) > 0);
   const run = $derived(projectStore.run);
   const generating = $derived(run !== null);
+  const editMode = $derived(editStore.editMode);
 
   let nameDraft = $derived(project?.name ?? "");
   let promptDraft = $derived(project?.prompt ?? "");
@@ -67,7 +70,7 @@
       wheelAccum += deltaY;
       if (Math.abs(wheelAccum) >= 100) {
         const next = selectedIndex + (wheelAccum > 0 ? 1 : -1);
-        if (next >= 0 && next < pages.length) projectStore.selectPage(pages[next]!);
+        if (next >= 0 && next < pages.length) void editStore.selectPage(pages[next]!);
         wheelLocked = true;
         wheelAccum = 0;
       }
@@ -83,16 +86,42 @@
 <main class="project-main">
   {#if project && size && pages.length > 0 && selectedPageId && selectedIndex >= 0}
     <section class="stage" style={`--page-ratio:${(size.width / size.height).toFixed(4)}`}>
-      <PagePreview pageId={selectedPageId} onwheel={wheelStep} />
+      <div class="stage-toolbar">
+        <div class="mode-switch" role="group" aria-label="Artwork mode">
+          <button type="button" class:active={!editMode} onclick={() => void editStore.exit()}>Preview</button>
+          <button
+            type="button"
+            class:active={editMode}
+            disabled={generating || projectStore.exporting}
+            onclick={() => void editStore.enter()}
+          >Edit</button>
+        </div>
+        <span class="spacer"></span>
+        {#if editMode}
+          <button class="icon-btn" type="button" title="Undo" aria-label="Undo" disabled={!editStore.canUndo() || editStore.paused} onclick={() => editStore.undo()}>
+            <Icon name="undo" size={16} />
+          </button>
+          <button class="icon-btn" type="button" title="Redo" aria-label="Redo" disabled={!editStore.canRedo() || editStore.paused} onclick={() => editStore.redo()}>
+            <Icon name="redo" size={16} />
+          </button>
+        {/if}
+      </div>
+      {#if editMode}
+        {#key selectedPageId}
+          <EditCanvas pageId={selectedPageId} onwheel={wheelStep} />
+        {/key}
+      {:else}
+        <PagePreview pageId={selectedPageId} onwheel={wheelStep} />
+      {/if}
       {#if project.settings.output === "slides"}
         <div class="stage-navigation">
-          <button class="icon-btn" type="button" aria-label="Previous slide" title="Previous slide" disabled={selectedIndex === 0} onclick={() => projectStore.selectPage(pages[selectedIndex - 1]!)}>
+          <button class="icon-btn" type="button" aria-label="Previous slide" title="Previous slide" disabled={selectedIndex === 0} onclick={() => void editStore.selectPage(pages[selectedIndex - 1]!)}>
             <Icon name="arrow-left" size={16} />
           </button>
           <p class="stage-caption">
             Slide {selectedIndex + 1} of {pages.length}{pageTitle ? ` · ${pageTitle}` : ""}
           </p>
-          <button class="icon-btn" type="button" aria-label="Next slide" title="Next slide" disabled={selectedIndex === pages.length - 1} onclick={() => projectStore.selectPage(pages[selectedIndex + 1]!)}>
+          <button class="icon-btn" type="button" aria-label="Next slide" title="Next slide" disabled={selectedIndex === pages.length - 1} onclick={() => void editStore.selectPage(pages[selectedIndex + 1]!)}>
             <Icon name="chevron-right" size={16} />
           </button>
         </div>
@@ -158,3 +187,39 @@
     </section>
   {/if}
 </main>
+
+<style>
+  .stage-toolbar {
+    display: flex;
+    align-self: stretch;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .mode-switch {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .mode-switch button {
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .mode-switch button.active {
+    color: var(--accent-contrast);
+    background: var(--accent);
+  }
+
+  .mode-switch button:disabled:not(.active) {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+</style>

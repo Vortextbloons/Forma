@@ -68,6 +68,20 @@ let searchDefaults = $state<SearchDefaults>({
 let opening = false;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let pendingSettings: ProjectSettings | null = null;
+let editorHooks: { flush(): Promise<void>; reset(): void; resetPage(pageId: string): void } | null = null;
+
+export function setEditorHooks(hooks: { flush(): Promise<void>; reset(): void; resetPage(pageId: string): void }): void {
+  editorHooks = hooks;
+}
+
+export function setEditorSaveStatus(status: SaveStatus): void {
+  saveStatus = status;
+}
+
+export function invalidateComposed(pageId: string): void {
+  const { [pageId]: _removed, ...rest } = composed;
+  composed = rest;
+}
 
 const GENERATING_STATUSES: SessionStatus[] = ["running", "waiting", "approval"];
 const composing = new Map<string, Promise<string | null>>();
@@ -185,6 +199,7 @@ export async function openProject(dir: string): Promise<void> {
 async function attach(snapshot: ProjectSnapshot): Promise<void> {
   current = snapshot;
   boundDir = snapshot.dir;
+  editorHooks?.reset();
   saveStatus = "saved";
   lastError = null;
   run = null;
@@ -450,6 +465,7 @@ async function flushProjectChanges(): Promise<void> {
   await flushBrief();
   await flushSettings();
   await flushOutline();
+  await editorHooks?.flush();
   if (pendingBrief || pendingSettings || pendingOutline || saveStatus === "error") {
     throw new Error("Save the project changes before starting.");
   }
@@ -734,6 +750,7 @@ export interface ExportRequest {
 
 export async function startExport(request: ExportRequest): Promise<ExportResult> {
   if (!current || exporting) throw new Error("An export is already running.");
+  await flushProjectChanges();
   const snapshot = current;
   const runId = `exp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   const total = request.scope === "all" ? snapshot.project.pages.length : 1;
@@ -925,6 +942,7 @@ function resetProject(): void {
   clearTimeout(briefTimer);
   clearTimeout(saveTimer);
   clearTimeout(outlineTimer);
+  editorHooks?.reset();
   pendingBrief = null;
   pendingSettings = null;
   pendingOutline = null;
@@ -1046,6 +1064,7 @@ function handleFormaEvent(event: FormaDomainEvent): void {
         const { [pageId]: _removed, ...rest } = composed;
         composed = rest;
         if (selectedElement?.pageId === pageId) selectedElement = null;
+        editorHooks?.resetPage(pageId);
       }
       validation = null;
       if (run) run = { ...run, completed: runPageIds.size };
@@ -1142,6 +1161,9 @@ getBridge().onEvent((event) => {
 
 export const projectStore = {
   flushProjectChanges,
+  setEditorHooks,
+  setEditorSaveStatus,
+  invalidateComposed,
   get themes() {
     return themes;
   },

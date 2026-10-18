@@ -373,6 +373,7 @@ class MockBridge extends BaseBridge {
   private projects: Array<{ dir: string; project: Record<string, unknown> }> = [];
   private themes: DesignTheme[] = [];
   private mockSeq = 0;
+  private mockPageSources: Record<string, Record<string, string>> = {};
   private mockSearchDefaults = {
     research: false,
     imageSearch: false,
@@ -1123,6 +1124,25 @@ class MockBridge extends BaseBridge {
           "</div></body></html>",
         ].join("");
         this.settleResult(id, true, { html, missing: [] });
+        break;
+      }
+      case "artwork.readEditable": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const pageId = asString(params.pageId ?? "");
+        const html = this.mockPageSources[dir]?.[pageId] ?? "<p>Mock editable artwork</p>";
+        this.settleResult(id, true, { html, css: "", revision: "mock" });
+        break;
+      }
+      case "artwork.saveEditable": {
+        const dir = asString(params.dir ?? this.projectDir);
+        const pageId = asString(params.pageId ?? "");
+        const project = this.ensureProject(dir, {});
+        this.mockPageSources[dir] = {
+          ...this.mockPageSources[dir],
+          [pageId]: asString(params.html ?? ""),
+        };
+        project.updatedAt = new Date().toISOString();
+        this.settleResult(id, true, { project: { dir, project }, revision: "mock" });
         break;
       }
       case "rendering.validate": {

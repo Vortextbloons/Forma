@@ -7,6 +7,11 @@ export const ICON_PATHS = {
   plus: ["M12 5v14", "M5 12h14"],
   minus: ["M5 12h14"],
   x: ["M18 6L6 18", "M6 6l12 12"],
+  "align-left": ["M4 6h16", "M4 12h10", "M4 18h13"],
+  "align-center": ["M4 6h16", "M7 12h10", "M6 18h12"],
+  "align-right": ["M4 6h16", "M10 12h10", "M7 18h13"],
+  undo: ["M3 7v6h6", "M21 17a9 9 0 00-15-6.7L3 13"],
+  redo: ["M21 7v6h-6", "M3 17a9 9 0 0115-6.7L21 13"],
   gear: [
     "M4 21v-7",
     "M4 10V3",

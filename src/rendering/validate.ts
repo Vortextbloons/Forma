@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { RuntimeError } from "rig";
 import { loadExtraction } from "../extraction/index.ts";
-import { effectiveSize, type EffectiveSize } from "../projects/size.ts";
+import { cssPixelSize, effectiveSize, type EffectiveSize } from "../projects/size.ts";
+export { cssPixelSize } from "../projects/size.ts";
 import type { ProjectFile } from "../projects/schema.ts";
 import type { Page } from "puppeteer";
 import { launchBrowser, waitForAssets } from "./browser.ts";
@@ -164,14 +165,6 @@ async function composeForValidation(
     });
   }
   return page.html;
-}
-
-export function cssPixelSize(size: EffectiveSize): { width: number; height: number } {
-  const factor = size.unit === "mm" ? 96 / 25.4 : size.unit === "in" ? 96 : 1;
-  return {
-    width: Math.round(size.width * factor),
-    height: Math.round(size.height * factor),
-  };
 }
 
 async function checkLayout(

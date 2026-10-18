@@ -115,6 +115,7 @@ export interface PagePatch {
   evidence?: Record<string, string>;
   htmlEdits?: Array<{ find: string; replace: string }>;
   cssEdits?: Array<{ find: string; replace: string }>;
+  keepArtworkCurrent?: boolean;
 }
 
 export async function updatePage(
@@ -136,7 +137,7 @@ export async function updatePage(
   if (html !== current.html) await atomicWriteFile(pageHtmlPath(dir, pageId), ensureTrailingNewline(html));
   if (css !== current.css) await atomicWriteFile(pageCssPath(dir, pageId), ensureTrailingNewline(css));
   const updated = await updateProject(dir, (current) => {
-    current.artworkRevision = -1;
+    if (!patch.keepArtworkCurrent) current.artworkRevision = -1;
     const meta = current.pageMeta[pageId] ?? { title: "", assets: [] };
     current.pageMeta[pageId] = {
       title: patch.title?.trim() ?? meta.title,

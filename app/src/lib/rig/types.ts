@@ -67,6 +67,8 @@ export const FORMA_COMMAND_NAMES = [
   "artwork.duplicate",
   "artwork.delete",
   "artwork.compose",
+  "artwork.readEditable",
+  "artwork.saveEditable",
   "rendering.validate",
   "rendering.export",
   "rendering.cancelExport",

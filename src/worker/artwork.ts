@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import formaAgent from "../agent.ts";
 import { CancellationError, ModelError, ProtocolError, RuntimeError, serializeError } from "rig";
 import type { WorkerResult } from "rig/ipc";
@@ -7,7 +8,7 @@ import { applyDesignPrompt, generatePrompt, planPrompt, refinePrompt } from "../
 import { collectVisualReferences, normalizePromptImages, viewArtworkTool, viewImageTool, IMAGES_UNSUPPORTED, MAX_IMAGES, type PromptImage, type VisualReferences } from "../forma/visuals.ts";
 import { projectRuns, type ProjectRun } from "../forma/runtime.ts";
 import { loadedGroupTools, prepareSessionTools } from "../tools/lazy.ts";
-import { deletePage, duplicatePage, movePage, restorePage } from "../projects/pages.ts";
+import { deletePage, duplicatePage, movePage, readPage, restorePage, updatePage } from "../projects/pages.ts";
 import { effectiveSize } from "../projects/size.ts";
 import { openProject, setOutline, updateProject } from "../projects/store.ts";
 import { composePage } from "../rendering/compose.ts";
@@ -33,6 +34,7 @@ const outlineInputSchema = z.array(
 
 export function createArtworkHandlers(ctx: WorkerContext): Record<string, CommandHandler> {
   const ok = (data?: unknown): WorkerResult => resultOk("", data);
+  let editableSave: Promise<unknown> = Promise.resolve();
 
   return {
     async "artwork.plan"(params) {
@@ -189,6 +191,49 @@ export function createArtworkHandlers(ctx: WorkerContext): Record<string, Comman
       const size = effectiveSize(project.settings);
       const composed = await composePage(dir, pageId, size, { inlineAssets: true });
       return ok({ html: composed.html, missing: composed.missing });
+    },
+
+    async "artwork.readEditable"(params) {
+      const dir = asString(params.dir, "dir");
+      const pageId = asString(params.pageId, "pageId");
+      const project = await openProject(dir);
+      if (!project.pages.includes(pageId)) {
+        throw new RuntimeError(`Unknown page "${pageId}"`, { details: { pageIds: project.pages } });
+      }
+      const source = await readPage(dir, pageId);
+      return ok({ html: source.html, css: source.css, revision: sourceRevision(source) });
+    },
+
+    async "artwork.saveEditable"(params) {
+      const save = editableSave.then(async () => {
+        const dir = asString(params.dir, "dir");
+        const pageId = asString(params.pageId, "pageId");
+        const html = asString(params.html, "html");
+        const css = typeof params.css === "string" ? params.css : "";
+        const revision = asString(params.revision, "revision");
+        if (projectRuns.size > 0) {
+          throw new RuntimeError("Forma is generating artwork. Try again when the run finishes.", {
+            details: { reason: "ai-running" },
+          });
+        }
+        const project = await openProject(dir);
+        if (!project.pages.includes(pageId)) {
+          throw new RuntimeError(`Unknown page "${pageId}"`, { details: { pageIds: project.pages } });
+        }
+        const source = await readPage(dir, pageId);
+        if (sourceRevision(source) !== revision) {
+          throw new RuntimeError("This page changed outside the editor. Retry the save or discard the draft.", {
+            details: { reason: "stale-revision" },
+          });
+        }
+        await updatePage(dir, pageId, { html, css, keepArtworkCurrent: true });
+        return ok({
+          project: { dir, project: await openProject(dir) },
+          revision: sourceRevision(await readPage(dir, pageId)),
+        });
+      });
+      editableSave = save.catch(() => undefined);
+      return save;
     },
 
     async "rendering.validate"(params) {
@@ -373,6 +418,10 @@ async function commitArtwork(dir: string, settingsRevision: number): Promise<{ d
 function expectedPages(project: ProjectFile): number {
   if (project.settings.output === "poster") return 1;
   return project.outline?.length ?? Math.max(1, project.pages.length);
+}
+
+export function sourceRevision(source: { html: string; css: string }): string {
+  return createHash("sha256").update(source.html).update("\u0000").update(source.css).digest("hex").slice(0, 32);
 }
 
 function asString(value: unknown, name: string): string {
