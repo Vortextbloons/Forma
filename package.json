@@ -26,12 +26,14 @@
     "@napi-rs/canvas": "^1.0.11",
     "@tesseract.js-data/eng": "^1.0.0",
     "echarts": "^6.1.0",
+    "jszip": "^3.10.1",
     "katex": "^0.19.0",
     "lucide-static": "^1.56.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
     "pptxgenjs": "^4.0.1",
     "puppeteer": "^25.13.0",
+    "pyodide": "^0.29.5",
     "rig": "file:vendor/rig-0.3.0.tgz",
     "simple-icons": "^16.35.0",
     "tesseract.js": "^7.0.0",
@@ -40,7 +42,6 @@
   "devDependencies": {
     "@types/node": "^26.0.0",
     "esbuild": "^0.28.2",
-    "jszip": "^3.10.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   },

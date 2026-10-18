@@ -9,6 +9,7 @@ export const TOOL_GROUPS = {
   diagrams: ["create_diagram"],
   icons: ["find_icon", "import_icon"],
   math: ["render_math"],
+  materials: ["run_python", "create_table", "save_summary"],
 } as const;
 
 export type ToolGroupName = keyof typeof TOOL_GROUPS;
@@ -16,7 +17,7 @@ export type ToolGroupName = keyof typeof TOOL_GROUPS;
 const DEFERRED_TOOL_NAMES = new Set<string>(Object.values(TOOL_GROUPS).flat());
 
 const loadToolsInput = z.object({
-  group: z.enum(["research", "photos", "brands", "charts", "diagrams", "icons", "math"]).describe("Specialist tool group to load"),
+  group: z.enum(["research", "photos", "brands", "charts", "diagrams", "icons", "math", "materials"]).describe("Specialist tool group to load"),
 });
 
 interface LazySession {
@@ -57,7 +58,7 @@ export function loadToolsTool(): RigTool<typeof loadToolsInput, unknown> {
   return {
     name: "load_tools",
     description:
-      'Load specialist tools for this session. Groups: "research" (research, read_url) for web search and reading pages, "photos" (find_photos, import_photo) for stock photo search and import, "brands" (find_brand_icon, import_brand_icon) for brand icon lookup and import, "charts" (create_chart) for data chart rendering, "diagrams" (create_diagram) for Mermaid diagram rendering, "icons" (find_icon, import_icon) for Lucide UI icon lookup and import, "math" (render_math) for LaTeX math rendering. Load a group before using its tools; loading again changes nothing and loaded tools stay available for the session.',
+      'Load specialist tools for this session. Groups: "research" (research, read_url) for web search and reading pages, "photos" (find_photos, import_photo) for stock photo search and import, "brands" (find_brand_icon, import_brand_icon) for brand icon lookup and import, "charts" (create_chart) for data chart rendering, "diagrams" (create_diagram) for Mermaid diagram rendering, "icons" (find_icon, import_icon) for Lucide UI icon lookup and import, "math" (render_math) for LaTeX math rendering, "materials" (run_python, create_table, save_summary) for analysing imported materials and saving results. Load a group before using its tools; loading again changes nothing and loaded tools stay available for the session.',
     input: loadToolsInput,
     async execute(input, ctx) {
       const session = lazySessions.get(ctx.session.id);

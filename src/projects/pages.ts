@@ -101,6 +101,7 @@ export async function writePage(
       title: input.title.trim(),
       assets,
       evidence: input.evidence ?? {},
+      stale: current.pageMeta[pageId!]?.stale,
       updatedAt: nowIso(),
     };
   });
@@ -116,6 +117,7 @@ export interface PagePatch {
   htmlEdits?: Array<{ find: string; replace: string }>;
   cssEdits?: Array<{ find: string; replace: string }>;
   keepArtworkCurrent?: boolean;
+  acknowledgeSources?: Record<string, number>;
 }
 
 export async function updatePage(
@@ -139,14 +141,30 @@ export async function updatePage(
   const updated = await updateProject(dir, (current) => {
     if (!patch.keepArtworkCurrent) current.artworkRevision = -1;
     const meta = current.pageMeta[pageId] ?? { title: "", assets: [] };
-    current.pageMeta[pageId] = {
+    const next: PageMeta = {
       title: patch.title?.trim() ?? meta.title,
       assets: assets ?? meta.assets,
       evidence: patch.evidence ?? meta.evidence ?? {},
       updatedAt: nowIso(),
     };
+    next.stale = sourcesAcknowledged(current, next.assets, next.evidence, patch.acknowledgeSources) ? undefined : meta.stale;
+    current.pageMeta[pageId] = next;
   });
   return { project: updated, pageId };
+}
+
+function sourcesAcknowledged(
+  project: ProjectFile,
+  assets: string[],
+  evidence: Record<string, string> | undefined,
+  acknowledged: Record<string, number> | undefined,
+): boolean {
+  if (!acknowledged) return false;
+  for (const id of new Set([...assets, ...Object.keys(evidence ?? {})])) {
+    const source = project.context.find((entry) => entry.id === id);
+    if (!source || source.stale || acknowledged[id] !== source.revision) return false;
+  }
+  return true;
 }
 
 function editSource(source: string, replacement: string | undefined, edits: PagePatch["htmlEdits"]): string {
@@ -191,6 +209,51 @@ export async function readPage(dir: string, pageId: string): Promise<PageSource>
     throw new RuntimeError(`Could not read page "${pageId}": ${String(error)}`, {
       details: { pageId },
     });
+  }
+}
+
+export async function materialReferences(
+  dir: string,
+  project: ProjectFile,
+  id: string,
+  asset: string,
+): Promise<string[]> {
+  const references = new Set<string>();
+  const label = (pageId: string): string => {
+    const title = project.pageMeta[pageId]?.title?.trim();
+    return `slide "${title || `Slide ${project.pages.indexOf(pageId) + 1}`}"`;
+  };
+  for (const pageId of project.pages) {
+    const meta = project.pageMeta[pageId];
+    if (meta?.assets.includes(id) || (meta?.evidence && id in meta.evidence)) references.add(label(pageId));
+  }
+  if (project.outline?.some((entry) => entry.assetIds.includes(id))) references.add("the outline");
+  for (const item of project.context) {
+    if (item.derivedFrom.includes(id)) references.add(`result "${item.name}"`);
+  }
+  for (const pageId of project.pages) {
+    if (await pageUsesAsset(dir, pageId, id, asset)) references.add(label(pageId));
+  }
+  return [...references];
+}
+
+async function pageUsesAsset(dir: string, pageId: string, id: string, asset: string): Promise<boolean> {
+  const [html, css] = await Promise.all([
+    readFile(pageHtmlPath(dir, pageId), "utf8").catch(() => ""),
+    readFile(pageCssPath(dir, pageId), "utf8").catch(() => ""),
+  ]);
+  if (html.includes(asset) || css.includes(asset)) return true;
+  const history = await readFile(join(pagesDir(dir), ".history", `${pageId}.json`), "utf8").catch(() => "");
+  if (!history) return false;
+  try {
+    const previous = JSON.parse(history) as PageSource & { meta?: PageMeta };
+    return (
+      previous.html?.includes(asset) === true ||
+      previous.css?.includes(asset) === true ||
+      previous.meta?.assets?.includes(id) === true
+    );
+  } catch {
+    return true;
   }
 }
 

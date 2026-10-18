@@ -6,7 +6,7 @@ import { formaEnv, projectRuns } from "../forma/runtime.ts";
 import { deletePage, pageRefs, readPage, restorePage, updatePage, writePage } from "../projects/pages.ts";
 import { openProject, setOutline } from "../projects/store.ts";
 import { effectiveSize } from "../projects/size.ts";
-import type { ProjectFile } from "../projects/schema.ts";
+import type { ContextItem, ProjectFile } from "../projects/schema.ts";
 import { resolveSearchSettings } from "../settings/search.ts";
 import { getSearchDefaults } from "../settings/credentials.ts";
 import { DESIGN_INSTRUCTIONS } from "../projects/design.ts";
@@ -27,6 +27,7 @@ const outlineEntryInput = z.object({
 
 const readContextInput = z.object({
   id: z.string().optional().describe("Context item id; omit to list all items"),
+  action: z.string().optional().describe("Recorded action id (from read_project); returns the full record including any script"),
   page: z.number().int().positive().optional().describe("PDF page number to read"),
   maxChars: z.number().int().positive().max(60_000).optional(),
   offset: z.number().int().nonnegative().optional().describe("Character offset within a specific page; use nextOffset to continue"),
@@ -52,6 +53,13 @@ const submitPageInput = z.object({
 
 const sourceEdits = z.array(z.object({ find: z.string().min(1), replace: z.string() })).min(1);
 
+const sourcesRefreshed = z
+  .record(z.string(), z.number())
+  .optional()
+  .describe(
+    "After re-reading every material this out-of-date slide uses and confirming the artwork matches, pass their id → revision (from read_project) to clear the slide's out-of-date flag. The flag stays when a referenced material is missing, still out of date, or has been revised since the revision you list.",
+  );
+
 const updatePageInput = z.object({
   pageId: z.string().describe("Page id from read_project"),
   title: z.string().optional(),
@@ -61,6 +69,7 @@ const updatePageInput = z.object({
   evidence: z.record(z.string(), z.string()).optional(),
   htmlEdits: sourceEdits.optional().describe("Exact unique find/replace edits to HTML; prefer for small changes"),
   cssEdits: sourceEdits.optional().describe("Exact unique find/replace edits to CSS; prefer for small changes"),
+  sourcesRefreshed,
 });
 
 const pageIdInput = z.object({ pageId: z.string() });
@@ -68,10 +77,12 @@ const createPageInput = submitPageInput.omit({ html: true, css: true });
 const writeFileInput = z.object({
   path: z.string().describe("Page source path from create_page or read_page"),
   content: z.string(),
+  sourcesRefreshed,
 });
 const editFileInput = z.object({
   path: z.string().describe("Page source path from create_page or read_page"),
   edits: sourceEdits.describe("Exact unique find/replace edits read from the source file"),
+  sourcesRefreshed,
 });
 
 export const projectTools: Array<RigTool<z.ZodTypeAny, unknown>> = [
@@ -106,6 +117,34 @@ function totalPages(project: ProjectFile): number {
   return project.outline?.length ?? project.pages.length;
 }
 
+function contextSummary(item: ContextItem): Record<string, unknown> {
+  return {
+    id: item.id,
+    name: item.name,
+    role: item.role,
+    mime: item.mime,
+    path: item.asset,
+    status: item.status,
+    folder: item.folder || undefined,
+    revision: item.revision,
+    pages: item.extraction?.pages,
+    data: item.data
+      ? {
+          format: item.data.format,
+          truncated: item.data.truncated || undefined,
+          sheets: item.data.sheets.map((sheet) => ({
+            name: sheet.name,
+            rows: sheet.rows,
+            columns: sheet.columns.map((column) => `${column.name}:${column.type}`),
+          })),
+        }
+      : undefined,
+    derivedFrom: item.derivedFrom.length > 0 ? item.derivedFrom : undefined,
+    stale: item.stale || undefined,
+    error: item.error,
+  };
+}
+
 function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
   return {
     name: "read_project",
@@ -132,16 +171,22 @@ function readProjectTool(): RigTool<z.ZodTypeAny, unknown> {
         ...(project.settings.designProfile ? { designInstructions: DESIGN_INSTRUCTIONS } : {}),
         pageSize: { width: size.width, height: size.height, unit: size.unit },
         outline: project.outline,
-        pages: pageRefs(project).map((page) => ({ ...page, files: sourceFiles(page.id) })),
-        context: project.context.map((item) => ({
-          id: item.id,
-          name: item.name,
-          role: item.role,
-          mime: item.mime,
-          path: item.asset,
-          status: item.status,
-          pages: item.extraction?.pages,
-          error: item.error,
+        pages: pageRefs(project).map((page) => ({
+          ...page,
+          files: sourceFiles(page.id),
+          stale: project.pageMeta[page.id]?.stale || undefined,
+        })),
+        context: project.context.map(contextSummary),
+        folders: project.folders,
+        actions: project.actions.slice(-10).map((action) => ({
+          id: action.id,
+          kind: action.kind,
+          label: action.label,
+          inputs: action.inputs,
+          outputs: action.outputs,
+          detail: action.detail,
+          hasScript: action.code !== undefined || undefined,
+          createdAt: action.createdAt,
         })),
         sources: project.sources.map((source) => ({
           id: source.id,
@@ -158,22 +203,23 @@ function readContextTool(): RigTool<typeof readContextInput, unknown> {
   return {
     name: "read_context",
     description:
-      "Read extracted text from a context item (PDF pages preserve page numbers) or list all context items when no id is given.",
+      "Read extracted text from a context item (PDF pages preserve page numbers), read a data material's profile (format, sheets, column types, preview rows), read a recorded action including any script, or list all context items when no id is given.",
     input: readContextInput,
     async execute(input, ctx) {
       const dir = dirOf(ctx);
       const project = await openProject(dir);
+      if (input.action) {
+        const action = project.actions.find((entry) => entry.id === input.action);
+        if (!action) {
+          throw new RuntimeError(`Unknown action "${input.action}"`, {
+            details: { actionIds: project.actions.map((entry) => entry.id) },
+          });
+        }
+        return action;
+      }
       if (!input.id) {
         return {
-          items: project.context.map((item) => ({
-            id: item.id,
-            name: item.name,
-            role: item.role,
-            mime: item.mime,
-            status: item.status,
-            extraction: item.extraction,
-            error: item.error,
-          })),
+          items: project.context.map(contextSummary),
         };
       }
       const item = project.context.find((entry) => entry.id === input.id);
@@ -181,6 +227,26 @@ function readContextTool(): RigTool<typeof readContextInput, unknown> {
         throw new RuntimeError(`Unknown context item "${input.id}"`, {
           details: { contextIds: project.context.map((entry) => entry.id) },
         });
+      }
+      if (item.data) {
+        return {
+          id: item.id,
+          name: item.name,
+          mime: item.mime,
+          status: item.status,
+          format: item.data.format,
+          path: item.asset,
+          truncated: item.data.truncated,
+          derivedFrom: item.derivedFrom.length > 0 ? item.derivedFrom : undefined,
+          stale: item.stale || undefined,
+          sheets: item.data.sheets.map((sheet) => ({
+            name: sheet.name,
+            rows: sheet.rows,
+            columns: sheet.columns.map((column) => `${column.name} (${column.type})`),
+            preview: sheet.preview,
+          })),
+          note: "Only this profile is kept in context to avoid flooding it. The preview shows a few rows. To work with the full data, load the materials tools with load_tools and analyse the file with run_python.",
+        };
       }
       const extraction = await loadExtraction(dir, input.id);
       if (!extraction) {
@@ -323,7 +389,7 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
   return {
     name: "update_page",
     description:
-      "Replace parts of an existing page (html, css, title, or assets). Use for refinements; other pages stay untouched.",
+      "Replace parts of an existing page (html, css, title, or assets). Use for refinements; other pages stay untouched. When a page is marked out of date, rebuild its artwork from the current materials and pass sources_refreshed (id → revision from read_project) to clear the flag.",
     input: updatePageInput,
     async execute(input, ctx) {
       const run = projectRuns.get(ctx.session.id);
@@ -335,9 +401,10 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         input.assets === undefined &&
         input.evidence === undefined &&
         input.htmlEdits === undefined &&
-        input.cssEdits === undefined
+        input.cssEdits === undefined &&
+        input.sourcesRefreshed === undefined
       ) {
-        throw new RuntimeError("update_page needs a title, source, targeted edit, assets, or evidence change");
+        throw new RuntimeError("update_page needs a title, source, targeted edit, assets, evidence, or refresh acknowledgement change");
       }
       assertPageScope(ctx, input.pageId);
       const dir = dirOf(ctx);
@@ -351,6 +418,7 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         evidence: input.evidence,
         htmlEdits: input.htmlEdits,
         cssEdits: input.cssEdits,
+        acknowledgeSources: input.sourcesRefreshed,
       });
       if (run) run.artworkChanged = true;
       run?.changedPageIds?.add(pageId);
@@ -365,7 +433,12 @@ function updatePageTool(): RigTool<typeof updatePageInput, unknown> {
         },
         ctx,
       );
-      return { ok: true, pageId, index: index + 1 };
+      return {
+        ok: true,
+        pageId,
+        index: index + 1,
+        ...(input.sourcesRefreshed !== undefined ? { stale: project.pageMeta[pageId]?.stale || undefined } : {}),
+      };
     },
   };
 }
@@ -421,11 +494,18 @@ async function sourceFile(path: string, ctx: ToolContext): Promise<{ pageId: str
 function writeFileTool(): RigTool<typeof writeFileInput, unknown> {
   return {
     name: "write_file",
-    description: "Write a page's HTML or CSS source file. Saves the file, updates its preview, and preserves the previous version. Use edit_file for small changes.",
+    description: "Write a page's HTML or CSS source file. Saves the file, updates its preview, and preserves the previous version. Use edit_file for small changes. When refreshing an out-of-date page, pass sources_refreshed (id → revision from read_project) after re-reading its materials.",
     input: writeFileInput,
     async execute(input, ctx) {
       const { pageId, source } = await sourceFile(input.path, ctx);
-      return updatePageTool().execute({ pageId, [source]: input.content }, ctx);
+      return updatePageTool().execute(
+        {
+          pageId,
+          [source]: input.content,
+          ...(input.sourcesRefreshed !== undefined ? { sourcesRefreshed: input.sourcesRefreshed } : {}),
+        },
+        ctx,
+      );
     },
   };
 }
@@ -433,11 +513,18 @@ function writeFileTool(): RigTool<typeof writeFileInput, unknown> {
 function editFileTool(): RigTool<typeof editFileInput, unknown> {
   return {
     name: "edit_file",
-    description: "Edit a page's HTML or CSS file with exact unique replacements, preserving the rest of the source. Read the file first. Saves the file and updates its preview.",
+    description: "Edit a page's HTML or CSS file with exact unique replacements, preserving the rest of the source. Read the file first. Saves the file and updates its preview. When refreshing an out-of-date page, pass sources_refreshed (id → revision from read_project) after re-reading its materials.",
     input: editFileInput,
     async execute(input, ctx) {
       const { pageId, source } = await sourceFile(input.path, ctx);
-      return updatePageTool().execute({ pageId, [`${source}Edits`]: input.edits }, ctx);
+      return updatePageTool().execute(
+        {
+          pageId,
+          [`${source}Edits`]: input.edits,
+          ...(input.sourcesRefreshed !== undefined ? { sourcesRefreshed: input.sourcesRefreshed } : {}),
+        },
+        ctx,
+      );
     },
   };
 }
@@ -463,6 +550,7 @@ function readPageTool(): RigTool<typeof pageIdInput, unknown> {
         title: meta?.title ?? "",
         assets: meta?.assets ?? [],
         evidence: meta?.evidence ?? {},
+        stale: meta?.stale || undefined,
         files: sourceFiles(input.pageId),
         html: source.html,
         css: source.css,

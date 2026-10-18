@@ -71,6 +71,34 @@ export type ContextStatus = (typeof CONTEXT_STATUSES)[number];
 
 export const EXTRACTION_KINDS = ["text", "ocr", "mixed"] as const;
 
+export const DATA_FORMATS = ["csv", "tsv", "json", "xlsx"] as const;
+export type DataFormat = (typeof DATA_FORMATS)[number];
+
+export const DATA_VALUE_TYPES = ["text", "number", "boolean", "date", "unknown"] as const;
+export type DataValueType = (typeof DATA_VALUE_TYPES)[number];
+
+export const dataColumnSchema = z.object({
+  name: z.string(),
+  type: z.enum(DATA_VALUE_TYPES).default("unknown"),
+});
+
+export const dataSheetSchema = z.object({
+  name: z.string(),
+  rows: z.number().int().nonnegative(),
+  columns: z.array(dataColumnSchema).default([]),
+  preview: z.array(z.array(z.string())).default([]),
+});
+
+export const dataProfileSchema = z.object({
+  format: z.enum(DATA_FORMATS),
+  sheets: z.array(dataSheetSchema).default([]),
+  truncated: z.boolean().default(false),
+});
+
+export type DataColumn = z.infer<typeof dataColumnSchema>;
+export type DataSheet = z.infer<typeof dataSheetSchema>;
+export type DataProfile = z.infer<typeof dataProfileSchema>;
+
 export const contextItemSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -88,10 +116,31 @@ export const contextItemSchema = z.object({
     .optional(),
   error: z.string().optional(),
   sourceId: z.string().optional(),
+  folder: z.string().default(""),
+  revision: z.number().int().positive().default(1),
+  data: dataProfileSchema.optional(),
+  derivedFrom: z.array(z.string()).default([]),
+  stale: z.boolean().default(false),
   createdAt: z.string(),
 });
 
 export type ContextItem = z.infer<typeof contextItemSchema>;
+
+export const ACTION_KINDS = ["replace", "remove", "derive", "run"] as const;
+export type ActionKind = (typeof ACTION_KINDS)[number];
+
+export const actionRecordSchema = z.object({
+  id: z.string(),
+  kind: z.enum(ACTION_KINDS),
+  label: z.string(),
+  inputs: z.array(z.string()).default([]),
+  outputs: z.array(z.string()).default([]),
+  detail: z.string().optional(),
+  code: z.string().optional(),
+  createdAt: z.string(),
+});
+
+export type ActionRecord = z.infer<typeof actionRecordSchema>;
 
 export const sourceRecordSchema = z.object({
   id: z.string(),
@@ -130,6 +179,7 @@ export const pageMetaSchema = z.object({
   title: z.string().default(""),
   assets: z.array(z.string()).default([]),
   evidence: z.record(z.string(), z.string()).optional(),
+  stale: z.boolean().optional(),
   updatedAt: z.string().optional(),
 });
 
@@ -151,6 +201,8 @@ export const projectFileSchema = z.object({
   pageMeta: z.record(z.string(), pageMetaSchema).default({}),
   context: z.array(contextItemSchema).default([]),
   sources: z.array(sourceRecordSchema).default([]),
+  folders: z.array(z.string()).default([]),
+  actions: z.array(actionRecordSchema).default([]),
   conversation: z
     .object({
       sessionIds: z.array(z.string()).default([]),
@@ -175,6 +227,10 @@ export function newPageId(): string {
 
 export function newSourceId(): string {
   return `src_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+export function newActionId(): string {
+  return `act_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
 }
 
 export function nowIso(): string {

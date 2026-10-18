@@ -23,12 +23,16 @@ export async function addEditableArtwork(page: Page, slide: PptxGenJS.Slide, vie
       return { color: channels.slice(0, 3).map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join(""), transparency: (1 - (channels[3] ?? 1)) * 100 };
     }
     const all = [...document.querySelectorAll<HTMLElement>(".forma-page, .forma-page *")];
-    all.forEach((element, index) => element.setAttribute("data-forma-export", String(index)));
+    const indices = new Map<HTMLElement, number>();
+    all.forEach((element, index) => {
+      element.setAttribute("data-forma-export", String(index));
+      indices.set(element, index);
+    });
     function visit(element: HTMLElement): void {
       const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0 || !rect.width || !rect.height) return;
-      const index = all.indexOf(element);
+      const index = indices.get(element)!;
       const box = { index, x: rect.x / 96, y: rect.y / 96, w: rect.width / 96, h: rect.height / 96 };
       const children = [...element.children] as HTMLElement[];
       const hasText = [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());

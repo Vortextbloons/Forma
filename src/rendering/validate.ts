@@ -51,6 +51,14 @@ export async function validateProject(dir: string, project: ProjectFile, expecte
 
   const rendered = new Map<string, RenderedPage>();
   const renderError = await checkLayout(project, size, composed, issues, rendered);
+  const renderedText = new Map<string, string>();
+  const textOf = (pageId: string, page: RenderedPage): string => {
+    const cached = renderedText.get(pageId);
+    if (cached !== undefined) return cached;
+    const text = normalizeText(page.text);
+    renderedText.set(pageId, text);
+    return text;
+  };
   for (const item of project.context) {
     if (item.role !== "must-include") continue;
     let included = false;
@@ -63,7 +71,7 @@ export async function validateProject(dir: string, project: ProjectFile, expecte
       const sourceText = normalizeText(extraction?.pages.map((page) => page.text).join(" ") ?? "");
       included = [...rendered.entries()].some(([pageId, page]) => {
         const evidence = normalizeText(project.pageMeta[pageId]?.evidence?.[item.id] ?? "");
-        return !!evidence && sourceText.includes(evidence) && normalizeText(page.text).includes(evidence);
+        return !!evidence && sourceText.includes(evidence) && textOf(pageId, page).includes(evidence);
       });
     }
     if (!included) issues.push({

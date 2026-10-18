@@ -1,6 +1,8 @@
 import type {
+  ActionRecord,
   ContextItem,
   ContextRole,
+  DataProfile,
   Density,
   OutputKind,
   PageMeta,
@@ -12,6 +14,7 @@ import type {
 } from "../../../../src/projects/schema.ts";
 import type { ExtractedPage } from "../../../../src/extraction/types.ts";
 import type { StoredExtraction } from "../../../../src/extraction/index.ts";
+import type { MaterialPreview } from "../../../../src/materials/preview.ts";
 import type {
   ContentFormat,
   DecorationLevel,
@@ -27,6 +30,8 @@ export type {
   ContentFormat,
   ContextItem,
   ContextRole,
+  DataProfile,
+  ActionRecord,
   DecorationLevel,
   Density,
   DesignFreedom,
@@ -42,6 +47,7 @@ export type {
   ExtractedPage,
   ExportFormat,
   ExportResult,
+  MaterialPreview,
   SearchCredentialStatus,
   SearchProviderId,
   StoredExtraction,

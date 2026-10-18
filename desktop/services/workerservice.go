@@ -469,46 +469,36 @@ func (s *WorkerService) readLines(stream interface{ Read([]byte) (int, error) },
 }
 
 func (s *WorkerService) handleLine(line []byte) {
-	var msg struct {
-		Type string `json:"type"`
+	var payload map[string]any
+	msgType := ""
+	if err := json.Unmarshal(line, &payload); err == nil {
+		msgType, _ = payload["type"].(string)
 	}
-	if err := json.Unmarshal(line, &msg); err != nil || msg.Type == "" {
+	if msgType == "" {
 		s.Emit("rig:worker-error", map[string]any{
 			"message": fmt.Sprintf("malformed worker line: %.200s", line),
 		})
 		return
 	}
-	switch msg.Type {
+	switch msgType {
 	case "hello":
 		s.logInfo(fmt.Sprintf("worker hello: %s", truncate(string(line), 200)))
 	case "ready":
 		s.ready.Store(true)
-		var payload map[string]any
-		_ = json.Unmarshal(line, &payload)
 		s.mu.Lock()
 		s.restarts = 0
 		s.mu.Unlock()
 		s.Emit("rig:ready", payload)
 	case "event":
-		var payload map[string]any
-		if err := json.Unmarshal(line, &payload); err == nil {
-			s.Emit("rig:event", payload["event"])
-		}
+		s.Emit("rig:event", payload["event"])
 	case "result":
-		s.emitPayload(line, "rig:result")
+		s.Emit("rig:result", payload)
 	case "log":
-		s.emitPayload(line, "rig:log")
+		s.Emit("rig:log", payload)
 	case "error":
-		s.emitPayload(line, "rig:worker-error")
+		s.Emit("rig:worker-error", payload)
 	default:
-		s.logInfo(fmt.Sprintf("unknown worker message type: %s", msg.Type))
-	}
-}
-
-func (s *WorkerService) emitPayload(line []byte, name string) {
-	var payload map[string]any
-	if err := json.Unmarshal(line, &payload); err == nil {
-		s.Emit(name, payload)
+		s.logInfo(fmt.Sprintf("unknown worker message type: %s", msgType))
 	}
 }
 
@@ -561,7 +551,15 @@ func truncate(text string, max int) string {
 // readLimitedLine reads one newline-terminated line with a hard cap so a
 // runaway worker cannot exhaust host memory.
 func readLimitedLine(reader *bufio.Reader) ([]byte, error) {
+	line, err := reader.ReadSlice('\n')
+	if err == nil {
+		return line, nil
+	}
+	if err != bufio.ErrBufferFull {
+		return line, err
+	}
 	var buffer bytes.Buffer
+	buffer.Write(line)
 	for {
 		chunk, err := reader.ReadSlice('\n')
 		buffer.Write(chunk)
@@ -574,8 +572,6 @@ func readLimitedLine(reader *bufio.Reader) ([]byte, error) {
 			}
 			continue
 		}
-		if err != nil {
-			return buffer.Bytes(), err
-		}
+		return buffer.Bytes(), err
 	}
 }

@@ -21,6 +21,7 @@ import {
   type ExportRunState,
   type ExportScope,
   type FormaRunState,
+  type MaterialPreview,
   type ProjectFile,
   type ProjectListEntry,
   type ProjectPreferences,
@@ -590,6 +591,22 @@ export async function sendRefine(
   );
 }
 
+export function refreshPage(pageId: string): Promise<boolean> {
+  if (!current || run) {
+    notificationStore.push({ type: "error", message: "Refresh is unavailable while Forma is working." });
+    return Promise.resolve(false);
+  }
+  if (!sessionStore.activeSessionId) {
+    notificationStore.push({ type: "error", message: "Start a chat before refreshing a slide with AI." });
+    return Promise.resolve(false);
+  }
+  return sendRefine(
+    "Refresh this slide so it matches the current version of the materials it uses. Re-read the linked materials and rebuild only this slide, then clear its out-of-date flag.",
+    { scope: "page", pageId },
+    "build",
+  );
+}
+
 export function stageOutline(outline: Parameters<typeof updateOutline>[0]): void {
   pendingOutline = outline;
   saveStatus = "saving";
@@ -789,7 +806,7 @@ export async function cancelExport(): Promise<void> {
   }
 }
 
-export async function importContext(paths: string[], role: ContextRole): Promise<number> {
+export async function importContext(paths: string[], role: ContextRole, folder?: string): Promise<number> {
   if (!current || paths.length === 0) return 0;
   let imported = 0;
   saveStatus = "saving";
@@ -797,7 +814,7 @@ export async function importContext(paths: string[], role: ContextRole): Promise
     try {
       const data = await sendCommand(
         "context.import",
-        { dir: current.dir, path, role },
+        { dir: current.dir, path, role, ...(folder ? { folder } : {}) },
         { timeoutMs: 0 },
       );
       current = parseProjectSnapshot(data);
@@ -810,13 +827,13 @@ export async function importContext(paths: string[], role: ContextRole): Promise
   return imported;
 }
 
-export async function importNote(text: string, role: ContextRole, name?: string): Promise<void> {
+export async function importNote(text: string, role: ContextRole, name?: string, folder?: string): Promise<void> {
   if (!current) return;
   saveStatus = "saving";
   try {
     const data = await sendCommand(
       "context.importNote",
-      { dir: current.dir, text, role, ...(name ? { name } : {}) },
+      { dir: current.dir, text, role, ...(name ? { name } : {}), ...(folder ? { folder } : {}) },
       { timeoutMs: 0 },
     );
     current = parseProjectSnapshot(data);
@@ -832,6 +849,7 @@ export async function importAsset(input: {
   mime?: string;
   data?: string;
   url?: string;
+  folder?: string;
 }): Promise<boolean> {
   if (!current) return false;
   saveStatus = "saving";
@@ -872,6 +890,90 @@ export async function removeContext(id: string): Promise<void> {
   } catch (error) {
     saveStatus = "error";
     reportError(error, "Could not remove the context item");
+  }
+}
+
+export async function replaceContext(id: string, path: string): Promise<void> {
+  if (!current) return;
+  saveStatus = "saving";
+  try {
+    const data = await sendCommand(
+      "context.replace",
+      { dir: current.dir, id, path },
+      { timeoutMs: 0 },
+    );
+    current = parseProjectSnapshot(data);
+    saveStatus = "saved";
+  } catch (error) {
+    saveStatus = "error";
+    reportError(error, "Could not replace the material");
+  }
+}
+
+export async function moveContext(id: string, folder: string): Promise<void> {
+  if (!current) return;
+  saveStatus = "saving";
+  try {
+    const data = await sendCommand("context.move", { dir: current.dir, id, folder });
+    current = parseProjectSnapshot(data);
+    saveStatus = "saved";
+  } catch (error) {
+    saveStatus = "error";
+    reportError(error, "Could not move the material");
+  }
+}
+
+export async function addMaterialFolder(name: string): Promise<boolean> {
+  if (!current) return false;
+  saveStatus = "saving";
+  try {
+    const data = await sendCommand("materials.addFolder", { dir: current.dir, name });
+    current = parseProjectSnapshot(data);
+    saveStatus = "saved";
+    return true;
+  } catch (error) {
+    saveStatus = "error";
+    reportError(error, "Could not add the folder");
+    return false;
+  }
+}
+
+export async function removeMaterialFolder(name: string): Promise<void> {
+  if (!current) return;
+  saveStatus = "saving";
+  try {
+    const data = await sendCommand("materials.removeFolder", { dir: current.dir, name });
+    current = parseProjectSnapshot(data);
+    saveStatus = "saved";
+  } catch (error) {
+    saveStatus = "error";
+    reportError(error, "Could not remove the folder");
+  }
+}
+
+export async function setContextReviewed(id: string): Promise<void> {
+  if (!current) return;
+  saveStatus = "saving";
+  try {
+    const data = await sendCommand("context.update", { dir: current.dir, id, stale: false });
+    current = parseProjectSnapshot(data);
+    saveStatus = "saved";
+  } catch (error) {
+    saveStatus = "error";
+    reportError(error, "Could not update the material");
+  }
+}
+
+export async function contextPreview(id: string): Promise<MaterialPreview | null> {
+  if (!current) return null;
+  try {
+    const data = (await sendCommand("materials.preview", { dir: current.dir, id }, { timeoutMs: 0 })) as {
+      preview?: MaterialPreview;
+    };
+    return data.preview ?? null;
+  } catch (error) {
+    reportError(error, "Could not load the preview");
+    return null;
   }
 }
 
@@ -1244,6 +1346,7 @@ export const projectStore = {
   generate,
   applyDesign,
   sendRefine,
+  refreshPage,
   reorderPage,
   duplicatePage,
   deletePage,
@@ -1260,7 +1363,13 @@ export const projectStore = {
   importAsset,
   importNote,
   contextText,
+  contextPreview,
   removeContext,
+  replaceContext,
+  moveContext,
+  addMaterialFolder,
+  removeMaterialFolder,
+  setContextReviewed,
   refreshSearchCredentials,
   setSearchDefaults,
   setSearchKey,

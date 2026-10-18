@@ -36,6 +36,7 @@ import {
   type SearchProviderId,
 } from "../settings/credentials.ts";
 import {
+  addFolder,
   contextAssetFormat,
   createProject,
   deleteProject,
@@ -46,10 +47,15 @@ import {
   listProjects,
   openProject,
   removeContextItem,
+  removeFolder,
   renameProject,
+  replaceContextFile,
+  setContextFolder,
   updateContextItem,
   updateProject,
 } from "../projects/store.ts";
+import { materialPreview } from "../materials/preview.ts";
+import { pythonRuntime } from "../materials/python.ts";
 import { repairSessionIndex } from "../projects/sessions.ts";
 import { listThemes, saveTheme } from "../projects/themes.ts";
 import {
@@ -430,6 +436,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
         path,
         role,
         asOptionalString(params.name),
+        asOptionalString(params.folder),
       );
       if (item.status === "processing") {
         void scheduleExtraction(dir, item.id);
@@ -479,6 +486,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
         mime: format.mime,
         data,
         role,
+        folder: asOptionalString(params.folder),
       });
       if (item.status === "processing") {
         void scheduleExtraction(dir, item.id);
@@ -493,8 +501,16 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       if (!(CONTEXT_ROLES as readonly string[]).includes(role)) {
         throw new ProtocolError(`Invalid context role "${role}"`);
       }
-      const { project, item } = await importContextNote(dir, text, role, asOptionalString(params.name));
-      void scheduleExtraction(dir, item.id);
+      const { project, item } = await importContextNote(
+        dir,
+        text,
+        role,
+        asOptionalString(params.name),
+        asOptionalString(params.folder),
+      );
+      if (item.status === "processing") {
+        void scheduleExtraction(dir, item.id);
+      }
       return ok({ project: toProjectPayload(project, dir), item });
     },
 
@@ -528,8 +544,50 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
       const project = await updateContextItem(dir, id, {
         role: role as ContextRole | undefined,
         name,
+        stale: typeof params.stale === "boolean" ? params.stale : undefined,
       });
       return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "context.replace"(params) {
+      const dir = asString(params.dir, "dir");
+      const id = asString(params.id, "id");
+      const path = asString(params.path, "path");
+      const { project, item } = await replaceContextFile(dir, id, path);
+      if (item.status === "processing") {
+        void scheduleExtraction(dir, item.id);
+      }
+      return ok({ project: toProjectPayload(project, dir), item });
+    },
+
+    async "context.move"(params) {
+      const dir = asString(params.dir, "dir");
+      const id = asString(params.id, "id");
+      const project = await setContextFolder(dir, id, asOptionalString(params.folder) ?? "");
+      return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "materials.addFolder"(params) {
+      const dir = asString(params.dir, "dir");
+      const project = await addFolder(dir, asString(params.name, "name"));
+      return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "materials.removeFolder"(params) {
+      const dir = asString(params.dir, "dir");
+      const project = await removeFolder(dir, asString(params.name, "name"));
+      return ok({ project: toProjectPayload(project, dir) });
+    },
+
+    async "materials.preview"(params) {
+      const dir = asString(params.dir, "dir");
+      const id = asString(params.id, "id");
+      const project = await openProject(dir);
+      const item = project.context.find((entry) => entry.id === id);
+      if (!item) {
+        throw new RuntimeError(`Unknown context item "${id}"`, { details: { id } });
+      }
+      return ok({ preview: await materialPreview(dir, item) });
     },
 
     async "settings.getSearch"() {
@@ -561,6 +619,7 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
 
     async "diagnostics.get"() {
       const ddgs = resolveDdgsCommand();
+      const python = await pythonRuntime();
       return ok({
         worker: {
           pid: process.pid,
@@ -573,6 +632,12 @@ export function buildDispatcher(ctx: WorkerContext): Record<string, CommandHandl
           script: ddgs.script,
           pythonFound: existsSync(ddgs.python),
           scriptFound: existsSync(ddgs.script),
+        },
+        python: {
+          runtime: "pyodide",
+          version: python.version,
+          root: python.root,
+          found: python.found,
         },
       });
     },

@@ -13,6 +13,14 @@
     return project?.pageMeta[pageId]?.title || `Slide ${index + 1}`;
   }
 
+  function staleOf(pageId: string): boolean {
+    return project?.pageMeta[pageId]?.stale === true;
+  }
+
+  function refresh(pageId: string): void {
+    void projectStore.refreshPage(pageId);
+  }
+
   function drop(index: number): void {
     const from = dragIndex;
     dragIndex = null;
@@ -49,6 +57,17 @@
         </button>
         <div class="rail-item-foot">
           <span class="rail-thumb-title" title={titleOf(pageId, i)}>{titleOf(pageId, i)}</span>
+          {#if staleOf(pageId)}
+            <button
+              class="icon-btn rail-refresh"
+              type="button"
+              title="Out of date — refresh this slide with AI"
+              aria-label={`Slide ${i + 1} is out of date. Refresh with AI`}
+              onclick={() => refresh(pageId)}
+            >
+              <Icon name="refresh" size={12} />
+            </button>
+          {/if}
           <div class="rail-item-actions">
             <button
               class="icon-btn"

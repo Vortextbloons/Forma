@@ -4,12 +4,20 @@ import { z } from "zod";
 import { RuntimeError, type RigTool, type ToolContext } from "rig";
 import { atomicWriteFile } from "../projects/atomic.ts";
 import { defaultDesignProfile, fontStack, type DesignProfile } from "../projects/design.ts";
-import { importContextAsset, openProject } from "../projects/store.ts";
+import { openProject, recordAction, saveGeneratedMaterial, updateProject } from "../projects/store.ts";
 import { launchBrowser } from "../rendering/browser.ts";
 
 const createDiagramInput = z.object({
   name: z.string().trim().min(1).describe("Diagram name, for example Order fulfilment flow"),
   mermaid: z.string().trim().min(1).describe("Mermaid diagram source, for example flowchart TD; A[Start] --> B[End]"),
+  resultId: z
+    .string()
+    .optional()
+    .describe("Existing diagram result id (from read_project) to refresh in place; the new SVG is saved as a new version and pages referencing this result must be refreshed"),
+  sources: z
+    .array(z.string())
+    .default([])
+    .describe("Material ids the diagram was built from, so the diagram is linked to its sources and flagged when they change"),
 });
 
 export const diagramTools: Array<RigTool<z.ZodTypeAny, unknown>> = [
@@ -79,7 +87,7 @@ function createDiagramTool(): RigTool<typeof createDiagramInput, unknown> {
   return {
     name: "create_diagram",
     description:
-      "Render a Mermaid diagram to a static SVG asset. Pass Mermaid source for flowcharts, sequence, timeline, mindmap, state, class, ER, or gantt diagrams; interactive features and external assets are not supported. The SVG is themed with the approved design palette and fonts automatically. Example: { name: \"Order fulfilment flow\", mermaid: \"flowchart TD\\n  A[Order] --> B{Paid?}\\n  B -->|yes| C[Ship]\" }. Reference the returned asset path in artwork and record the context id in the page assets. The Mermaid source is saved next to the SVG; read that path to revise the diagram later.",
+      "Render a Mermaid diagram to a static SVG asset. Pass Mermaid source for flowcharts, sequence, timeline, mindmap, state, class, ER, or gantt diagrams; interactive features and external assets are not supported. The SVG is themed with the approved design palette and fonts automatically. Pass resultId with an existing diagram id to rebuild that result in place (saved as a new version) instead of leaving a stale duplicate. Example: { name: \"Order fulfilment flow\", mermaid: \"flowchart TD\\n  A[Order] --> B{Paid?}\\n  B -->|yes| C[Ship]\" }. Reference the returned asset path in artwork and record the context id in the page assets. The Mermaid source is saved next to the SVG; read that path to revise the diagram later. Pass sources: [\"ctx_ab12cd34ef56\"] to link the diagram to the materials it was built from.",
     input: createDiagramInput,
     async execute(input, ctx) {
       const dir = dirOf(ctx);
@@ -95,15 +103,24 @@ function createDiagramTool(): RigTool<typeof createDiagramInput, unknown> {
       if (!svg.startsWith("<svg")) {
         throw new RuntimeError("The diagram could not be rendered: Mermaid returned an empty result. Check the Mermaid source.");
       }
-      const { item } = await importContextAsset(dir, {
+      const { item } = await saveGeneratedMaterial(dir, {
+        ...(input.resultId ? { id: input.resultId } : {}),
         name: input.name,
         extension: ".svg",
         mime: "image/svg+xml",
         data: svg,
-        role: "optional",
+        derivedFrom: input.sources,
       });
-      const source = `assets/${item.id}.mmd`;
+      const source = item.revision > 1 ? `assets/${item.id}.v${item.revision}.mmd` : `assets/${item.id}.mmd`;
       await atomicWriteFile(join(resolve(dir), source), `${input.mermaid.trim()}\n`);
+      await updateProject(dir, (current) => {
+        recordAction(current, {
+          kind: "derive",
+          label: `${input.resultId ? "Rebuilt" : "Built"} diagram "${input.name}"`,
+          inputs: input.sources,
+          outputs: [item.id],
+        });
+      });
       return { contextId: item.id, name: item.name, asset: item.asset, source };
     },
   };

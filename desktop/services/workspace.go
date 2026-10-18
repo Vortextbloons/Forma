@@ -52,8 +52,8 @@ func (s *WorkspaceService) PickFiles(title string) ([]string, error) {
 		Title:                   title,
 		Filters: []application.FileFilter{
 			{
-				DisplayName: "Images and documents",
-				Pattern:     "*.png;*.jpg;*.jpeg;*.webp;*.svg;*.pdf;*.txt;*.md",
+				DisplayName: "Images, documents, and data",
+				Pattern:     "*.png;*.jpg;*.jpeg;*.webp;*.svg;*.pdf;*.txt;*.md;*.csv;*.tsv;*.json;*.xlsx",
 			},
 		},
 	}).PromptForMultipleSelection()
